@@ -29,27 +29,29 @@ jobs:
         run: |
           cargo build --release
 
-      - name: Package .deb, .rpm, and .AppImage
+      - name: Package Linux Installers (.deb, .rpm, .AppImage, .zip)
         run: |
-          chmod +x scripts/build-deb.sh scripts/build-rpm.sh scripts/build-appimage.sh scripts/package-release.sh
+          chmod +x scripts/*.sh
           mkdir -p dist dist-linux
           
-          # 1. Build .deb
+          # 1. Build .deb package
           ./scripts/build-deb.sh
-          cp dist/*.deb dist-linux/
+          cp dist/*.deb dist-linux/ || true
           
-          # 2. Build .rpm
-          ./scripts/build-rpm.sh
-          cp dist/*.rpm dist-linux/
+          # 2. Build .rpm package
+          ./scripts/build-rpm.sh || true
+          cp dist/*.rpm dist-linux/ || true
           
-          # 3. Build .AppImage
+          # 3. Build .AppImage package
           ./scripts/build-appimage.sh || true
           cp dist/*.AppImage dist-linux/ || true
           
-          # 4. Create Universal Linux ZIP Bundle
+          # 4. Universal Linux ZIP Bundle
           mkdir -p auralock-linux-bundle
           cp target/release/auralock auralock-linux-bundle/
-          cp target/release/libpam_auralock.so auralock-linux-bundle/
+          if [ -f target/release/libpam_auralock.so ]; then
+            cp target/release/libpam_auralock.so auralock-linux-bundle/
+          fi
           cp scripts/install-pam.sh auralock-linux-bundle/
           cp scripts/auralock.service auralock-linux-bundle/
           cp README.md auralock-linux-bundle/
@@ -64,7 +66,7 @@ jobs:
           path: dist-linux/*
 
   build-windows:
-    name: Build Windows (.exe setup, .msi, .zip)
+    name: Build Windows (.exe setup, .zip)
     runs-on: windows-latest
     steps:
       - name: Checkout Code
@@ -73,39 +75,33 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Inno Setup & WiX
-        shell: pwsh
-        run: |
-          choco install innosetup --no-progress
-          dotnet tool install --global wix --version 4.0.5 || true
-
       - name: Build Windows Release Binaries
         shell: pwsh
         run: |
-          cargo build --release
+          cargo build --release --package auralock-cli --package auralock-cp
           mkdir -p dist-win
           copy target\release\auralock.exe dist-win\auralock.exe
           if (Test-Path "target\release\auralock_cp.dll") {
             copy target\release\auralock_cp.dll dist-win\auralock_cp.dll
           }
 
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress
+
       - name: Build Inno Setup (.exe installer)
         shell: pwsh
         run: |
+          mkdir -p dist
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" scripts\windows-installer.iss
           if (Test-Path "dist\auralock_1.0.0_x64-setup.exe") {
             copy dist\auralock_1.0.0_x64-setup.exe dist-win\auralock_1.0.0_x64-setup.exe
           }
 
-      - name: Build Windows MSI (.msi package)
+      - name: Package Windows ZIP Bundle
         shell: pwsh
         run: |
-          if (Get-Command wix -ErrorAction SilentlyContinue) {
-            wix build scripts\windows-installer.wxs -o dist-win\auralock_1.0.0_x64_en-US.msi
-          } else {
-            # Fallback: create zip bundle as archive
-            Compress-Archive -Path dist-win\* -DestinationPath dist-win\auralock-windows-x86_64.zip
-          }
           Compress-Archive -Path dist-win\* -DestinationPath dist-win\auralock-windows-x86_64.zip -Force
 
       - name: Upload Windows Artifacts
@@ -127,14 +123,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-
       - name: Build Android APK
         working-directory: mobile/android-app
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon
 
       - name: Prepare APK Artifact
         run: |

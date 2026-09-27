@@ -35,7 +35,7 @@ Name: "autostart"; Description: "Start AuraLock automatically on Windows login";
 
 [Files]
 Source: "..\target\release\auralock.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\target\release\auralock_cp.dll"; DestDir: "{sys}"; Flags: ignoreversion promptifolder; Check: IsWin64
+Source: "..\target\release\auralock_cp.dll"; DestDir: "{sys}"; Flags: ignoreversion skipifsourcedoesntexist; Check: IsWin64
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

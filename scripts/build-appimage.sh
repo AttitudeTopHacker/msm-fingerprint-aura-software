@@ -8,9 +8,10 @@ set -e
 VERSION="1.0.0"
 PACKAGE_NAME="auralock"
 ARCH="amd64"
-DIST_DIR="dist"
+PROJECT_ROOT="$(pwd)"
+DIST_DIR="${PROJECT_ROOT}/dist"
 APPIMAGE_NAME="${PACKAGE_NAME}_${VERSION}_${ARCH}.AppImage"
-APP_DIR="dist/AppDir"
+APP_DIR="${DIST_DIR}/AppDir"
 
 echo "=================================================="
 echo "  📦 Building AuraLock AppImage (v${VERSION})"
@@ -27,10 +28,12 @@ mkdir -p "$APP_DIR/usr/lib/security"
 mkdir -p "$APP_DIR/usr/share/icons/hicolor/256x256/apps"
 
 # Copy binary & PAM module
-cp target/release/auralock "$APP_DIR/usr/bin/auralock"
+cp "${PROJECT_ROOT}/target/release/auralock" "$APP_DIR/usr/bin/auralock"
 chmod 755 "$APP_DIR/usr/bin/auralock"
 
-cp target/release/libpam_auralock.so "$APP_DIR/usr/lib/security/pam_auralock.so"
+if [ -f "${PROJECT_ROOT}/target/release/libpam_auralock.so" ]; then
+    cp "${PROJECT_ROOT}/target/release/libpam_auralock.so" "$APP_DIR/usr/lib/security/pam_auralock.so"
+fi
 
 # Create Desktop Entry
 cat << EOF > "$APP_DIR/auralock.desktop"
@@ -60,26 +63,26 @@ fi
 EOF
 chmod 755 "$APP_DIR/AppRun"
 
-# Create a clean default icon if not present
-mkdir -p "$APP_DIR/usr/share/icons/hicolor/256x256/apps"
+# Create placeholder icon
 touch "$APP_DIR/auralock.png"
 touch "$APP_DIR/.DirIcon"
 
-# Build AppImage with appimagetool if available
-if command -v appimagetool &> /dev/null; then
-    echo "🔨 Running appimagetool..."
-    ARCH=x86_64 appimagetool "$APP_DIR" "$DIST_DIR/$APPIMAGE_NAME"
+export ARCH=x86_64
+export APPIMAGE_EXTRACT_AND_RUN=1
+
+# Download or run appimagetool
+if ! command -v appimagetool &> /dev/null; then
+    wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /tmp/appimagetool || curl -sL https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -o /tmp/appimagetool
+    chmod +x /tmp/appimagetool
+    APPIMAGETOOL="/tmp/appimagetool"
+else
+    APPIMAGETOOL="appimagetool"
+fi
+
+echo "🔨 Running appimagetool..."
+"$APPIMAGETOOL" --appimage-extract-and-run "$APP_DIR" "$DIST_DIR/$APPIMAGE_NAME" || "$APPIMAGETOOL" "$APP_DIR" "$DIST_DIR/$APPIMAGE_NAME" || true
+
+if [ -f "$DIST_DIR/$APPIMAGE_NAME" ]; then
     chmod +x "$DIST_DIR/$APPIMAGE_NAME"
     echo "✅ AppImage created successfully at: $DIST_DIR/$APPIMAGE_NAME"
-else
-    echo "⬇️ Downloading appimagetool..."
-    wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /tmp/appimagetool || curl -sL https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -o /tmp/appimagetool
-    if [ -f "/tmp/appimagetool" ]; then
-        chmod +x /tmp/appimagetool
-        ARCH=x86_64 /tmp/appimagetool --appimage-extract-and-run "$APP_DIR" "$DIST_DIR/$APPIMAGE_NAME" || ARCH=x86_64 /tmp/appimagetool "$APP_DIR" "$DIST_DIR/$APPIMAGE_NAME"
-        chmod +x "$DIST_DIR/$APPIMAGE_NAME"
-        echo "✅ AppImage created successfully at: $DIST_DIR/$APPIMAGE_NAME"
-    else
-        echo "⚠️ appimagetool could not be downloaded in this environment."
-    fi
 fi

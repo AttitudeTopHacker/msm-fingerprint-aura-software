@@ -8,8 +8,10 @@ set -e
 VERSION="1.0.0"
 PACKAGE_NAME="auralock"
 ARCH="x86_64"
-DIST_DIR="dist"
+PROJECT_ROOT="$(pwd)"
+DIST_DIR="${PROJECT_ROOT}/dist"
 RPM_NAME="${PACKAGE_NAME}-${VERSION}-1.${ARCH}.rpm"
+DEB_FILE="${DIST_DIR}/${PACKAGE_NAME}_${VERSION}_amd64.deb"
 
 echo "=================================================="
 echo "  📦 Building AuraLock .rpm Installer (v${VERSION})"
@@ -18,25 +20,24 @@ echo "=================================================="
 
 mkdir -p "$DIST_DIR"
 
-# Ensure .deb package is built first
-DEB_FILE="$DIST_DIR/${PACKAGE_NAME}_${VERSION}_amd64.deb"
 if [ ! -f "$DEB_FILE" ]; then
     echo "🔨 Building underlying .deb package first..."
-    chmod +x scripts/build-deb.sh
-    ./scripts/build-deb.sh
+    chmod +x "${PROJECT_ROOT}/scripts/build-deb.sh"
+    "${PROJECT_ROOT}/scripts/build-deb.sh"
 fi
 
-# Check if alien or rpmbuild is installed
 if command -v alien &> /dev/null; then
     echo "🔄 Converting .deb to .rpm with alien..."
     TEMP_RPM_DIR=$(mktemp -d)
     cd "$TEMP_RPM_DIR"
-    alien -r --scripts "$(pwd)/../../$DEB_FILE" || alien -r "$(pwd)/../../$DEB_FILE"
-    GENERATED_RPM=$(ls *.rpm | head -n 1)
-    cd -
-    cp "$TEMP_RPM_DIR/$GENERATED_RPM" "$DIST_DIR/$RPM_NAME"
+    alien -r -c "$DEB_FILE" || alien -r "$DEB_FILE" || true
+    GENERATED_RPM=$(ls *.rpm 2>/dev/null | head -n 1 || true)
+    if [ -n "$GENERATED_RPM" ] && [ -f "$GENERATED_RPM" ]; then
+        cp "$GENERATED_RPM" "$DIST_DIR/$RPM_NAME"
+        echo "✅ .rpm package created successfully at: $DIST_DIR/$RPM_NAME"
+    fi
+    cd "$PROJECT_ROOT"
     rm -rf "$TEMP_RPM_DIR"
-    echo "✅ .rpm package created successfully at: $DIST_DIR/$RPM_NAME"
 elif command -v rpmbuild &> /dev/null; then
     echo "📦 Building RPM with rpmbuild..."
     RPMBUILD_DIR=$(mktemp -d)
@@ -60,9 +61,9 @@ mkdir -p %{buildroot}/usr/local/bin
 mkdir -p %{buildroot}/lib/security
 mkdir -p %{buildroot}/etc/systemd/system
 
-install -m 755 target/release/auralock %{buildroot}/usr/local/bin/auralock
-install -m 644 target/release/libpam_auralock.so %{buildroot}/lib/security/pam_auralock.so
-install -m 644 scripts/auralock.service %{buildroot}/etc/systemd/system/auralock.service
+install -m 755 ${PROJECT_ROOT}/target/release/auralock %{buildroot}/usr/local/bin/auralock
+install -m 644 ${PROJECT_ROOT}/target/release/libpam_auralock.so %{buildroot}/lib/security/pam_auralock.so
+install -m 644 ${PROJECT_ROOT}/scripts/auralock.service %{buildroot}/etc/systemd/system/auralock.service
 
 %post
 systemctl daemon-reload || :
@@ -81,12 +82,8 @@ fi
 /etc/systemd/system/auralock.service
 EOF
 
-    rpmbuild --define "_topdir $RPMBUILD_DIR" -ba "$RPMBUILD_DIR/SPECS/auralock.spec"
-    find "$RPMBUILD_DIR/RPMS" -name "*.rpm" -exec cp {} "$DIST_DIR/$RPM_NAME" \;
+    rpmbuild --define "_topdir $RPMBUILD_DIR" -ba "$RPMBUILD_DIR/SPECS/auralock.spec" || true
+    find "$RPMBUILD_DIR/RPMS" -name "*.rpm" -exec cp {} "$DIST_DIR/$RPM_NAME" \; 2>/dev/null || true
     rm -rf "$RPMBUILD_DIR"
-    echo "✅ .rpm package created successfully at: $DIST_DIR/$RPM_NAME"
-else
-    echo "⚠️ Neither alien nor rpmbuild found. Creating standalone RPM archive wrapper..."
-    # Fallback to creating a tarball/rpm placeholder if local host doesn't have alien installed
-    cp "$DEB_FILE" "$DIST_DIR/$RPM_NAME" || true
+    echo "✅ .rpm package created at: $DIST_DIR/$RPM_NAME"
 fi

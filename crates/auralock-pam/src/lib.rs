@@ -3,15 +3,23 @@
  * Proprietary software of msm.movin organization.
  */
 
+#[cfg(unix)]
 use auralock_core::ipc::{IpcClient, DEFAULT_UNIX_SOCKET_PATH};
+#[cfg(unix)]
 use std::ffi::CStr;
+#[cfg(unix)]
 use std::os::raw::{c_char, c_int, c_void};
 
+#[cfg(unix)]
 pub const PAM_SUCCESS: c_int = 0;
+#[cfg(unix)]
 pub const PAM_AUTH_ERR: c_int = 7;
+#[cfg(unix)]
 pub const PAM_IGNORE: c_int = 25;
+#[cfg(unix)]
 pub const PAM_USER: c_int = 2;
 
+#[cfg(unix)]
 extern "C" {
     fn pam_get_item(pamh: *mut c_void, item_type: c_int, item: *mut *const c_void) -> c_int;
 }
@@ -21,6 +29,7 @@ extern "C" {
 /// When the screen lock or login prompt is triggered on Linux (GNOME, KDE, GDM, SDDM, etc.),
 /// this function communicates with the local AuraLock background daemon.
 /// If the user validates via phone fingerprint within 10 seconds, this returns PAM_SUCCESS.
+#[cfg(unix)]
 #[no_mangle]
 pub extern "C" fn pam_sm_authenticate(
     pamh: *mut c_void,
@@ -69,6 +78,7 @@ pub extern "C" fn pam_sm_authenticate(
     }
 }
 
+#[cfg(unix)]
 #[no_mangle]
 pub extern "C" fn pam_sm_setcred(
     _pamh: *mut c_void,
