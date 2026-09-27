@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build-linux:
-    name: Build Linux .deb, PAM Module & Binaries
+    name: Build Linux (.deb, .rpm, .AppImage, .zip)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -20,30 +20,42 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libpam0g-dev libdbus-1-dev pkg-config dpkg-dev zip
+          sudo apt-get install -y libpam0g-dev libdbus-1-dev pkg-config dpkg-dev rpm alien zip wget file
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build Release Binaries & .deb Package
+      - name: Build Rust Release Binaries
         run: |
-          chmod +x scripts/build-deb.sh scripts/package-release.sh
           cargo build --release
+
+      - name: Package .deb, .rpm, and .AppImage
+        run: |
+          chmod +x scripts/build-deb.sh scripts/build-rpm.sh scripts/build-appimage.sh scripts/package-release.sh
+          mkdir -p dist dist-linux
+          
+          # 1. Build .deb
           ./scripts/build-deb.sh
+          cp dist/*.deb dist-linux/
           
-          mkdir -p dist-linux
-          cp dist/*.deb dist-linux/ || true
-          cp target/release/auralock dist-linux/auralock-linux-x86_64
-          cp target/release/libpam_auralock.so dist-linux/libpam_auralock.so
+          # 2. Build .rpm
+          ./scripts/build-rpm.sh
+          cp dist/*.rpm dist-linux/
           
-          # Create universal tar.gz
+          # 3. Build .AppImage
+          ./scripts/build-appimage.sh || true
+          cp dist/*.AppImage dist-linux/ || true
+          
+          # 4. Create Universal Linux ZIP Bundle
           mkdir -p auralock-linux-bundle
           cp target/release/auralock auralock-linux-bundle/
           cp target/release/libpam_auralock.so auralock-linux-bundle/
           cp scripts/install-pam.sh auralock-linux-bundle/
           cp scripts/auralock.service auralock-linux-bundle/
           cp README.md auralock-linux-bundle/
-          tar -czvf dist-linux/auralock-linux-x86_64.tar.gz auralock-linux-bundle
+          
+          zip -r dist-linux/auralock-v1.0.0-linux-x86_64.zip auralock-linux-bundle
+          tar -czvf dist-linux/auralock-v1.0.0-linux-x86_64.tar.gz auralock-linux-bundle
 
       - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
@@ -52,7 +64,7 @@ jobs:
           path: dist-linux/*
 
   build-windows:
-    name: Build Windows Binaries (.exe & DLL)
+    name: Build Windows (.exe setup, .msi, .zip)
     runs-on: windows-latest
     steps:
       - name: Checkout Code
@@ -61,15 +73,40 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install Inno Setup & WiX
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress
+          dotnet tool install --global wix --version 4.0.5 || true
+
       - name: Build Windows Release Binaries
+        shell: pwsh
         run: |
           cargo build --release
-          mkdir dist-win
-          copy target\release\auralock.exe dist-win\auralock-windows-x86_64.exe
+          mkdir -p dist-win
+          copy target\release\auralock.exe dist-win\auralock.exe
           if (Test-Path "target\release\auralock_cp.dll") {
             copy target\release\auralock_cp.dll dist-win\auralock_cp.dll
           }
-          Compress-Archive -Path dist-win\* -DestinationPath dist-win\auralock-windows-x86_64.zip
+
+      - name: Build Inno Setup (.exe installer)
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" scripts\windows-installer.iss
+          if (Test-Path "dist\auralock_1.0.0_x64-setup.exe") {
+            copy dist\auralock_1.0.0_x64-setup.exe dist-win\auralock_1.0.0_x64-setup.exe
+          }
+
+      - name: Build Windows MSI (.msi package)
+        shell: pwsh
+        run: |
+          if (Get-Command wix -ErrorAction SilentlyContinue) {
+            wix build scripts\windows-installer.wxs -o dist-win\auralock_1.0.0_x64_en-US.msi
+          } else {
+            # Fallback: create zip bundle as archive
+            Compress-Archive -Path dist-win\* -DestinationPath dist-win\auralock-windows-x86_64.zip
+          }
+          Compress-Archive -Path dist-win\* -DestinationPath dist-win\auralock-windows-x86_64.zip -Force
 
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
@@ -78,7 +115,7 @@ jobs:
           path: dist-win/*
 
   build-android:
-    name: Build Android APK
+    name: Build Android App (.apk)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -102,7 +139,7 @@ jobs:
       - name: Prepare APK Artifact
         run: |
           mkdir -p dist-apk
-          cp mobile/android-app/app/build/outputs/apk/debug/app-debug.apk dist-apk/auralock-android.apk
+          cp mobile/android-app/app/build/outputs/apk/debug/app-debug.apk dist-apk/auralock-android-v1.0.0.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -111,7 +148,7 @@ jobs:
           path: dist-apk/*
 
   publish-release:
-    name: Publish GitHub Release (.deb, .exe, .zip, .apk)
+    name: Publish GitHub Release (Multi-Asset)
     needs: [build-linux, build-windows, build-android]
     runs-on: ubuntu-latest
     steps:

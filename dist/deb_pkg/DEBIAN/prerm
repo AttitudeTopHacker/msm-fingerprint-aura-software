@@ -1,9 +1,0 @@
-#!/bin/sh
-set -e
-
-if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
-    echo "🛑 Stopping and disabling auralock service..."
-    systemctl stop auralock.service || true
-    systemctl disable auralock.service || true
-fi
-exit 0
