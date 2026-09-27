@@ -1,0 +1,17 @@
+#
+# Copyright (c) 2022 msm.movin. All rights reserved.
+# Proprietary software of msm.movin organization.
+#
+
+[Unit]
+Description=AuraLock Remote Biometric Authentication Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/auralock daemon
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

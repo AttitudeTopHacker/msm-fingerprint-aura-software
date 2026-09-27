@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build-linux:
-    name: Build Linux CLI & PAM Module
+    name: Build Linux .deb, PAM Module & Binaries
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -20,27 +20,62 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libpam0g-dev libdbus-1-dev pkg-config
+          sudo apt-get install -y libpam0g-dev libdbus-1-dev pkg-config dpkg-dev zip
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build Release Binaries
+      - name: Build Release Binaries & .deb Package
         run: |
+          chmod +x scripts/build-deb.sh scripts/package-release.sh
           cargo build --release
-
-      - name: Prepare Artifacts
-        run: |
-          mkdir -p dist
-          cp target/release/auralock dist/auralock-linux-x86_64
-          cp target/release/libpam_auralock.so dist/libpam_auralock.so
-          chmod +x dist/auralock-linux-x86_64
+          ./scripts/build-deb.sh
+          
+          mkdir -p dist-linux
+          cp dist/*.deb dist-linux/ || true
+          cp target/release/auralock dist-linux/auralock-linux-x86_64
+          cp target/release/libpam_auralock.so dist-linux/libpam_auralock.so
+          
+          # Create universal tar.gz
+          mkdir -p auralock-linux-bundle
+          cp target/release/auralock auralock-linux-bundle/
+          cp target/release/libpam_auralock.so auralock-linux-bundle/
+          cp scripts/install-pam.sh auralock-linux-bundle/
+          cp scripts/auralock.service auralock-linux-bundle/
+          cp README.md auralock-linux-bundle/
+          tar -czvf dist-linux/auralock-linux-x86_64.tar.gz auralock-linux-bundle
 
       - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: auralock-linux
-          path: dist/*
+          path: dist-linux/*
+
+  build-windows:
+    name: Build Windows Binaries (.exe & DLL)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Windows Release Binaries
+        run: |
+          cargo build --release
+          mkdir dist-win
+          copy target\release\auralock.exe dist-win\auralock-windows-x86_64.exe
+          if (Test-Path "target\release\auralock_cp.dll") {
+            copy target\release\auralock_cp.dll dist-win\auralock_cp.dll
+          }
+          Compress-Archive -Path dist-win\* -DestinationPath dist-win\auralock-windows-x86_64.zip
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: auralock-windows
+          path: dist-win/*
 
   build-android:
     name: Build Android APK
@@ -76,8 +111,8 @@ jobs:
           path: dist-apk/*
 
   publish-release:
-    name: Publish GitHub Release
-    needs: [build-linux, build-android]
+    name: Publish GitHub Release (.deb, .exe, .zip, .apk)
+    needs: [build-linux, build-windows, build-android]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -87,6 +122,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: auralock-linux
+          path: release-assets/
+
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: auralock-windows
           path: release-assets/
 
       - name: Download Android Artifacts

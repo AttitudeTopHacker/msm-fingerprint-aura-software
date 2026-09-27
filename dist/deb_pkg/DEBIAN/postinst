@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "configure" ]; then
+    echo "⚙️ Reloading systemd daemon..."
+    systemctl daemon-reload || true
+    echo "🚀 Enabling and starting auralock background service..."
+    systemctl enable auralock.service || true
+    systemctl restart auralock.service || true
+    echo ""
+    echo "=================================================="
+    echo "  🎉 AuraLock installed successfully!"
+    echo "  Run 'auralock pair' to pair with your Android phone."
+    echo "=================================================="
+fi
+exit 0

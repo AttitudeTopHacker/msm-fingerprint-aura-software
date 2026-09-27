@@ -1,0 +1,11 @@
+Package: auralock
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: msm.movin <support@msm.movin>
+Depends: libpam0g, systemd
+Description: AuraLock - Instant Remote Biometric Unlock for Linux
+ AuraLock turns your Android smartphone's fingerprint sensor into a hardware
+ biometric key for Linux lockscreens and sudo authentication over local Wi-Fi and BLE.
+ Developed by msm.movin. Copyright (c) 2022 msm.movin. All rights reserved.
