@@ -1,0 +1,30 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Android & Gradle
+.gradle/
+build/
+mobile/android-app/.gradle/
+mobile/android-app/build/
+mobile/android-app/app/build/
+mobile/android-app/.idea/
+mobile/android-app/local.properties
+mobile/android-app/*.apk
+mobile/android-app/*.aab
+
+# IDE & Editor files
+.idea/
+*.iml
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# Local secrets & vaults
+vault.json
+*.key
+*.pem
+*.sock
+/tmp/auralock*

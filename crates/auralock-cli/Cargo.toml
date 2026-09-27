@@ -1,0 +1,28 @@
+[package]
+name = "auralock-cli"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "auralock"
+path = "src/main.rs"
+
+[dependencies]
+auralock-core = { path = "../auralock-core" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }
+qr2term = { workspace = true }
+colored = { workspace = true }
+rpassword = { workspace = true }
+hostname = { workspace = true }
+local-ip-address = { workspace = true }
+rand = { workspace = true }
+hex = { workspace = true }
+chrono = { workspace = true }
+ed25519-dalek = { workspace = true }

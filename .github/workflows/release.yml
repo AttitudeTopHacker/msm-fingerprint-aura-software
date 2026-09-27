@@ -1,0 +1,109 @@
+name: AuraLock Release CI/CD
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build Linux CLI & PAM Module
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpam0g-dev libdbus-1-dev pkg-config
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Release Binaries
+        run: |
+          cargo build --release
+
+      - name: Prepare Artifacts
+        run: |
+          mkdir -p dist
+          cp target/release/auralock dist/auralock-linux-x86_64
+          cp target/release/libpam_auralock.so dist/libpam_auralock.so
+          chmod +x dist/auralock-linux-x86_64
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: auralock-linux
+          path: dist/*
+
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Build Android APK
+        working-directory: mobile/android-app
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Prepare APK Artifact
+        run: |
+          mkdir -p dist-apk
+          cp mobile/android-app/app/build/outputs/apk/debug/app-debug.apk dist-apk/auralock-android.apk
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: auralock-android-apk
+          path: dist-apk/*
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-linux, build-android]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download Linux Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: auralock-linux
+          path: release-assets/
+
+      - name: Download Android Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: auralock-android-apk
+          path: release-assets/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "AuraLock ${{ github.ref_name }} (msm.movin)"
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            release-assets/*
+            scripts/install-pam.sh
+            scripts/auralock.service

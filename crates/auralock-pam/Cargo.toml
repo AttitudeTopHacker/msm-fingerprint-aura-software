@@ -1,0 +1,18 @@
+[package]
+name = "auralock-pam"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "pam_auralock"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+auralock-core = { path = "../auralock-core" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
