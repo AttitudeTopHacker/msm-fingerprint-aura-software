@@ -175,4 +175,19 @@ impl StateManager {
             }
         }
     }
+
+    /// Sets the paired phone metadata
+    pub async fn set_paired_phone(&self, phone: Option<PairedPhone>) {
+        let mut state = self.inner.lock().await;
+        state.paired_phone = phone;
+    }
+
+    /// Unpairs the active phone and resets challenges
+    pub async fn unpair(&self) {
+        let mut state = self.inner.lock().await;
+        state.paired_phone = None;
+        state.active_challenges.clear();
+        state.failed_attempts = 0;
+        state.lockout_until = None;
+    }
 }

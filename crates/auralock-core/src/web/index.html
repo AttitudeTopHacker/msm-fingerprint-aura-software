@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AuraLock Control Center • msm.movin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #07090E;
+      --bg-card: rgba(16, 22, 34, 0.75);
+      --bg-card-hover: rgba(23, 32, 48, 0.85);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-active: rgba(0, 255, 136, 0.35);
+      --accent-green: #00FF88;
+      --accent-cyan: #00D2FF;
+      --accent-purple: #9D4EDD;
+      --accent-red: #FF3366;
+      --accent-yellow: #FFB703;
+      --text-main: #F0F4F8;
+      --text-muted: #8E9BAE;
+      --font-main: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      background-image: 
+        radial-gradient(circle at 10% 15%, rgba(0, 210, 255, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 90% 85%, rgba(0, 255, 136, 0.06) 0%, transparent 40%);
+      color: var(--text-main);
+      font-family: var(--font-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    header {
+      backdrop-filter: blur(20px);
+      background: rgba(7, 9, 14, 0.8);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 2rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-logo {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #00FF88, #00D2FF);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 20px rgba(0, 255, 136, 0.35);
+    }
+
+    .brand-logo svg {
+      width: 22px;
+      height: 22px;
+      fill: #07090E;
+    }
+
+    .brand-text h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      background: linear-gradient(90deg, #FFFFFF, #B0C4DE);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-text span {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      letter-spacing: 0.5px;
+      font-weight: 500;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-color);
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-red);
+      box-shadow: 0 0 10px var(--accent-red);
+      transition: all 0.3s ease;
+    }
+
+    .status-dot.connected {
+      background: var(--accent-green);
+      box-shadow: 0 0 12px var(--accent-green);
+    }
+
+    .nav-tabs {
+      display: flex;
+      gap: 8px;
+      padding: 1.5rem 2rem 0;
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      padding: 10px 18px;
+      border-radius: 10px;
+      font-family: var(--font-main);
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .tab-btn.active {
+      color: var(--accent-green);
+      background: rgba(0, 255, 136, 0.08);
+      border-color: rgba(0, 255, 136, 0.25);
+    }
+
+    main {
+      flex: 1;
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+      padding: 1.5rem 2rem 3rem;
+    }
+
+    .tab-content {
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 860px) {
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+      .nav-tabs {
+        overflow-x: auto;
+        padding-bottom: 8px;
+      }
+    }
+
+    .card {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-color);
+      border-radius: 18px;
+      padding: 1.75rem;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .card-subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+
+    .qr-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      background: #FFFFFF;
+      border-radius: 14px;
+      box-shadow: 0 0 35px rgba(0, 255, 136, 0.15);
+      margin-bottom: 1.5rem;
+      width: 240px;
+      height: 240px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    #qr-canvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    .pin-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: rgba(0, 255, 136, 0.1);
+      border: 1px solid rgba(0, 255, 136, 0.3);
+      padding: 10px 20px;
+      border-radius: 12px;
+      font-family: var(--font-mono);
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--accent-green);
+      letter-spacing: 4px;
+      margin-bottom: 1.25rem;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 18px;
+      border-radius: 10px;
+      font-family: var(--font-main);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: none;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #00FF88, #00D2FF);
+      color: #07090E;
+      box-shadow: 0 4px 15px rgba(0, 255, 136, 0.3);
+    }
+
+    .btn-primary:hover {
+      box-shadow: 0 6px 22px rgba(0, 255, 136, 0.5);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .btn-danger {
+      background: rgba(255, 51, 102, 0.12);
+      color: var(--accent-red);
+      border: 1px solid rgba(255, 51, 102, 0.3);
+    }
+
+    .btn-danger:hover {
+      background: rgba(255, 51, 102, 0.22);
+    }
+
+    /* AuraDrop Dropzone */
+    .dropzone {
+      border: 2px dashed rgba(0, 210, 255, 0.35);
+      border-radius: 16px;
+      padding: 3rem 2rem;
+      text-align: center;
+      background: rgba(0, 210, 255, 0.02);
+      transition: all 0.25s ease;
+      cursor: pointer;
+      margin-bottom: 1.5rem;
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--accent-green);
+      background: rgba(0, 255, 136, 0.06);
+      transform: scale(1.01);
+    }
+
+    .dropzone svg {
+      width: 48px;
+      height: 48px;
+      fill: var(--accent-cyan);
+      margin-bottom: 1rem;
+    }
+
+    .progress-bar-container {
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 999px;
+      height: 8px;
+      width: 100%;
+      overflow: hidden;
+      margin: 1rem 0 0.5rem;
+      display: none;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #00FF88, #00D2FF);
+      transition: width 0.1s linear;
+    }
+
+    /* Received Files Table */
+    .files-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      transition: all 0.2s ease;
+    }
+
+    .file-item:hover {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(0, 210, 255, 0.25);
+    }
+
+    .file-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .file-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: rgba(0, 210, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent-cyan);
+    }
+
+    .file-details h4 {
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    .file-details p {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 0.9rem;
+    }
+
+    .info-row:last-child {
+      border-bottom: none;
+    }
+
+    .info-label {
+      color: var(--text-muted);
+    }
+
+    .info-val {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .clipboard-box {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 12px;
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      resize: vertical;
+      min-height: 90px;
+      margin-bottom: 1rem;
+    }
+
+    .clipboard-box:focus {
+      outline: none;
+      border-color: var(--accent-cyan);
+    }
+
+    .log-container {
+      background: #030508;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      height: 320px;
+      overflow-y: auto;
+      color: #A0AEC0;
+      line-height: 1.6;
+    }
+
+    .log-entry {
+      margin-bottom: 4px;
+    }
+
+    .log-time {
+      color: #4A5568;
+    }
+
+    .log-success { color: var(--accent-green); }
+    .log-info { color: var(--accent-cyan); }
+    .log-warn { color: var(--accent-yellow); }
+    .log-error { color: var(--accent-red); }
+
+    /* Toast Notification */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: rgba(16, 22, 34, 0.95);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--accent-green);
+      color: #FFFFFF;
+      padding: 12px 20px;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 500;
+      z-index: 1000;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    #toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="brand-logo">
+        <svg viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+      </div>
+      <div class="brand-text">
+        <h1>AuraLock Control Center</h1>
+        <span>REMOTE BIOMETRIC SECURITY & AURADROP • MSM.MOVIN</span>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <div class="status-pill" id="ble-pill" title="Bluetooth Proximity Radar">
+        <div class="status-dot" id="ble-dot"></div>
+        <span id="ble-text">🔵 BLE: Radar Listening</span>
+      </div>
+      <div class="status-pill" id="wifi-pill" title="Local Wi-Fi Hardware Tunnel">
+        <div class="status-dot" id="wifi-dot"></div>
+        <span id="wifi-text">📶 Wi-Fi: Standby</span>
+      </div>
+    </div>
+  </header>
+
+  <nav class="nav-tabs">
+    <button class="tab-btn active" onclick="switchTab('pairing')">
+      <span>🔐</span> Security & Pairing
+    </button>
+    <button class="tab-btn" onclick="switchTab('auradrop')">
+      <span>🚀</span> AuraDrop (PC ➔ Phone)
+    </button>
+    <button class="tab-btn" onclick="switchTab('received')">
+      <span>📥</span> Received Files (<span id="received-badge">0</span>)
+    </button>
+    <button class="tab-btn" onclick="switchTab('diagnostics')">
+      <span>📊</span> Logs & Diagnostics
+    </button>
+  </nav>
+
+  <main>
+    <!-- TAB 1: PAIRING & SECURITY -->
+    <div id="tab-pairing" class="tab-content active">
+      <!-- VIEW A: UNPAIRED SETUP (ONLY SHOWN IF NO DEVICE IS PAIRED) -->
+      <div id="unpaired-view" class="grid-2">
+        <div class="card">
+          <h2 class="card-title">📱 Scan QR with Mobile App</h2>
+          <p class="card-subtitle">Open AuraLock on your Android phone and point camera at QR Code</p>
+
+          <div class="qr-container">
+            <div id="qrcode"></div>
+          </div>
+
+          <div style="text-align: center;">
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px;">6-DIGIT PAIRING PIN</p>
+            <div id="pin-display" class="pin-badge" onclick="copyPin()">------</div>
+            <button class="btn btn-secondary" onclick="refreshPairing()" style="width: 100%;">
+              <span>🔄</span> Refresh Pairing Session & PIN
+            </button>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; justify-content: space-between;" class="card">
+          <div>
+            <h2 class="card-title">🔒 Single-Device Security Link</h2>
+            <p class="card-subtitle">Zero-Trust hardware binding for Linux PAM lockscreen</p>
+
+            <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 14px;">
+              <div style="display: flex; gap: 12px; align-items: flex-start;">
+                <div style="font-size: 1.5rem;">🔑</div>
+                <div>
+                  <h4 style="font-size: 0.95rem; font-weight: 600; color: #FFF;">Hardware Keystore Signature</h4>
+                  <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">Private Ed25519 signature keys never leave the phone's hardware TEE enclave.</p>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 12px; align-items: flex-start;">
+                <div style="font-size: 1.5rem;">🛡️</div>
+                <div>
+                  <h4 style="font-size: 0.95rem; font-weight: 600; color: #FFF;">Single Paired Device Policy</h4>
+                  <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">Only 1 smartphone can be paired at a time. Once paired, pairing setup is locked until unpaired.</p>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 12px; align-items: flex-start;">
+                <div style="font-size: 1.5rem;">💤</div>
+                <div>
+                  <h4 style="font-size: 0.95rem; font-weight: 600; color: #FFF;">Sleep, Boot & Lockscreen Protection</h4>
+                  <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">Triggers fingerprint challenge automatically on wakeup, sleep, restart or login. Fallback to PC password available anytime.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 12px; background: rgba(0, 210, 255, 0.05); border: 1px solid rgba(0, 210, 255, 0.15); border-radius: 10px; margin-top: 1rem;">
+            <p style="font-size: 0.8rem; color: var(--accent-cyan); text-align: center;">
+              Awaiting pairing connection from AuraLock Mobile App...
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW B: PAIRED ACTIVE DASHBOARD (SHOWN WHEN PAIRED) -->
+      <div id="paired-view" class="grid-2" style="display: none;">
+        <div class="card">
+          <div style="display: inline-block; padding: 4px 10px; background: rgba(0,255,136,0.15); border: 1px solid rgba(0,255,136,0.4); border-radius: 6px; font-size: 0.75rem; font-weight: 700; color: var(--accent-green); margin-bottom: 12px;">PAIRED & ARMED</div>
+          <h2 class="card-title">📱 Active Paired Smartphone</h2>
+          <p class="card-subtitle">Physical biometric hardware key authorized for PC unlock</p>
+
+          <div class="info-row">
+            <span class="info-label">Paired Device:</span>
+            <span id="phone-name-val" class="info-val" style="color: var(--accent-green);">Samsung Galaxy / Pixel</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Connection Status:</span>
+            <span id="phone-conn-val" class="info-val">Standby</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">PC Hostname:</span>
+            <span id="pc-name-val" class="info-val">...</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Daemon Port:</span>
+            <span id="pc-port-val" class="info-val">47890</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Split-Key Vault:</span>
+            <span id="vault-status-val" class="info-val">Encrypted (Ready)</span>
+          </div>
+
+          <div style="display: flex; gap: 10px; margin-top: 1.5rem;">
+            <button class="btn btn-primary" onclick="testUnlock()" style="flex: 1;">
+              <span>🧪</span> Test Biometric Challenge
+            </button>
+            <button class="btn btn-danger" onclick="unpairDevice()">
+              <span>🗑️</span> Unpair Device
+            </button>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+          <div class="card">
+            <h2 class="card-title">🔑 Update PC Login Password</h2>
+            <p class="card-subtitle">Encrypted securely into local PAM split-key vault (ChaCha20-Poly1305)</p>
+            <div style="display: flex; gap: 10px;">
+              <input type="password" id="new-password" placeholder="Enter PC Login Password" style="flex: 1; padding: 10px 14px; background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); border-radius: 10px; color: #FFF; font-family: var(--font-mono);">
+              <button class="btn btn-secondary" onclick="savePassword()">Save to Vault</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2 class="card-title">🛡️ Security Policy Active</h2>
+            <p class="card-subtitle">Remote Biometric Authentication Settings</p>
+            <div class="info-row">
+              <span class="info-label">Lockscreen & Wake Trigger:</span>
+              <span class="info-val" style="color: var(--accent-green);">Auto-Armed</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Password Fallback:</span>
+              <span class="info-val" style="color: var(--accent-cyan);">Enabled (PAM Auto-Fallback)</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">New Pairing Policy:</span>
+              <span class="info-val">Locked (Unpair to switch phone)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: AURADROP (SEND TO PHONE) -->
+    <div id="tab-auradrop" class="tab-content">
+      <div class="grid-2">
+        <div class="card">
+          <h2 class="card-title">⚡ AuraDrop Send (Laptop ➔ Mobile)</h2>
+          <p class="card-subtitle">Instantly stream any file to your paired phone over local high-speed Wi-Fi</p>
+
+          <input type="file" id="file-input" style="display: none;" onchange="handleFileSelected(this.files)">
+          <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+            <svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+            <h3 style="font-size: 1.1rem; margin-bottom: 6px;">Drag & Drop Files Here</h3>
+            <p style="font-size: 0.85rem; color: var(--text-muted);">or click to browse from PC</p>
+          </div>
+
+          <div id="upload-progress-box" class="progress-bar-container">
+            <div id="upload-progress-fill" class="progress-bar-fill"></div>
+          </div>
+          <div id="upload-status-text" style="font-size: 0.85rem; color: var(--text-muted); text-align: center; margin-top: 4px;"></div>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title">📋 Push Clipboard / Text to Phone</h2>
+          <p class="card-subtitle">Share links, notes, or verification codes directly to mobile screen</p>
+
+          <textarea id="clipboard-text" class="clipboard-box" placeholder="Type or paste text/URL here to send to phone..."></textarea>
+          <button class="btn btn-primary" onclick="sendClipboard()" style="width: 100%;">
+            <span>📤</span> Push Text to Phone
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: RECEIVED FILES (PHONE TO PC) -->
+    <div id="tab-received" class="tab-content">
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+          <div>
+            <h2 class="card-title">📥 Received Files from Phone</h2>
+            <p class="card-subtitle" style="margin-bottom: 0;">Files sent via AuraDrop saved directly to your PC</p>
+          </div>
+          <button class="btn btn-secondary" onclick="openDownloadsFolder()">
+            <span>📂</span> Open Downloads/AuraLock Folder
+          </button>
+        </div>
+
+        <div id="files-list" class="files-list">
+          <p style="text-align: center; color: var(--text-muted); padding: 2rem;">No files received yet. Share files from your phone's AuraLock app!</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: DIAGNOSTICS & LOGS -->
+    <div id="tab-diagnostics" class="tab-content">
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <div>
+            <h2 class="card-title">📊 Live Daemon Event Stream</h2>
+            <p class="card-subtitle" style="margin-bottom: 0;">Real-time biometric challenges, PAM IPC triggers & handshake logs</p>
+          </div>
+          <button class="btn btn-secondary" onclick="clearLogs()">Clear Console</button>
+        </div>
+
+        <div id="log-container" class="log-container">
+          <div class="log-entry"><span class="log-time">[System]</span> <span class="log-info">AuraLock Desktop UI connected to core daemon at port 47890.</span></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast">
+    <span id="toast-icon">✅</span>
+    <span id="toast-message">Action completed successfully!</span>
+  </div>
+
+  <script>
+    let currentPin = "";
+    let qrcodeObj = null;
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      
+      const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.onclick.toString().includes(tabId));
+      if (btn) btn.classList.add('active');
+      
+      const content = document.getElementById('tab-' + tabId);
+      if (content) content.classList.add('active');
+    }
+
+    function showToast(msg, icon = "✅") {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-icon').innerText = icon;
+      document.getElementById('toast-message').innerText = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3500);
+    }
+
+    function log(msg, type = "info") {
+      const container = document.getElementById('log-container');
+      const time = new Date().toLocaleTimeString();
+      const div = document.createElement('div');
+      div.className = 'log-entry';
+      div.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-${type}">${msg}</span>`;
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function clearLogs() {
+      document.getElementById('log-container').innerHTML = '';
+    }
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        
+        document.getElementById('pc-name-val').innerText = data.pc_name || 'AuraLock-PC';
+        document.getElementById('pc-port-val').innerText = data.port || 47890;
+
+        // Dynamic view toggle: When paired, remove QR pairing setup and show Paired Active Card
+        const unpairedView = document.getElementById('unpaired-view');
+        const pairedView = document.getElementById('paired-view');
+        if (unpairedView && pairedView) {
+          if (data.is_paired) {
+            unpairedView.style.display = 'none';
+            pairedView.style.display = 'grid';
+          } else {
+            unpairedView.style.display = 'grid';
+            pairedView.style.display = 'none';
+          }
+        }
+
+        const phoneConn = document.getElementById('phone-conn-val');
+        if (phoneConn) {
+          if (data.is_phone_connected) {
+            phoneConn.innerText = 'Connected & Armed';
+            phoneConn.style.color = 'var(--accent-green)';
+          } else {
+            phoneConn.innerText = 'Standby (Awaiting Phone Connection)';
+            phoneConn.style.color = 'var(--text-muted)';
+          }
+        }
+        
+        // Dual Status Pills (Wi-Fi & Bluetooth)
+        const wifiDot = document.getElementById('wifi-dot');
+        const wifiText = document.getElementById('wifi-text');
+        const bleDot = document.getElementById('ble-dot');
+        const bleText = document.getElementById('ble-text');
+
+        if (data.is_bluetooth_active === false) {
+          if (bleDot) {
+            bleDot.className = 'status-dot disconnected';
+            bleDot.style.background = 'var(--accent-red)';
+            bleDot.style.boxShadow = '0 0 10px var(--accent-red)';
+          }
+          if (bleText) bleText.innerText = '🔴 BLE: Adapter Off (Disabled)';
+        } else if (data.is_phone_connected) {
+          if (bleDot) {
+            bleDot.className = 'status-dot connected';
+            bleDot.style.background = 'var(--accent-green)';
+            bleDot.style.boxShadow = '0 0 10px var(--accent-green)';
+          }
+          if (bleText) bleText.innerText = '🔵 BLE: Proximity Active';
+        } else if (data.is_paired) {
+          if (bleDot) {
+            bleDot.className = 'status-dot';
+            bleDot.style.background = 'var(--accent-purple)';
+            bleDot.style.boxShadow = '0 0 10px var(--accent-purple)';
+          }
+          if (bleText) bleText.innerText = '🔵 BLE: Radar Listening';
+        } else {
+          if (bleDot) {
+            bleDot.className = 'status-dot disconnected';
+            bleDot.style.background = 'var(--accent-yellow)';
+            bleDot.style.boxShadow = '0 0 10px var(--accent-yellow)';
+          }
+          if (bleText) bleText.innerText = '🔵 BLE: Setup Ready';
+        }
+
+        if (data.is_phone_connected) {
+          if (wifiDot) wifiDot.className = 'status-dot connected';
+          if (wifiText) wifiText.innerText = '📶 Wi-Fi: Connected (' + (data.connected_phone || 'Phone') + ')';
+        } else if (data.is_paired) {
+          if (wifiDot) wifiDot.className = 'status-dot';
+          if (wifiText) wifiText.innerText = '📶 Wi-Fi: Standby (Paired)';
+        } else {
+          if (wifiDot) wifiDot.className = 'status-dot disconnected';
+          if (wifiText) wifiText.innerText = '📶 Wi-Fi: Unpaired';
+        }
+
+        if (data.paired_phone) {
+          document.getElementById('phone-name-val').innerText = data.paired_phone;
+        } else {
+          document.getElementById('phone-name-val').innerText = 'No Device Paired';
+        }
+
+        if (data.vault_exists) {
+          document.getElementById('vault-status-val').innerText = 'Encrypted (Ready)';
+          document.getElementById('vault-status-val').style.color = 'var(--accent-green)';
+        } else {
+          document.getElementById('vault-status-val').innerText = 'Unset (Password Required)';
+          document.getElementById('vault-status-val').style.color = 'var(--accent-yellow)';
+        }
+      } catch (e) {
+        console.error("Status fetch error", e);
+      }
+    }
+
+    async function fetchQr() {
+      try {
+        const res = await fetch('/api/qr');
+        const data = await res.json();
+        currentPin = data.pin;
+        document.getElementById('pin-display').innerText = data.pin;
+
+        const qrContainer = document.getElementById('qrcode');
+        qrContainer.innerHTML = '';
+        qrcodeObj = new QRCode(qrContainer, {
+          text: JSON.stringify(data.qr_data),
+          width: 220,
+          height: 220,
+          colorDark: "#000000",
+          colorLight: "#ffffff",
+          correctLevel: QRCode.CorrectLevel.M
+        });
+      } catch (e) {
+        console.error("QR fetch error", e);
+      }
+    }
+
+    async function refreshPairing() {
+      try {
+        await fetch('/api/pair/refresh', { method: 'POST' });
+        await fetchQr();
+        showToast("Generated new pairing session & PIN", "🔄");
+        log("Generated fresh pairing QR & 6-digit PIN", "info");
+      } catch (e) {
+        showToast("Failed to refresh pairing", "❌");
+      }
+    }
+
+    function copyPin() {
+      if (!currentPin) return;
+      navigator.clipboard.writeText(currentPin);
+      showToast("PIN " + currentPin + " copied to clipboard!", "📋");
+    }
+
+    async function testUnlock() {
+      showToast("Sending biometric challenge to phone...", "🧪");
+      log("Triggering manual test biometric challenge...", "info");
+      try {
+        const res = await fetch('/api/unlock/test', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast("Challenge sent! Touch fingerprint on phone.", "📱");
+        } else {
+          showToast(data.message || "No phone connected", "⚠️");
+          log("Challenge failed: " + data.message, "warn");
+        }
+      } catch (e) {
+        showToast("Error sending challenge", "❌");
+      }
+    }
+
+    async function savePassword() {
+      const pwd = document.getElementById('new-password').value;
+      if (!pwd) {
+        showToast("Please enter a password", "⚠️");
+        return;
+      }
+      try {
+        const res = await fetch('/api/vault/password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pwd })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast("PC Password saved to Split-Key Vault!", "🔐");
+          document.getElementById('new-password').value = '';
+          fetchStatus();
+          log("Updated split-key vault with PC login password", "success");
+        }
+      } catch (e) {
+        showToast("Failed to save password", "❌");
+      }
+    }
+
+    async function unpairDevice() {
+      if (!confirm("Are you sure you want to unpair your Android phone?")) return;
+      try {
+        await fetch('/api/vault/unpair', { method: 'POST' });
+        showToast("Device unpaired", "🗑️");
+        fetchStatus();
+        fetchQr();
+        log("Device unpaired by user", "warn");
+      } catch (e) {
+        showToast("Failed to unpair", "❌");
+      }
+    }
+
+    async function sendClipboard() {
+      const text = document.getElementById('clipboard-text').value.trim();
+      if (!text) {
+        showToast("Please enter text to send", "⚠️");
+        return;
+      }
+      try {
+        const res = await fetch('/api/auradrop/send-text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast("Sent to Phone via AuraDrop!", "🚀");
+          document.getElementById('clipboard-text').value = '';
+          log("Sent clipboard text to phone (" + text.length + " chars)", "success");
+        } else {
+          showToast(data.message || "Failed to send", "❌");
+        }
+      } catch (e) {
+        showToast("Failed to send clipboard", "❌");
+      }
+    }
+
+    async function handleFileSelected(files) {
+      if (!files || files.length === 0) return;
+      const file = files[0];
+      
+      const progressBox = document.getElementById('upload-progress-box');
+      const progressFill = document.getElementById('upload-progress-fill');
+      const statusText = document.getElementById('upload-status-text');
+
+      progressBox.style.display = 'block';
+      progressFill.style.width = '10%';
+      statusText.innerText = `Streaming ${file.name} to Phone...`;
+      log(`Starting AuraDrop file transfer: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`, "info");
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await fetch('/api/auradrop/send-file', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (data.success) {
+          progressFill.style.width = '100%';
+          statusText.innerText = `✅ Sent ${file.name} successfully!`;
+          showToast(`Sent ${file.name} to Phone!`, "🚀");
+          log(`File ${file.name} successfully transferred to phone`, "success");
+          setTimeout(() => { progressBox.style.display = 'none'; statusText.innerText = ''; }, 3000);
+        } else {
+          statusText.innerText = `❌ ${data.message || 'Transfer failed'}`;
+          showToast(data.message || "Transfer failed", "❌");
+          log(`File transfer failed: ${data.message}`, "error");
+        }
+      } catch (e) {
+        statusText.innerText = '❌ Failed to transfer file';
+        showToast("Transfer error", "❌");
+      }
+    }
+
+    async function fetchReceivedFiles() {
+      try {
+        const res = await fetch('/api/auradrop/files');
+        const files = await res.json();
+        const list = document.getElementById('files-list');
+        document.getElementById('received-badge').innerText = files.length;
+
+        if (files.length === 0) {
+          list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 2rem;">No files received yet. Share files from your phone\'s AuraLock app!</p>';
+          return;
+        }
+
+        list.innerHTML = files.map(f => `
+          <div class="file-item">
+            <div class="file-info">
+              <div class="file-icon">📄</div>
+              <div class="file-details">
+                <h4>${f.file_name}</h4>
+                <p>${(f.file_size / 1024 / 1024).toFixed(2)} MB • From ${f.sender_name || 'Phone'}</p>
+              </div>
+            </div>
+            <a href="/api/auradrop/download/${encodeURIComponent(f.file_name)}" class="btn btn-secondary" style="padding: 6px 12px; text-decoration: none;">
+              ⬇️ Save
+            </a>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error("Fetch files error", e);
+      }
+    }
+
+    async function openDownloadsFolder() {
+      try {
+        await fetch('/api/auradrop/open-folder', { method: 'POST' });
+        showToast("Opened Downloads/AuraLock in file manager", "📂");
+      } catch (e) {
+        showToast("Could not open folder", "⚠️");
+      }
+    }
+
+    // Drag & Drop Setup
+    const dropzone = document.getElementById('dropzone');
+    ['dragenter', 'dragover'].forEach(name => {
+      dropzone.addEventListener(name, (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    });
+    ['dragleave', 'drop'].forEach(name => {
+      dropzone.addEventListener(name, (e) => { e.preventDefault(); dropzone.classList.remove('dragover'); });
+    });
+    dropzone.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      if (dt.files && dt.files.length > 0) {
+        handleFileSelected(dt.files);
+      }
+    });
+
+    // WebSocket / Event Stream Setup
+    function setupWebSocket() {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${location.host}/api/events`;
+      const ws = new WebSocket(wsUrl);
+
+      ws.onmessage = (event) => {
+        try {
+          const ev = JSON.parse(event.data);
+          if (ev.type === 'ClientConnected') {
+            log(`Phone connected: ${ev.data.phone_name}`, "success");
+            showToast(`Connected to ${ev.data.phone_name}`, "📱");
+            fetchStatus();
+          } else if (ev.type === 'ClientDisconnected') {
+            log("Phone disconnected", "warn");
+            fetchStatus();
+          } else if (ev.type === 'DeviceUnpaired') {
+            log("Device unpaired in real-time", "warn");
+            showToast("Device unpaired", "🗑️");
+            fetchStatus();
+            fetchQr();
+          } else if (ev.type === 'PairingSuccess') {
+            log(`Pairing completed with ${ev.data.phone_name}`, "success");
+            showToast(`Paired with ${ev.data.phone_name}!`, "🎉");
+            fetchStatus();
+          } else if (ev.type === 'UnlockEvent') {
+            if (ev.data.success) {
+              log("Biometric signature verified! PC Authorized 🔓", "success");
+              showToast("Biometric Verified! PC Unlocked 🚀", "🔓");
+            } else {
+              log(`Unlock rejected: ${ev.data.message}`, "error");
+              showToast(`Unlock denied: ${ev.data.message}`, "❌");
+            }
+          } else if (ev.type === 'FileTransferCompleted') {
+            if (ev.data.is_incoming) {
+              log(`Received file: ${ev.data.file_name}`, "success");
+              showToast(`Received ${ev.data.file_name} from phone!`, "📥");
+              fetchReceivedFiles();
+            }
+          } else if (ev.type === 'ClipboardReceived') {
+            log(`Received clipboard from phone: "${ev.data.text}"`, "info");
+            showToast("Clipboard text received from phone!", "📋");
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      };
+
+      ws.onclose = () => {
+        setTimeout(setupWebSocket, 2000);
+      };
+    }
+
+    // Initial boot
+    fetchStatus();
+    fetchQr();
+    fetchReceivedFiles();
+    setupWebSocket();
+    setInterval(fetchStatus, 5000);
+  </script>
+</body>
+</html>

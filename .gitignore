@@ -27,6 +27,8 @@ mobile/android-app/*.aab
 # Local secrets & vaults
 vault.json
 *.key
-*.pem
-*.sock
 /tmp/auralock*
+node_modules/
+dist/
+dist-*/
+org/

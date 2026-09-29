@@ -10,6 +10,7 @@ pub mod network;
 pub mod protocol;
 pub mod state;
 pub mod vault;
+pub mod web;
 
 pub use error::{AuraLockError, Result};
 pub use protocol::{

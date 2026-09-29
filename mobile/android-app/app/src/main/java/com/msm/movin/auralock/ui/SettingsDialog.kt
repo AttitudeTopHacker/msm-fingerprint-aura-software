@@ -208,7 +208,6 @@ fun SettingsDialog(
                         if (pingResult != null) {
                             Spacer(modifier = Modifier.height(8.dp))
                             val ms = pingResult!!
-                            val isFast = ms >= 0 && ms < 30
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -279,9 +278,27 @@ fun SettingsDialog(
     if (showUnpairConfirm) {
         AlertDialog(
             onDismissRequest = { showUnpairConfirm = false },
-            title = { Text("Unpair $pcName?") },
+            containerColor = Color(0xFF0F172A),
+            titleContentColor = Color.White,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = Color(0xFFEF4444),
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Unpair $pcName?", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                }
+            },
             text = {
-                Text("This will remove the saved connection and hardware link with this PC. You will need to re-scan the pairing QR code.")
+                Text(
+                    text = "Are you sure you want to unpair from $pcName? The connection will be removed immediately.",
+                    fontSize = 13.sp,
+                    color = Color(0xFF94A3B8),
+                    lineHeight = 18.sp
+                )
             },
             confirmButton = {
                 Button(
@@ -292,12 +309,12 @@ fun SettingsDialog(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
                 ) {
-                    Text("Yes, Unpair")
+                    Text("Yes, Unpair", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showUnpairConfirm = false }) {
-                    Text("Cancel")
+                    Text("Cancel", color = Color(0xFF94A3B8))
                 }
             }
         )

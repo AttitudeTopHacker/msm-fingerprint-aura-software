@@ -8,6 +8,7 @@ use auralock_core::network::NetworkService;
 use auralock_core::protocol::DEFAULT_AURALOCK_PORT;
 use auralock_core::state::{SessionLockState, StateManager};
 use auralock_core::vault::{PairedPhone, SecretBytes, VaultManager};
+use auralock_core::web::{start_web_server, DEFAULT_AURALOCK_WEB_PORT};
 use clap::{Parser, Subcommand};
 use colored::*;
 use std::path::PathBuf;
@@ -18,18 +19,29 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[command(name = "auralock")]
 #[command(author = "msm.movin")]
 #[command(version = "0.1.0")]
-#[command(about = "Instant Remote Biometric Unlock for Windows & Linux", long_about = None)]
+#[command(about = "Instant Remote Biometric Unlock & AuraDrop for Windows & Linux", long_about = None)]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Start the AuraLock background daemon
+    /// Start the AuraLock background daemon & Desktop Control Center UI
     Daemon {
         #[arg(short, long, default_value_t = DEFAULT_AURALOCK_PORT)]
         port: u16,
+        #[arg(long, default_value_t = DEFAULT_AURALOCK_WEB_PORT)]
+        web_port: u16,
+        #[arg(long)]
+        headless: bool,
+    },
+    /// Open the AuraLock Desktop Control Center UI in browser
+    Gui {
+        #[arg(short, long, default_value_t = DEFAULT_AURALOCK_PORT)]
+        port: u16,
+        #[arg(long, default_value_t = DEFAULT_AURALOCK_WEB_PORT)]
+        web_port: u16,
     },
     /// Pair a new Android phone using terminal QR code
     Pair {
@@ -40,15 +52,6 @@ enum Commands {
     TestUnlock,
     /// Display device pairing & vault status
     Status,
-    /// Simulate a virtual phone client for end-to-end testing
-    MockPhone {
-        #[arg(long, default_value = "127.0.0.1")]
-        host: String,
-        #[arg(short, long, default_value_t = DEFAULT_AURALOCK_PORT)]
-        port: u16,
-        #[arg(short, long)]
-        pin: Option<String>,
-    },
 }
 
 fn get_default_vault_path() -> PathBuf {
@@ -72,6 +75,55 @@ mod dirs_next {
     }
 }
 
+fn launch_desktop_window(url: &str) {
+    let app_flag = format!("--app={}", url);
+    let window_flag = "--window-size=1180,800";
+    let profile_dir = format!(
+        "--user-data-dir={}/.auralock_app_profile",
+        dirs_next::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .display()
+    );
+
+    #[cfg(unix)]
+    {
+        let candidates = [
+            "google-chrome",
+            "chromium",
+            "chromium-browser",
+            "brave-browser",
+            "microsoft-edge",
+            "opera",
+        ];
+        for cmd in candidates {
+            if std::process::Command::new(cmd)
+                .args([&app_flag, window_flag, &profile_dir])
+                .spawn()
+                .is_ok()
+            {
+                return;
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        let candidates = ["msedge", "chrome", "brave"];
+        for cmd in candidates {
+            if std::process::Command::new(cmd)
+                .args([&app_flag, window_flag, &profile_dir])
+                .spawn()
+                .is_ok()
+            {
+                return;
+            }
+        }
+    }
+
+    let _ = open::that(url);
+}
+
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::registry()
@@ -83,18 +135,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let vault_path = get_default_vault_path();
     let vault_mgr = Arc::new(VaultManager::new(&vault_path));
 
-    match cli.command {
-        Commands::Daemon { port } => {
+    let cmd = cli.command.unwrap_or(Commands::Gui {
+        port: DEFAULT_AURALOCK_PORT,
+        web_port: DEFAULT_AURALOCK_WEB_PORT,
+    });
+
+    let (port, web_port, is_gui) = match cmd {
+        Commands::Daemon { port, web_port, headless } => (port, web_port, !headless),
+        Commands::Gui { port, web_port } => (port, web_port, true),
+        _ => (DEFAULT_AURALOCK_PORT, DEFAULT_AURALOCK_WEB_PORT, false),
+    };
+
+    match cmd {
+        Commands::Daemon { .. } | Commands::Gui { .. } => {
             println!("{}", "══════════════════════════════════════════════════".cyan());
-            println!("{}", "  🌟 AuraLock Core Daemon (msm.movin)".bold().green());
-            println!("{}", "  Instant Remote Biometric Unlock for Windows & Linux".white());
+            println!("{}", "  🌟 AuraLock Desktop Control Center & Daemon".bold().green());
+            println!("{}", "  Remote Biometric Security & AuraDrop (msm.movin)".white());
             println!("{}", "══════════════════════════════════════════════════\n".cyan());
 
             let paired_phone = vault_mgr.load().ok().and_then(|v| v.paired_phone);
             if let Some(ref phone) = paired_phone {
                 println!("  📱 Paired Device: {}", phone.device_name.bold().yellow());
             } else {
-                println!("  ⚠️  {}", "No phone paired yet. Run `auralock pair` to link your device.".yellow());
+                println!("  ⚠️  {}", "No phone paired yet. Open Desktop UI to link your phone.".yellow());
             }
 
             let state_mgr = StateManager::new(paired_phone);
@@ -125,7 +188,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("  🔌 Linux PAM IPC socket active at {}", auralock_core::ipc::DEFAULT_UNIX_SOCKET_PATH.green());
             }
 
-            println!("  🚀 Network daemon running on port {}. Press Ctrl+C to stop.\n", port);
+            // Start Desktop Control Center Native App Window
+            if let Err(e) = start_web_server(Arc::clone(&net_service), web_port).await {
+                eprintln!("  ⚠️ Failed to start Web server: {:?}", e);
+            } else {
+                let ui_url = format!("http://127.0.0.1:{}", web_port);
+                println!("  🖥️  Desktop App Window: {}", ui_url.bold().green());
+                if is_gui {
+                    launch_desktop_window(&ui_url);
+                }
+            }
+
+            println!("  🚀 Mobile network listener on port {}. Press Ctrl+C to stop.\n", port);
             net_service.run_listener().await?;
         }
         Commands::Pair { port } => {
@@ -222,103 +296,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  Nonce:                {}", challenge.nonce_hex);
             println!("  Timestamp:            {}", challenge.timestamp_epoch);
             println!("\n  Waiting for biometric signature from phone...");
-        }
-        Commands::MockPhone { host, port, pin } => {
-            println!("{}", "══════════════════════════════════════════════════".cyan());
-            println!("{}", "  📱 AuraLock Virtual Phone Simulator (msm.movin)".bold().green());
-            println!("{}", "  Simulating Android Biometric KeyStore Client".white());
-            println!("{}", "══════════════════════════════════════════════════\n".cyan());
-
-            use auralock_core::protocol::{PairingRequest, ProtocolMessage, UnlockResponse};
-            use ed25519_dalek::{Signer, SigningKey};
-            use rand::rngs::OsRng;
-            use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-            use tokio::net::TcpStream;
-
-            let mut csprng = OsRng;
-            let signing_key = SigningKey::generate(&mut csprng);
-            let verifying_key = signing_key.verifying_key();
-            let pub_hex = hex::encode(verifying_key.as_bytes());
-
-            println!("  🔑 Generated Virtual KeyStore PubKey: {}", pub_hex.bold().yellow());
-            println!("  🌐 Connecting to AuraLock PC at {}:{}...", host, port);
-
-            let stream = match TcpStream::connect((host.as_str(), port)).await {
-                Ok(s) => s,
-                Err(e) => {
-                    eprintln!("  ❌ Failed to connect: {}. Is 'auralock daemon' running?", e);
-                    return Ok(());
-                }
-            };
-            println!("  ✅ Connected to PC over Wi-Fi socket!\n");
-
-            let (reader, mut writer) = stream.into_split();
-            let mut buf_reader = BufReader::new(reader);
-
-            if let Some(pairing_pin) = pin {
-                println!("  📤 Sending Pairing Request with PIN: {}...", pairing_pin.bold().green());
-                let req = ProtocolMessage::PairingReq(PairingRequest {
-                    phone_name: "Pixel 8 Pro (Simulated)".to_string(),
-                    phone_ed25519_pub_hex: pub_hex.clone(),
-                    phone_ephem_pub_hex: pub_hex.clone(),
-                    pin: pairing_pin,
-                });
-                let json = serde_json::to_string(&req)?;
-                writer.write_all(format!("{}\n", json).as_bytes()).await?;
-            }
-
-            println!("  🎧 Listening for PC Lockscreen Challenge (touch fingerprint to unlock)...");
-
-            let mut line = String::new();
-            while buf_reader.read_line(&mut line).await? > 0 {
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    continue;
-                }
-
-                if let Ok(msg) = serde_json::from_str::<ProtocolMessage>(trimmed) {
-                    match msg {
-                        ProtocolMessage::PairingResp(resp) => {
-                            if resp.success {
-                                println!("  🎉 {}", "Pairing Approved by PC!".bold().green());
-                            } else {
-                                println!("  ❌ Pairing Failed: {}", resp.message.red());
-                            }
-                        }
-                        ProtocolMessage::Challenge(challenge) => {
-                            println!("\n  🚨 {}", "PC LOCKSCREEN CHALLENGE RECEIVED!".bold().yellow());
-                            println!("     Challenge ID: {}", challenge.challenge_id.cyan());
-                            println!("     PC Name:      {}", challenge.pc_name);
-                            println!("     Timestamp:    {}", challenge.timestamp_epoch);
-                            println!("  👉 [Simulating Live Android Fingerprint Sensor Tap]...");
-
-                            let signable_payload = challenge.get_signable_payload();
-                            let signature = signing_key.sign(&signable_payload);
-                            let sig_hex = hex::encode(signature.to_bytes());
-
-                            let response_msg = ProtocolMessage::Response(UnlockResponse {
-                                challenge_id: challenge.challenge_id,
-                                signature_hex: sig_hex,
-                                biometric_type: "fingerprint".into(),
-                                timestamp_epoch: chrono::Utc::now().timestamp(),
-                            });
-
-                            let json = serde_json::to_string(&response_msg)?;
-                            writer.write_all(format!("{}\n", json).as_bytes()).await?;
-                            println!("  📤 Sent Verified Biometric Signature to PC!");
-                        }
-                        ProtocolMessage::Result(result) => {
-                            if result.success {
-                                println!("\n  🔓 {}", "PC UNLOCK APPROVED & CONFIRMED! 🚀".bold().green());
-                            } else {
-                                println!("\n  ❌ Unlock Denied: {}", result.message.red());
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                line.clear();
-            }
         }
     }
 

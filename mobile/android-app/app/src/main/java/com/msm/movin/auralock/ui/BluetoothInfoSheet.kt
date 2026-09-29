@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.sp
 fun BluetoothInfoSheet(
     isConnected: Boolean,
     currentIp: String,
+    isPhoneBluetoothOn: Boolean = true,
+    isPcBluetoothOn: Boolean = true,
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(
@@ -109,14 +111,27 @@ fun BluetoothInfoSheet(
             Spacer(modifier = Modifier.height(14.dp))
 
             // Channel 2: Bluetooth LE Proximity
+            val bleBadge = if (isConnected && isPcBluetoothOn && isPhoneBluetoothOn) "Dual BLE Linked 🟢"
+                else if (isConnected && !isPcBluetoothOn) "PC BT Off 🔴"
+                else if (!isPhoneBluetoothOn) "Phone BT Off 🟡"
+                else "BLE Standby"
+            val bleColor = if (isConnected && isPcBluetoothOn && isPhoneBluetoothOn) Color(0xFF059669)
+                else if (isConnected && !isPcBluetoothOn) Color(0xFFDC2626)
+                else if (!isPhoneBluetoothOn) Color(0xFFD97706)
+                else Color(0xFF6366F1)
+            val bleDesc = if (isConnected && !isPcBluetoothOn) "⚠️ PC Bluetooth is currently turned OFF. Turn on Bluetooth on your PC to enable proximity radar."
+                else if (!isPhoneBluetoothOn) "⚠️ Phone Bluetooth is turned OFF. Enable Bluetooth on this device to enable proximity radar."
+                else "When you walk up to your PC (within 2-3 meters), the PC detects your phone's BLE RSSI signal and automatically triggers the fingerprint challenge on your screen!"
+
             ChannelCard(
                 icon = Icons.Default.Bluetooth,
-                iconTint = Color(0xFF818CF8),
+                iconTint = if (!isPcBluetoothOn || !isPhoneBluetoothOn) Color(0xFFF87171) else Color(0xFF818CF8),
                 title = "2. Bluetooth Low Energy (BLE)",
-                badgeText = "Proximity Radar",
-                badgeColor = Color(0xFF6366F1),
-                description = "When you walk up to your PC (within 2-3 meters), the PC detects your phone's BLE RSSI signal and automatically triggers the fingerprint challenge on your screen without you having to press any keyboard keys!"
+                badgeText = bleBadge,
+                badgeColor = bleColor,
+                description = bleDesc
             )
+
 
             Spacer(modifier = Modifier.height(14.dp))
 

@@ -2,9 +2,17 @@ name: AuraLock Release CI/CD
 
 on:
   push:
+    branches:
+      - main
+      - master
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag (e.g. v1.0.0)'
+        required: false
+        default: 'v1.0.0'
 
 permissions:
   contents: write
@@ -117,11 +125,11 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Build Android APK
         working-directory: mobile/android-app
@@ -142,6 +150,7 @@ jobs:
 
   publish-release:
     name: Publish GitHub Release (Multi-Asset)
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: [build-linux, build-windows, build-android]
     runs-on: ubuntu-latest
     steps:
@@ -166,11 +175,22 @@ jobs:
           name: auralock-android-apk
           path: release-assets/
 
+      - name: Determine Release Tag
+        id: tag_info
+        run: |
+          if [ -n "${{ inputs.tag_name }}" ]; then
+            echo "TAG=${{ inputs.tag_name }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "TAG=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "TAG=v1.0.0" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "AuraLock ${{ github.ref_name }} (msm.movin)"
-          tag_name: ${{ github.ref_name }}
+          name: "AuraLock ${{ steps.tag_info.outputs.TAG }} (msm.movin)"
+          tag_name: ${{ steps.tag_info.outputs.TAG }}
           draft: false
           prerelease: false
           generate_release_notes: true

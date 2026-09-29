@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AuraLock • Biometric Security & AuraDrop</title>
+  <link rel="icon" type="image/png" href="/icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/style.css">
+  <script src="/src/qrcode.min.js"></script>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="brand">
+      <img src="/icon.png" alt="AuraLock Logo" class="app-icon">
+      <div class="brand-text">
+        <h1>AuraLock Desktop</h1>
+        <span>TAURI DESKTOP EDITION • MSM.MOVIN</span>
+      </div>
+    </div>
+
+    <div class="header-right" style="display: flex; gap: 10px; align-items: center;">
+      <div class="status-pill" id="wifi-pill" title="Wi-Fi Connection Channel">
+        <div id="wifi-dot" class="status-dot disconnected"></div>
+        <span id="wifi-text">📶 Wi-Fi: Connecting...</span>
+      </div>
+      <div class="status-pill" id="ble-pill" title="Bluetooth Proximity Radar">
+        <div id="ble-dot" class="status-dot" style="background: var(--accent-purple); box-shadow: 0 0 10px var(--accent-purple);"></div>
+        <span id="ble-text">🔵 BLE: Radar Ready</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- NAVIGATION TABS -->
+  <nav class="nav-tabs">
+    <button class="tab-btn active" onclick="switchTab('security')">
+      <span>🛡️</span> Biometric Security
+    </button>
+    <button class="tab-btn" onclick="switchTab('auradrop')">
+      <span>⚡</span> AuraDrop (Transfer)
+    </button>
+    <button class="tab-btn" onclick="switchTab('received')">
+      <span>📥</span> Received Files (<span id="received-badge">0</span>)
+    </button>
+    <button class="tab-btn" onclick="switchTab('diagnostics')">
+      <span>📊</span> Real-Time Logs
+    </button>
+  </nav>
+
+  <main>
+    <!-- MODULE 1: BIOMETRIC SECURITY & PAIRING -->
+    <div id="tab-security" class="tab-content active">
+
+      <!-- VIEW A: UNPAIRED SETUP (ONLY SHOWN IF NO DEVICE IS PAIRED) -->
+      <div id="unpaired-view" class="grid-2" style="display: none;">
+        <div class="card">
+          <div class="card-badge">SETUP MODE</div>
+          <h2 class="card-title">📱 Scan QR with AuraLock Mobile</h2>
+          <p class="card-subtitle">Open AuraLock on your Android device and scan this QR code to pair</p>
+
+          <div class="qr-container">
+            <div id="qrcode"></div>
+          </div>
+
+          <div style="text-align: center;">
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px;">6-DIGIT PAIRING PIN</p>
+            <div id="pin-display" class="pin-badge" onclick="copyPin()">------</div>
+            <button class="btn btn-secondary" onclick="refreshPairing()" style="width: 100%; margin-top: 10px;">
+              <span>🔄</span> Refresh Pairing Session
+            </button>
+          </div>
+        </div>
+
+        <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
+          <div>
+            <h2 class="card-title">🔒 Single-Device Security Architecture</h2>
+            <p class="card-subtitle">Zero-Trust hardware binding for Linux PAM lockscreen</p>
+
+            <div class="security-feature-item">
+              <div class="sec-icon">🔑</div>
+              <div>
+                <h4>TEE Hardware Keystore Binding</h4>
+                <p>Private Ed25519 signature keys never leave the phone's Android hardware enclave.</p>
+              </div>
+            </div>
+
+            <div class="security-feature-item">
+              <div class="sec-icon">🛡️</div>
+              <div>
+                <h4>Single Paired Device Rule</h4>
+                <p>Only one phone can be paired at any time. Once paired, pairing QR is locked and second devices are rejected.</p>
+              </div>
+            </div>
+
+            <div class="security-feature-item">
+              <div class="sec-icon">🔐</div>
+              <div>
+                <h4>4-Digit Security PIN Protection</h4>
+                <p>Unpairing requires the 4-digit security PIN to prevent unauthorized detachment.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card-footer-box">
+            <p style="font-size: 0.85rem; color: var(--text-muted);">
+              Awaiting mobile pairing connection on port <strong id="setup-port">47890</strong>...
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW B: PAIRED ACTIVE DASHBOARD (SHOWN WHEN PAIRED) -->
+      <div id="paired-view" class="grid-2">
+        <div class="card">
+          <div class="card-badge success">PAIRED & ARMED</div>
+          <h2 class="card-title">📱 Active Paired Smartphone</h2>
+          <p class="card-subtitle">Physical biometric device authorized for remote PC unlock</p>
+
+          <div class="paired-device-display">
+            <div class="device-avatar">📱</div>
+            <div class="device-details">
+              <h3 id="active-phone-name">Samsung Galaxy / Pixel</h3>
+              <p id="active-phone-status">🟢 Hardware Connected • Standby</p>
+            </div>
+          </div>
+
+          <div class="info-row">
+            <span class="info-label">PC Hostname:</span>
+            <span id="pc-name-val" class="info-val">...</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Network Port:</span>
+            <span id="pc-port-val" class="info-val">47890</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Split-Key Vault:</span>
+            <span id="vault-status-val" class="info-val">ChaCha20-Poly1305 (Ready)</span>
+          </div>
+
+          <div style="display: flex; gap: 10px; margin-top: 1.5rem;">
+            <button class="btn btn-primary" onclick="testUnlock()" style="flex: 1;">
+              <span>🧪</span> Test Biometric Challenge
+            </button>
+            <button class="btn btn-danger" onclick="openUnpairModal()">
+              <span>🗑️</span> Unpair Device
+            </button>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+          <div class="card">
+            <h2 class="card-title">🔑 Update PC Login Password</h2>
+            <p class="card-subtitle">Encrypted inside local split-key vault with ZeroizeOnDrop protection</p>
+            <div style="display: flex; gap: 10px;">
+              <input type="password" id="new-password" placeholder="Enter PC Login Password" style="flex: 1; padding: 10px 14px; background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); border-radius: 10px; color: #FFF; font-family: var(--font-mono);">
+              <button class="btn btn-secondary" onclick="savePassword()">Save Password</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2 class="card-title">🛡️ Security Policy Active</h2>
+            <p class="card-subtitle">Remote Biometric Authentication Settings</p>
+            <div class="info-row">
+              <span class="info-label">Lockscreen & Wake:</span>
+              <span class="info-val" style="color: var(--accent-green);">Auto-Armed</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Password Fallback:</span>
+              <span class="info-val" style="color: var(--accent-cyan);">Enabled (PAM Fallback)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- MODULE 2: AURADROP (TRANSFER PC <-> PHONE) -->
+    <div id="tab-auradrop" class="tab-content">
+      <div class="transfer-control-bar">
+        <div class="transfer-toggle-info">
+          <h3>⚡ AuraDrop Transfer Channel</h3>
+          <p id="transfer-desc-text">Bidirectional drag & drop file sharing and live clipboard synchronization</p>
+        </div>
+        <div class="transfer-toggle-container">
+          <span id="transfer-toggle-status-label" class="transfer-status-tag">OFF</span>
+          <label class="switch" id="transfer-switch-wrapper">
+            <input type="checkbox" id="transfer-toggle" onchange="handleTransferToggle(this.checked)">
+            <span class="slider round"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- STATE A: PHONE NOT PAIRED OR NOT CONNECTED -->
+      <div id="transfer-unlinked-view" class="card" style="text-align: center; padding: 3rem 1.5rem; display: none;">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">📱</div>
+        <h2 class="card-title" id="transfer-unlinked-title" style="margin-bottom: 8px;">Phone Not Linked</h2>
+        <p class="card-subtitle" id="transfer-unlinked-desc" style="max-width: 500px; margin: 0 auto 1.5rem auto;">
+          AuraDrop requires your paired smartphone to be live linked. Tap 'Tap to Link' on your phone to activate AuraDrop.
+        </p>
+      </div>
+
+      <!-- STATE B: TRANSFER PAUSED (TOGGLE OFF) -->
+      <div id="transfer-off-view" class="card" style="text-align: center; padding: 3rem 1.5rem;">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">🔒</div>
+        <h2 class="card-title" style="margin-bottom: 8px;">AuraDrop Channel is Paused</h2>
+        <p class="card-subtitle" style="max-width: 500px; margin: 0 auto 1.5rem auto;">
+          To transfer files with your linked phone, flip the toggle switch above to <strong>ON</strong>.
+        </p>
+        <button class="btn btn-primary" onclick="enableTransferNow()" style="display: inline-flex; align-items: center; gap: 8px; margin: 0 auto;">
+          <span>⚡</span> Open Transfer Channel
+        </button>
+      </div>
+
+      <!-- STATE C: TRANSFER ACTIVE (DROPZONE & CLIPBOARD) -->
+      <div id="transfer-active-view" class="grid-2" style="display: none;">
+        <div class="card">
+          <div class="card-badge success">TRANSFER ACTIVE</div>
+          <h2 class="card-title">📤 Send Files to Phone</h2>
+          <p class="card-subtitle">Drag and drop files to stream directly to mobile storage</p>
+
+          <input type="file" id="file-input" style="display: none;" onchange="handleFileSelected(this.files)">
+          <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+            <svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+            <h3 style="font-size: 1.1rem; margin-bottom: 6px;">Drag & Drop Files Here</h3>
+            <p style="font-size: 0.85rem; color: var(--text-muted);">or click anywhere to browse from laptop</p>
+          </div>
+
+          <div id="upload-progress-box" class="progress-bar-container">
+            <div id="upload-progress-fill" class="progress-bar-fill"></div>
+          </div>
+          <div id="upload-status-text" style="font-size: 0.85rem; color: var(--text-muted); text-align: center; margin-top: 4px;"></div>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title">📋 Instant Clipboard / Notes Push</h2>
+          <p class="card-subtitle">Send text, URLs, or authentication tokens directly to phone</p>
+
+          <textarea id="clipboard-text" class="clipboard-box" placeholder="Type or paste text/URL here to send to phone..."></textarea>
+          <button class="btn btn-primary" onclick="sendClipboard()" style="width: 100%;">
+            <span>📤</span> Push Text to Phone
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODULE 3: RECEIVED FILES (PHONE TO PC) -->
+    <div id="tab-received" class="tab-content">
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+          <div>
+            <h2 class="card-title">📥 Received Files from Phone</h2>
+            <p class="card-subtitle" style="margin-bottom: 0;">Files sent via AuraDrop saved into ~/Downloads/AuraLock</p>
+          </div>
+          <button class="btn btn-secondary" onclick="openDownloadsFolder()">
+            <span>📂</span> Open Downloads Folder
+          </button>
+        </div>
+
+        <div id="files-list" class="files-list">
+          <p style="text-align: center; color: var(--text-muted); padding: 2rem;">No files received yet. Share files from your phone's AuraLock app!</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODULE 4: DIAGNOSTICS & LOGS -->
+    <div id="tab-diagnostics" class="tab-content">
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <div>
+            <h2 class="card-title">📊 Live Event Console</h2>
+            <p class="card-subtitle" style="margin-bottom: 0;">Biometric challenges, PAM socket requests, and network events</p>
+          </div>
+          <button class="btn btn-secondary" onclick="clearLogs()">Clear Console</button>
+        </div>
+
+        <div id="log-container" class="log-container">
+          <div class="log-entry"><span class="log-time">[System]</span> <span class="log-info">AuraLock Tauri Native Desktop Client initialized.</span></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- UNPAIR CONFIRMATION MODAL -->
+  <div id="unpair-modal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="card-badge" style="background: rgba(239, 68, 68, 0.2); color: #EF4444; border-color: rgba(239, 68, 68, 0.4);">UNPAIR CONFIRMATION</div>
+      <h3 class="modal-title" id="unpair-modal-title">🔐 Unpair Smartphone</h3>
+      <p class="modal-subtitle" id="unpair-modal-subtitle">Are you sure you want to unpair this smartphone? The connection will be removed immediately.</p>
+
+      <div class="modal-actions" style="margin-top: 1.5rem; display: flex; gap: 10px; justify-content: flex-end;">
+        <button class="btn btn-secondary" onclick="closeUnpairModal()">Cancel</button>
+        <button class="btn btn-danger" id="unpair-confirm-btn" onclick="executeDirectUnpair()">Yes, Unpair</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast">
+    <span id="toast-icon">✅</span>
+    <span id="toast-message">Action completed successfully!</span>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

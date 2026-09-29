@@ -3,7 +3,9 @@
  * Proprietary software of msm.movin organization.
  */
 
-use crate::crypto::{decrypt_chacha20, derive_hkdf_key, encrypt_chacha20, generate_nonce_32};
+use crate::crypto::{
+    decrypt_chacha20, derive_hkdf_key, encrypt_chacha20, generate_nonce_12, generate_nonce_32,
+};
 use crate::error::{AuraLockError, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -66,6 +68,13 @@ pub struct VaultData {
     pub encrypted_password_b64: String,
     /// Local machine secret part (for split-key derivation)
     pub local_part_hex: String,
+    /// 4-digit Security PIN for unpairing authorization
+    #[serde(default = "default_security_pin")]
+    pub security_pin: String,
+}
+
+fn default_security_pin() -> String {
+    "1234".to_string()
 }
 
 pub struct VaultManager {
@@ -84,6 +93,11 @@ impl VaultManager {
         self.vault_file_path.exists()
     }
 
+    /// Checks if a phone is currently paired
+    pub fn is_paired(&self) -> bool {
+        self.load().ok().and_then(|v| v.paired_phone).is_some()
+    }
+
     /// Loads vault data from disk
     pub fn load(&self) -> Result<VaultData> {
         if !self.exists() {
@@ -92,6 +106,66 @@ impl VaultManager {
         let content = std::fs::read_to_string(&self.vault_file_path)?;
         let vault: VaultData = serde_json::from_str(&content)?;
         Ok(vault)
+    }
+
+    /// Verifies 4-digit security PIN
+    pub fn verify_security_pin(&self, pin: &str) -> bool {
+        match self.load() {
+            Ok(vault) => vault.security_pin == pin,
+            Err(_) => pin == "1234",
+        }
+    }
+
+    /// Unpairs device only if 4-digit PIN matches
+    pub fn unpair_with_pin(&self, pin: &str) -> Result<()> {
+        if !self.verify_security_pin(pin) {
+            return Err(AuraLockError::VaultError("Invalid 4-digit Security PIN".into()));
+        }
+        self.clear()
+    }
+
+    /// Clears and removes the vault file from disk
+    pub fn clear(&self) -> Result<()> {
+        if self.exists() {
+            std::fs::remove_file(&self.vault_file_path)?;
+        }
+        Ok(())
+    }
+
+    /// Saves or updates a paired phone in the vault
+    pub fn save_paired_phone(&self, phone: PairedPhone) -> Result<()> {
+        let vault_data = match self.load() {
+            Ok(mut data) => {
+                data.paired_phone = Some(phone);
+                data
+            }
+            Err(_) => VaultData {
+                version: 1,
+                paired_phone: Some(phone),
+                salt_hex: hex::encode(generate_nonce_32()),
+                nonce_hex: hex::encode(generate_nonce_12()),
+                encrypted_password_b64: String::new(),
+                local_part_hex: hex::encode(generate_nonce_32()),
+                security_pin: "1234".to_string(),
+            },
+        };
+
+        if let Some(parent) = self.vault_file_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let json = serde_json::to_string_pretty(&vault_data)?;
+        std::fs::write(&self.vault_file_path, json)?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&self.vault_file_path)?.permissions();
+            perms.set_mode(0o600);
+            std::fs::set_permissions(&self.vault_file_path, perms)?;
+        }
+
+        Ok(())
     }
 
     /// Initializes and saves a new vault with password protected by phone pairing
@@ -126,6 +200,8 @@ impl VaultManager {
         // Zeroize key from memory
         key32.zeroize();
 
+        let existing_pin = self.load().map(|v| v.security_pin).unwrap_or_else(|_| "1234".to_string());
+
         let vault_data = VaultData {
             version: 1,
             paired_phone: Some(phone),
@@ -136,6 +212,7 @@ impl VaultManager {
                 ciphertext,
             ),
             local_part_hex: hex::encode(local_part),
+            security_pin: existing_pin,
         };
 
         if let Some(parent) = self.vault_file_path.parent() {

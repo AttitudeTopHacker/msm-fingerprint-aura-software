@@ -25,4 +25,4 @@ local-ip-address = { workspace = true }
 rand = { workspace = true }
 hex = { workspace = true }
 chrono = { workspace = true }
-ed25519-dalek = { workspace = true }
+open = { workspace = true }

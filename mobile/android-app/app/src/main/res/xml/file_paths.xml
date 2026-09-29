@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copyright (c) 2022 msm.movin. All rights reserved.
+  Proprietary software of msm.movin organization.
+-->
+<paths>
+    <external-path name="external_files" path="." />
+    <external-cache-path name="external_cache" path="." />
+    <files-path name="internal_files" path="." />
+</paths>
