@@ -16,7 +16,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
 echo "🔨 1/4. Building release binaries (auralock + PAM module)..."
-cargo build --release
+cargo build --release --package auralock-cli --package auralock-pam
 
 # Copy CLI binary
 echo "📦 2/4. Installing CLI binary to /usr/local/bin/auralock..."

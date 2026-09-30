@@ -18,7 +18,7 @@ echo "=================================================="
 
 # Ensure release binaries are built
 echo "🔨 Building Rust release binaries..."
-cargo build --release
+cargo build --release --package auralock-cli --package auralock-pam
 
 # Clean & create packaging directories
 rm -rf "$BUILD_DIR" dist/"$DEB_NAME"

@@ -35,7 +35,7 @@ jobs:
 
       - name: Build Rust Release Binaries
         run: |
-          cargo build --release
+          cargo build --release --package auralock-cli --package auralock-pam
 
       - name: Package Linux Installers (.deb, .rpm, .AppImage, .zip)
         run: |

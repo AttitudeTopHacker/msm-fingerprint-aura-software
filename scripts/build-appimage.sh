@@ -19,7 +19,7 @@ echo "  Organization: msm.movin"
 echo "=================================================="
 
 # Ensure release binaries exist
-cargo build --release
+cargo build --release --package auralock-cli --package auralock-pam
 
 # Clean and setup AppDir
 rm -rf "$APP_DIR"
