@@ -159,7 +159,7 @@ class MainActivity : FragmentActivity() {
                                 Toast.makeText(this@MainActivity, "⚠️ Bluetooth turned off. AuraLock paused.", Toast.LENGTH_SHORT).show()
                             }
                         } else if (isEnabled) {
-                            statusMessageState = if (isConnectedState) "🟢 Linked & Armed" else if (isPairedState) "Bluetooth Active — Auto-Linking..." else "Ready to link with PC"
+                            statusMessageState = if (isConnectedState) "🟢 Linked & Armed" else if (isPairedState) "Standby — Auto-Connecting..." else "Ready to link with PC"
                             // Auto-reconnect if paired and auto_connect enabled
                             if (isPairedState && !isConnectedState && prefs.getBoolean("auto_connect", true) && !isUserManuallyDisconnected) {
                                 val savedIp = prefs.getString("pc_ip", "10.132.234.46") ?: "10.132.234.46"
@@ -1914,15 +1914,15 @@ class MainActivity : FragmentActivity() {
 
                 // Bluetooth Proximity Channel Indicator Pill
                 val btPillColor = if (!isPhoneBluetoothOn) Color(0xFFF59E0B)
-                    else if (isConnected && !isPcBluetoothOn) Color(0xFFEF4444)
-                    else if (isConnected && isPcBluetoothOn) Color(0xFF00FF88)
-                    else Color(0xFF818CF8)
+                    else if (!isConnected) Color(0xFF64748B)
+                    else if (!isPcBluetoothOn) Color(0xFFEF4444)
+                    else Color(0xFF00FF88)
                 val btPillBg = btPillColor.copy(alpha = 0.15f)
                 val btPillBorder = btPillColor.copy(alpha = 0.4f)
                 val btPillText = if (!isPhoneBluetoothOn) "Phone BT: Off ⚠️"
-                    else if (isConnected && !isPcBluetoothOn) "PC BT: Off 🔴"
-                    else if (isConnected && isPcBluetoothOn) "BLE: Linked 🟢"
-                    else "BLE: Ready"
+                    else if (!isConnected) "BLE: Standby"
+                    else if (!isPcBluetoothOn) "PC BT: Off 🔴"
+                    else "BLE: Linked 🟢"
 
                 Box(
                     modifier = Modifier
@@ -2103,10 +2103,12 @@ class MainActivity : FragmentActivity() {
                         Text(
                             text = if (isConnected && isFullBluetoothOn) "Channel: $networkTransport • 🟢 Live Linked"
                                 else if (isConnected && !isPcBluetoothOn) "Channel: $networkTransport • 🔴 PC BLE OFF"
+                                else if (!isConnected) "Channel: $networkTransport • ⚪ Disconnected (Standby)"
                                 else if (isPhoneBluetoothOn) "Channel: $networkTransport • 🔵 BLE Standby"
                                 else "Channel: $networkTransport • 🔴 Phone BLE OFF",
                             color = if (isConnected && isFullBluetoothOn) Color(0xFF00FF88)
                                 else if (isConnected && !isPcBluetoothOn) Color(0xFFEF4444)
+                                else if (!isConnected) Color(0xFF94A3B8)
                                 else if (isPhoneBluetoothOn) Color(0xFFCBD5E1)
                                 else Color(0xFFF87171),
                             fontSize = 11.sp
@@ -2115,11 +2117,12 @@ class MainActivity : FragmentActivity() {
                             text = if (isConnected && isFullBluetoothOn) "Armed (Live)"
                                 else if (isConnected && !isPcBluetoothOn) "PC BT Off"
                                 else if (!isPhoneBluetoothOn) "Paused (No BLE)"
+                                else if (!isConnected) "Disconnected"
                                 else "Standby",
                             color = if (isConnected && isFullBluetoothOn) Color(0xFF00FF88)
                                 else if (isConnected && !isPcBluetoothOn) Color(0xFFEF4444)
                                 else if (!isPhoneBluetoothOn) Color(0xFFF59E0B)
-                                else Color(0xFF00D2FF),
+                                else Color(0xFF64748B),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
                         )

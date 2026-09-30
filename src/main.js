@@ -151,21 +151,21 @@ async function fetchStatus() {
         bleDot.style.background = 'var(--accent-green)';
         bleDot.style.boxShadow = '0 0 10px var(--accent-green)';
       }
-      if (bleText) bleText.innerText = '🟢 BLE: In Range (< 3m)';
+      if (bleText) bleText.innerText = '🟢 BLE: Linked & Active';
     } else if (data.is_paired) {
       if (bleDot) {
-        bleDot.className = 'status-dot';
+        bleDot.className = 'status-dot disconnected';
         bleDot.style.background = 'var(--accent-purple)';
         bleDot.style.boxShadow = '0 0 10px var(--accent-purple)';
       }
-      if (bleText) bleText.innerText = '🔵 BLE: Walk-Away Guard Armed';
+      if (bleText) bleText.innerText = '🔵 BLE: Standby (Phone Disconnected)';
     } else {
       if (bleDot) {
         bleDot.className = 'status-dot disconnected';
         bleDot.style.background = 'var(--accent-yellow)';
         bleDot.style.boxShadow = '0 0 10px var(--accent-yellow)';
       }
-      if (bleText) bleText.innerText = '🔵 BLE: Setup Ready';
+      if (bleText) bleText.innerText = '⚪ BLE: Standby (Unpaired)';
     }
 
     if (data.is_phone_connected) {
