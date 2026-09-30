@@ -5,19 +5,29 @@ let isPhoneConnectedState = false;
 
 // Helper to check if Tauri API is available
 function checkIsTauri() {
-  return typeof window !== 'undefined' && (!!window.__TAURI__ || !!window.__TAURI_METADATA__);
+  return typeof window !== 'undefined' && (
+    !!window.__TAURI__ || 
+    !!window.__TAURI_METADATA__ || 
+    !!window.__TAURI_INTERNALS__
+  );
 }
 
 async function invokeCommand(cmd, args = {}) {
   try {
+    if (window.__TAURI__?.core?.invoke) {
+      return await window.__TAURI__.core.invoke(cmd, args);
+    }
     if (window.__TAURI__?.invoke) {
       return await window.__TAURI__.invoke(cmd, args);
     }
     if (window.__TAURI__?.tauri?.invoke) {
       return await window.__TAURI__.tauri.invoke(cmd, args);
     }
+    if (window.__TAURI_INTERNALS__?.invoke) {
+      return await window.__TAURI_INTERNALS__.invoke(cmd, args);
+    }
   } catch (e) {
-    console.warn("Tauri invoke error", cmd, e);
+    console.warn("Tauri invoke error for " + cmd, e);
   }
   return null;
 }
@@ -69,12 +79,13 @@ window.closeUnpairModal = function () {
 
 window.executeDirectUnpair = async function () {
   try {
-    let res;
+    let res = null;
     if (checkIsTauri()) {
       res = await invokeCommand('unpair_device');
-    } else {
+    }
+    if (!res) {
       const resp = await fetch('http://127.0.0.1:47891/api/vault/unpair', { method: 'POST' });
-      res = await resp.json();
+      if (resp.ok) res = await resp.json();
     }
 
     window.closeUnpairModal();
@@ -96,12 +107,13 @@ window.executeDirectUnpair = async function () {
 // FETCH STATUS
 async function fetchStatus() {
   try {
-    let data;
+    let data = null;
     if (checkIsTauri()) {
       data = await invokeCommand('get_daemon_status');
-    } else {
+    }
+    if (!data) {
       const res = await fetch('http://127.0.0.1:47891/api/status');
-      data = await res.json();
+      if (res.ok) data = await res.json();
     }
 
     if (!data) return;
