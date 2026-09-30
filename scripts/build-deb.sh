@@ -35,16 +35,14 @@ mkdir -p "$BUILD_DIR/usr/share/icons/hicolor/128x128/apps"
 if [ -f "target/release/auralock-desktop" ]; then
     cp target/release/auralock-desktop "$BUILD_DIR/usr/bin/auralock"
     cp target/release/auralock-desktop "$BUILD_DIR/usr/bin/auralock-desktop"
-    chmod 755 "$BUILD_DIR/usr/bin/auralock" "$BUILD_DIR/usr/bin/auralock-desktop"
-else
-    cp target/release/auralock "$BUILD_DIR/usr/bin/auralock"
-    chmod 755 "$BUILD_DIR/usr/bin/auralock"
+    cp target/release/auralock-desktop "$BUILD_DIR/usr/local/bin/auralock"
+    chmod 755 "$BUILD_DIR/usr/bin/auralock" "$BUILD_DIR/usr/bin/auralock-desktop" "$BUILD_DIR/usr/local/bin/auralock"
 fi
 
 if [ -f "target/release/auralock" ]; then
     cp target/release/auralock "$BUILD_DIR/usr/bin/auralock-cli"
-    cp target/release/auralock "$BUILD_DIR/usr/local/bin/auralock"
-    chmod 755 "$BUILD_DIR/usr/bin/auralock-cli" "$BUILD_DIR/usr/local/bin/auralock"
+    cp target/release/auralock "$BUILD_DIR/usr/local/bin/auralock-cli"
+    chmod 755 "$BUILD_DIR/usr/bin/auralock-cli" "$BUILD_DIR/usr/local/bin/auralock-cli"
 fi
 
 cp target/release/libpam_auralock.so "$BUILD_DIR/lib/security/pam_auralock.so"

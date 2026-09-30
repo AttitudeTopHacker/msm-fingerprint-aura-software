@@ -76,39 +76,16 @@ mod dirs_next {
 }
 
 fn launch_desktop_window(url: &str) {
-    let app_flag = format!("--app={}", url);
-    let window_flag = "--window-size=1180,800";
-    let profile_dir = format!(
-        "--user-data-dir={}/.auralock_app_profile",
-        dirs_next::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .display()
-    );
-
+    // 1. Try launching the true native standalone desktop application first
     #[cfg(unix)]
     {
-        let candidates = [
-            "google-chrome",
-            "chromium",
-            "chromium-browser",
-            "brave-browser",
-            "microsoft-edge",
-            "opera",
-            "firefox",
+        let native_candidates = [
+            "auralock-desktop",
+            "/usr/bin/auralock-desktop",
+            "/usr/local/bin/auralock-desktop",
         ];
-        for cmd in candidates {
-            if std::process::Command::new(cmd)
-                .args([&app_flag, window_flag, &profile_dir])
-                .spawn()
-                .is_ok()
-            {
-                return;
-            }
-            if std::process::Command::new(cmd)
-                .arg(url)
-                .spawn()
-                .is_ok()
-            {
+        for cmd in native_candidates {
+            if std::process::Command::new(cmd).spawn().is_ok() {
                 return;
             }
         }
@@ -116,22 +93,8 @@ fn launch_desktop_window(url: &str) {
 
     #[cfg(windows)]
     {
-        let candidates = ["msedge", "chrome", "brave", "firefox"];
-        for cmd in candidates {
-            if std::process::Command::new(cmd)
-                .args([&app_flag, window_flag, &profile_dir])
-                .spawn()
-                .is_ok()
-            {
-                return;
-            }
-            if std::process::Command::new(cmd)
-                .arg(url)
-                .spawn()
-                .is_ok()
-            {
-                return;
-            }
+        if std::process::Command::new("auralock-desktop.exe").spawn().is_ok() {
+            return;
         }
     }
 
