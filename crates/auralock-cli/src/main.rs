@@ -94,10 +94,18 @@ fn launch_desktop_window(url: &str) {
             "brave-browser",
             "microsoft-edge",
             "opera",
+            "firefox",
         ];
         for cmd in candidates {
             if std::process::Command::new(cmd)
                 .args([&app_flag, window_flag, &profile_dir])
+                .spawn()
+                .is_ok()
+            {
+                return;
+            }
+            if std::process::Command::new(cmd)
+                .arg(url)
                 .spawn()
                 .is_ok()
             {
@@ -108,10 +116,17 @@ fn launch_desktop_window(url: &str) {
 
     #[cfg(windows)]
     {
-        let candidates = ["msedge", "chrome", "brave"];
+        let candidates = ["msedge", "chrome", "brave", "firefox"];
         for cmd in candidates {
             if std::process::Command::new(cmd)
                 .args([&app_flag, window_flag, &profile_dir])
+                .spawn()
+                .is_ok()
+            {
+                return;
+            }
+            if std::process::Command::new(cmd)
+                .arg(url)
                 .spawn()
                 .is_ok()
             {
@@ -148,6 +163,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cmd {
         Commands::Daemon { .. } | Commands::Gui { .. } => {
+            let ui_url = format!("http://127.0.0.1:{}", web_port);
+            let daemon_already_running = std::net::TcpStream::connect(("127.0.0.1", web_port)).is_ok();
+
+            if daemon_already_running {
+                println!("{}", "══════════════════════════════════════════════════".cyan());
+                println!("{}", "  🌟 AuraLock Desktop Control Center".bold().green());
+                println!("{}", "  Remote Biometric Security & AuraDrop (msm.movin)".white());
+                println!("{}", "══════════════════════════════════════════════════\n".cyan());
+                println!("  ℹ️  Background service is already active.");
+                if is_gui {
+                    println!("  🖥️  Launching Desktop App Window: {}\n", ui_url.bold().green());
+                    launch_desktop_window(&ui_url);
+                }
+                return Ok(());
+            }
+
             println!("{}", "══════════════════════════════════════════════════".cyan());
             println!("{}", "  🌟 AuraLock Desktop Control Center & Daemon".bold().green());
             println!("{}", "  Remote Biometric Security & AuraDrop (msm.movin)".white());
@@ -191,8 +222,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Start Desktop Control Center Native App Window
             if let Err(e) = start_web_server(Arc::clone(&net_service), web_port).await {
                 eprintln!("  ⚠️ Failed to start Web server: {:?}", e);
+                if is_gui {
+                    launch_desktop_window(&ui_url);
+                }
             } else {
-                let ui_url = format!("http://127.0.0.1:{}", web_port);
                 println!("  🖥️  Desktop App Window: {}", ui_url.bold().green());
                 if is_gui {
                     launch_desktop_window(&ui_url);
