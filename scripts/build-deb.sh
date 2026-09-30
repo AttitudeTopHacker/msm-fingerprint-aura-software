@@ -17,8 +17,8 @@ echo "  Organization: msm.movin"
 echo "=================================================="
 
 # Ensure release binaries are built
-echo "🔨 Building Rust release binaries..."
-cargo build --release --package auralock-cli --package auralock-pam
+echo "🔨 Building Rust release binaries (Desktop Native App + CLI + PAM)..."
+cargo build --release --package auralock-desktop --package auralock-cli --package auralock-pam
 
 # Clean & create packaging directories
 rm -rf "$BUILD_DIR" dist/"$DEB_NAME"
@@ -31,10 +31,21 @@ mkdir -p "$BUILD_DIR/usr/share/applications"
 mkdir -p "$BUILD_DIR/usr/share/pixmaps"
 mkdir -p "$BUILD_DIR/usr/share/icons/hicolor/128x128/apps"
 
-# Copy binaries and service file
-cp target/release/auralock "$BUILD_DIR/usr/bin/auralock"
-cp target/release/auralock "$BUILD_DIR/usr/local/bin/auralock"
-chmod 755 "$BUILD_DIR/usr/bin/auralock" "$BUILD_DIR/usr/local/bin/auralock"
+# Copy binaries (Native GUI as primary, CLI for background/daemon)
+if [ -f "target/release/auralock-desktop" ]; then
+    cp target/release/auralock-desktop "$BUILD_DIR/usr/bin/auralock"
+    cp target/release/auralock-desktop "$BUILD_DIR/usr/bin/auralock-desktop"
+    chmod 755 "$BUILD_DIR/usr/bin/auralock" "$BUILD_DIR/usr/bin/auralock-desktop"
+else
+    cp target/release/auralock "$BUILD_DIR/usr/bin/auralock"
+    chmod 755 "$BUILD_DIR/usr/bin/auralock"
+fi
+
+if [ -f "target/release/auralock" ]; then
+    cp target/release/auralock "$BUILD_DIR/usr/bin/auralock-cli"
+    cp target/release/auralock "$BUILD_DIR/usr/local/bin/auralock"
+    chmod 755 "$BUILD_DIR/usr/bin/auralock-cli" "$BUILD_DIR/usr/local/bin/auralock"
+fi
 
 cp target/release/libpam_auralock.so "$BUILD_DIR/lib/security/pam_auralock.so"
 chmod 644 "$BUILD_DIR/lib/security/pam_auralock.so"
@@ -50,13 +61,13 @@ if [ -f "src-tauri/icons/128x128.png" ]; then
     cp "src-tauri/icons/128x128.png" "$BUILD_DIR/usr/share/icons/hicolor/128x128/apps/auralock.png"
 fi
 
-# Create Desktop Entry (so it appears in Linux Mint / Ubuntu Application Menu)
+# Create Desktop Entry (Native Standalone Desktop Application)
 cat << 'EOF' > "$BUILD_DIR/usr/share/applications/auralock.desktop"
 [Desktop Entry]
 Name=AuraLock
-GenericName=Biometric Unlock & AuraDrop
+GenericName=Biometric Security & AuraDrop
 Comment=Instant Remote Biometric Unlock & AuraDrop for Linux
-Exec=auralock gui
+Exec=auralock
 Icon=auralock
 Terminal=false
 Type=Application

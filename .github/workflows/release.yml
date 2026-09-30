@@ -28,14 +28,14 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libpam0g-dev libdbus-1-dev pkg-config dpkg-dev rpm alien zip wget file
+          sudo apt-get install -y libpam0g-dev libdbus-1-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev libgtk-3-dev pkg-config dpkg-dev rpm alien zip wget file
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build Rust Release Binaries
         run: |
-          cargo build --release --package auralock-cli --package auralock-pam
+          cargo build --release --package auralock-desktop --package auralock-cli --package auralock-pam
 
       - name: Package Linux Installers (.deb, .rpm, .AppImage, .zip)
         run: |

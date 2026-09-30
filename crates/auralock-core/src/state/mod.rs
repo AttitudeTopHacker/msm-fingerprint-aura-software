@@ -176,6 +176,12 @@ impl StateManager {
         }
     }
 
+    /// Gets the paired phone metadata
+    pub async fn get_paired_phone(&self) -> Option<PairedPhone> {
+        let state = self.inner.lock().await;
+        state.paired_phone.clone()
+    }
+
     /// Sets the paired phone metadata
     pub async fn set_paired_phone(&self, phone: Option<PairedPhone>) {
         let mut state = self.inner.lock().await;

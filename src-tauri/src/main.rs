@@ -126,17 +126,23 @@ async fn trigger_test_unlock(state: State<'_, AppStateWrapper>) -> Result<Comman
 
 #[tauri::command]
 async fn save_vault_password(password: String, state: State<'_, AppStateWrapper>) -> Result<CommandResult, String> {
-    let dummy_phone = PairedPhone {
-        device_name: "Android Phone".to_string(),
-        public_key_hex: hex::encode([0u8; 32]),
-        pairing_id: format!("pair_{:08x}", rand::random::<u32>()),
-        paired_at_epoch: chrono::Utc::now().timestamp(),
+    let paired_phone = state.vault_mgr.load().ok().and_then(|v| v.paired_phone);
+    let paired_phone = match paired_phone {
+        Some(p) => p,
+        None => {
+            state.net_service.state_mgr.get_paired_phone().await.unwrap_or_else(|| PairedPhone {
+                device_name: "Android Phone".to_string(),
+                public_key_hex: hex::encode([0u8; 32]),
+                pairing_id: format!("pair_{:08x}", rand::random::<u32>()),
+                paired_at_epoch: chrono::Utc::now().timestamp(),
+            })
+        }
     };
 
     let dummy_secret = [1u8; 32];
     let secret_bytes = SecretBytes::new(password.into_bytes());
 
-    match state.vault_mgr.save_new_vault(dummy_phone, &dummy_secret, &secret_bytes) {
+    match state.vault_mgr.save_new_vault(paired_phone, &dummy_secret, &secret_bytes) {
         Ok(_) => Ok(CommandResult {
             success: true,
             message: "PC Password encrypted into local Split-Key Vault".into(),
@@ -287,32 +293,36 @@ fn main() {
         vault_mgr.clone(),
     ));
 
-    // Start PAM IPC Daemon on Linux
-    #[cfg(unix)]
-    {
-        let ipc_server = Arc::new(auralock_core::ipc::IpcServer::new(
-            state_mgr.clone(),
-            Arc::clone(&net_service),
-            hostname.clone(),
-        ));
+    let is_daemon_already_running = std::net::TcpStream::connect(("127.0.0.1", DEFAULT_AURALOCK_WEB_PORT)).is_ok();
+
+    if !is_daemon_already_running {
+        // Start PAM IPC Daemon on Linux
+        #[cfg(unix)]
+        {
+            let ipc_server = Arc::new(auralock_core::ipc::IpcServer::new(
+                state_mgr.clone(),
+                Arc::clone(&net_service),
+                hostname.clone(),
+            ));
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = ipc_server.run_unix_socket(auralock_core::ipc::DEFAULT_UNIX_SOCKET_PATH).await {
+                    tracing::error!("PAM IPC socket error: {:?}", e);
+                }
+            });
+        }
+
+        // Start background Wi-Fi network listener
+        let svc_clone = Arc::clone(&net_service);
         tauri::async_runtime::spawn(async move {
-            if let Err(e) = ipc_server.run_unix_socket(auralock_core::ipc::DEFAULT_UNIX_SOCKET_PATH).await {
-                tracing::error!("PAM IPC socket error: {:?}", e);
-            }
+            let _ = svc_clone.run_listener().await;
+        });
+
+        // Start local web API service (for streaming file uploads & websockets)
+        let web_svc_clone = Arc::clone(&net_service);
+        tauri::async_runtime::spawn(async move {
+            let _ = start_web_server(web_svc_clone, DEFAULT_AURALOCK_WEB_PORT).await;
         });
     }
-
-    // Start background Wi-Fi network listener
-    let svc_clone = Arc::clone(&net_service);
-    tauri::async_runtime::spawn(async move {
-        let _ = svc_clone.run_listener().await;
-    });
-
-    // Start local web API service (for streaming file uploads & websockets)
-    let web_svc_clone = Arc::clone(&net_service);
-    tauri::async_runtime::spawn(async move {
-        let _ = start_web_server(web_svc_clone, DEFAULT_AURALOCK_WEB_PORT).await;
-    });
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

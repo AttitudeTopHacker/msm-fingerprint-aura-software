@@ -58,13 +58,70 @@ class AuraLockClient(
     private val incomingSizes = mutableMapOf<String, Long>()
     private val incomingBytesReceived = mutableMapOf<String, Long>()
 
+    companion object {
+        suspend fun discoverPcIp(timeoutMs: Int = 2000): Pair<String, Int>? = withContext(Dispatchers.IO) {
+            try {
+                val udpSocket = java.net.DatagramSocket()
+                udpSocket.broadcast = true
+                udpSocket.soTimeout = timeoutMs
+
+                val query = "{\"type\":\"Discover\"}".toByteArray()
+                val broadcastAddr = java.net.InetAddress.getByName("255.255.255.255")
+                val packet = java.net.DatagramPacket(query, query.size, broadcastAddr, 47892)
+                udpSocket.send(packet)
+
+                val buf = ByteArray(1024)
+                val recvPacket = java.net.DatagramPacket(buf, buf.size)
+                udpSocket.receive(recvPacket)
+                val respStr = String(recvPacket.data, 0, recvPacket.length)
+                val json = JSONObject(respStr)
+                if (json.optString("type") == "AuraLockBeacon") {
+                    val pcIp = recvPacket.address.hostAddress ?: "127.0.0.1"
+                    val port = json.optInt("port", 47890)
+                    udpSocket.close()
+                    return@withContext Pair(pcIp, port)
+                }
+                udpSocket.close()
+                null
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
     suspend fun connect(phoneName: String = "${Build.MANUFACTURER} ${Build.MODEL}"): Boolean = withContext(Dispatchers.IO) {
         try {
-            val sock = Socket()
+            var targetHost = host
+            var targetPort = port
+
+            var sock = Socket()
             sock.tcpNoDelay = true
             sock.keepAlive = true
             sock.soTimeout = 0
-            sock.connect(InetSocketAddress(host, port), 6000)
+
+            val connected = try {
+                sock.connect(InetSocketAddress(targetHost, targetPort), 3500)
+                true
+            } catch (e: Exception) {
+                // If direct host failed, try UDP LAN auto-discovery in case PC IP changed
+                val discovered = discoverPcIp(1500)
+                if (discovered != null) {
+                    targetHost = discovered.first
+                    targetPort = discovered.second
+                    sock = Socket()
+                    sock.tcpNoDelay = true
+                    sock.keepAlive = true
+                    sock.soTimeout = 0
+                    sock.connect(InetSocketAddress(targetHost, targetPort), 3500)
+                    true
+                } else {
+                    false
+                }
+            }
+
+            if (!connected) {
+                return@withContext false
+            }
 
             socket = sock
             writer = PrintWriter(OutputStreamWriter(sock.getOutputStream()), true)

@@ -58,12 +58,12 @@ impl IpcServer {
         let listener = UnixListener::bind(socket_path)?;
         info!("AuraLock IPC server listening on Unix socket: {}", socket_path);
 
-        // Set strict permissions (read/write for current user only)
+        // Set permissions so PAM and Display Manager (GDM/LightDM/SDDM) can communicate
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let mut perms = std::fs::metadata(socket_path)?.permissions();
-            perms.set_mode(0o600);
+            perms.set_mode(0o666);
             std::fs::set_permissions(socket_path, perms)?;
         }
 

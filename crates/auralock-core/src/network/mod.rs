@@ -417,11 +417,45 @@ impl NetworkService {
         Ok(())
     }
 
-    /// Starts the TCP listener for incoming mobile connections (over local Wi-Fi)
+    /// Starts the TCP listener for incoming mobile connections (over local Wi-Fi) & UDP discovery beacon
     pub async fn run_listener(self: Arc<Self>) -> Result<()> {
         let addr = SocketAddr::from(([0, 0, 0, 0], self.port));
         let listener = TcpListener::bind(addr).await?;
         info!("AuraLock Network daemon listening on {}", addr);
+
+        // Spawn UDP Auto-Discovery Responder on port (port + 2 e.g. 47892)
+        let udp_port = self.port + 2;
+        let pc_name_udp = self.pc_name.clone();
+        let pc_id_udp = self.pc_id.clone();
+        let tcp_port = self.port;
+        let is_paired_check = self.vault_mgr.clone();
+
+        tokio::spawn(async move {
+            use tokio::net::UdpSocket;
+            let bind_addr = SocketAddr::from(([0, 0, 0, 0], udp_port));
+            if let Ok(socket) = UdpSocket::bind(bind_addr).await {
+                let _ = socket.set_broadcast(true);
+                info!("AuraLock UDP discovery responder active on {}", bind_addr);
+                let mut buf = [0u8; 1024];
+                loop {
+                    if let Ok((len, src)) = socket.recv_from(&mut buf).await {
+                        let query = String::from_utf8_lossy(&buf[..len]);
+                        if query.contains("Discover") || query.contains("auralock") || query.contains("ping") {
+                            let is_paired = is_paired_check.is_paired();
+                            let resp = serde_json::json!({
+                                "type": "AuraLockBeacon",
+                                "pc_name": pc_name_udp,
+                                "pc_id": pc_id_udp,
+                                "port": tcp_port,
+                                "is_paired": is_paired
+                            });
+                            let resp_bytes = serde_json::to_vec(&resp).unwrap_or_default();
+                            let _ = socket.send_to(&resp_bytes, src).await;
+                        }
+                    }
+                }
+            }
+        });
 
         loop {
             match listener.accept().await {
