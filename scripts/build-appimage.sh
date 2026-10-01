@@ -5,7 +5,7 @@
 
 set -e
 
-VERSION="1.0.0"
+VERSION="1.3.0"
 PACKAGE_NAME="auralock"
 ARCH="amd64"
 PROJECT_ROOT="$(pwd)"
@@ -19,7 +19,7 @@ echo "  Organization: msm.movin"
 echo "=================================================="
 
 # Ensure release binaries exist
-cargo build --release --package auralock-cli --package auralock-pam
+cargo build --release --package auralock-desktop --package auralock-cli --package auralock-pam
 
 # Clean and setup AppDir
 rm -rf "$APP_DIR"
@@ -28,7 +28,11 @@ mkdir -p "$APP_DIR/usr/lib/security"
 mkdir -p "$APP_DIR/usr/share/icons/hicolor/256x256/apps"
 
 # Copy binary & PAM module
-cp "${PROJECT_ROOT}/target/release/auralock" "$APP_DIR/usr/bin/auralock"
+if [ -f "${PROJECT_ROOT}/target/release/auralock-desktop" ]; then
+    cp "${PROJECT_ROOT}/target/release/auralock-desktop" "$APP_DIR/usr/bin/auralock"
+else
+    cp "${PROJECT_ROOT}/target/release/auralock" "$APP_DIR/usr/bin/auralock"
+fi
 chmod 755 "$APP_DIR/usr/bin/auralock"
 
 if [ -f "${PROJECT_ROOT}/target/release/libpam_auralock.so" ]; then

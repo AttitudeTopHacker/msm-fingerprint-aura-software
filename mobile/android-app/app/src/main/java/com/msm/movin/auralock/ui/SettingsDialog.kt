@@ -265,7 +265,7 @@ fun SettingsDialog(
 
                 // Section 4: About & Organization
                 Text(
-                    text = "AuraLock v1.0.0 (Release)\nmsm.movin • Copyright (c) 2022. All rights reserved.",
+                    text = "AuraLock v1.3.0 (Release)\nmsm.movin • Copyright (c) 2022. All rights reserved.",
                     color = Color(0xFF475569),
                     fontSize = 11.sp,
                     textAlign = TextAlign.Center,

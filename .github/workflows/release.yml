@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag (e.g. v1.0.0)'
+        description: 'Release Tag (e.g. v1.3.0)'
         required: false
-        default: 'v1.0.0'
+        default: 'v1.3.0'
 
 permissions:
   contents: write
@@ -56,7 +56,7 @@ jobs:
           
           # 4. Universal Linux ZIP Bundle
           mkdir -p auralock-linux-bundle
-          cp target/release/auralock auralock-linux-bundle/
+          cp target/release/auralock-desktop auralock-linux-bundle/auralock || cp target/release/auralock auralock-linux-bundle/
           if [ -f target/release/libpam_auralock.so ]; then
             cp target/release/libpam_auralock.so auralock-linux-bundle/
           fi
@@ -64,8 +64,8 @@ jobs:
           cp scripts/auralock.service auralock-linux-bundle/
           cp README.md auralock-linux-bundle/
           
-          zip -r dist-linux/auralock-v1.0.0-linux-x86_64.zip auralock-linux-bundle
-          tar -czvf dist-linux/auralock-v1.0.0-linux-x86_64.tar.gz auralock-linux-bundle
+          zip -r dist-linux/auralock-v1.3.0-linux-x86_64.zip auralock-linux-bundle
+          tar -czvf dist-linux/auralock-v1.3.0-linux-x86_64.tar.gz auralock-linux-bundle
 
       - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
@@ -103,9 +103,7 @@ jobs:
         run: |
           mkdir -p dist
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" scripts\windows-installer.iss
-          if (Test-Path "dist\auralock_1.0.0_x64-setup.exe") {
-            copy dist\auralock_1.0.0_x64-setup.exe dist-win\auralock_1.0.0_x64-setup.exe
-          }
+          Get-ChildItem -Path dist\auralock_*_x64-setup.exe | Copy-Item -Destination dist-win\
 
       - name: Package Windows ZIP Bundle
         shell: pwsh
@@ -140,7 +138,8 @@ jobs:
       - name: Prepare APK Artifact
         run: |
           mkdir -p dist-apk
-          cp mobile/android-app/app/build/outputs/apk/debug/app-debug.apk dist-apk/auralock-android-v1.0.0.apk
+          cp mobile/android-app/app/build/outputs/apk/debug/app-debug.apk dist-apk/auralock-android-v1.3.0.apk
+          cp mobile/android-app/app/build/outputs/apk/debug/app-debug.apk dist-apk/auralock-android.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -183,7 +182,7 @@ jobs:
           elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "TAG=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           else
-            echo "TAG=v1.0.0" >> $GITHUB_OUTPUT
+            echo "TAG=v1.3.0" >> $GITHUB_OUTPUT
           fi
 
       - name: Create Release

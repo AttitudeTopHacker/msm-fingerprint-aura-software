@@ -5,7 +5,7 @@
 
 set -e
 
-VERSION="1.0.0"
+VERSION="1.3.0"
 PACKAGE_NAME="auralock"
 ARCH="amd64"
 BUILD_DIR="dist/deb_pkg"
