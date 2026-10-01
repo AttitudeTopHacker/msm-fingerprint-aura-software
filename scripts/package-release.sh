@@ -5,8 +5,10 @@
 
 set -e
 
-VERSION="1.3.3"
-DIST_DIR="dist"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+VERSION=$(tr -d '\r\n' < "$ROOT_DIR/VERSION" 2>/dev/null || echo "1.3.3")
+DIST_DIR="$ROOT_DIR/dist"
 
 echo "=================================================="
 echo "  🚀 Building AuraLock Complete Multi-Platform Bundle (v${VERSION})"

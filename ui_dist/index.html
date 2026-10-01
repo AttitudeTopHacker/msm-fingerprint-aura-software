@@ -115,35 +115,34 @@
 
       <!-- VIEW B: PAIRED ACTIVE DASHBOARD (SHOWN WHEN PAIRED) -->
       <div id="paired-view" class="grid-2">
-        <div class="card">
-          <div class="card-badge success">PAIRED & ARMED</div>
-          <h2 class="card-title">📱 Active Paired Smartphone</h2>
-          <p class="card-subtitle">Physical biometric device authorized for remote PC unlock</p>
+        <!-- HERO BIOMETRIC PULSE SCANNER CARD -->
+        <div class="card biometric-scanner-card" id="biometric-scanner-card">
+          <div class="card-badge success" id="biometric-badge-status">BIOMETRIC ARMED</div>
+          <h2 class="card-title">🛡️ Hardware Biometric Security</h2>
+          <p class="card-subtitle">Touch smartphone sensor to unlock PC via zero-trust Ed25519 cryptographic key</p>
 
-          <div class="paired-device-display">
-            <div class="device-avatar">📱</div>
-            <div class="device-details">
-              <h3 id="active-phone-name">Samsung Galaxy / Pixel</h3>
-              <p id="active-phone-status">🟢 Hardware Connected • Standby</p>
+          <!-- CONCENTRIC PULSE FINGERPRINT VISUALIZER -->
+          <div class="pulse-fingerprint-container connected" id="pulse-fingerprint-btn" onclick="testUnlock()" title="Click to test Biometric Unlock">
+            <div class="pulse-ring ring-1"></div>
+            <div class="pulse-ring ring-2"></div>
+            <div class="pulse-ring ring-3"></div>
+            
+            <div class="fingerprint-disc" id="fingerprint-disc">
+              <div class="scanner-laser" id="scanner-laser"></div>
+              <svg class="fingerprint-icon" viewBox="0 0 24 24">
+                <path d="M17.81 4.47c-.08 0-.16-.02-.23-.06C15.66 3.42 14 3 12.01 3c-1.98 0-3.86.47-5.57 1.41-.24.13-.54.04-.68-.2-.13-.24-.04-.55.2-.68C7.82 2.52 9.86 2 12.01 2c2.13 0 3.99.47 6.03 1.52.25.13.34.43.21.67-.1.18-.28.28-.44.28zM3.5 9.72c-.1 0-.2-.03-.29-.09-.23-.16-.28-.47-.12-.7.99-1.4 2.25-2.5 3.75-3.27C9.9 4.04 14 4.03 17.15 5.65c1.5.77 2.76 1.86 3.75 3.25.16.22.11.54-.12.7-.23.16-.54.11-.7-.12-.9-1.26-2.04-2.25-3.39-2.94-2.87-1.47-6.54-1.47-9.4 0-1.36.7-2.5 1.7-3.4 2.97-.08.14-.23.21-.39.21zm6.25 12.07c-.13 0-.26-.05-.35-.15-.87-.87-1.34-1.43-2.01-2.64-.69-1.23-1.05-2.73-1.05-4.34 0-2.97 2.54-5.39 5.66-5.39s5.66 2.42 5.66 5.39c0 .28-.22.5-.5.5s-.5-.22-.5-.5c0-2.42-2.09-4.39-4.66-4.39-2.57 0-4.66 1.97-4.66 4.39 0 1.44.32 2.77.93 3.85.64 1.15 1.08 1.64 1.85 2.42.19.2.19.51 0 .71-.11.1-.24.16-.38.16zm8.26-3.83c-.09 0-.17-.02-.26-.07-.79-.47-1.85-.75-3.08-.79-2.02-.07-3.79.52-5.41 1.79-.22.17-.53.14-.7-.07-.17-.22-.14-.53.07-.7 1.85-1.45 3.89-2.12 6.13-2.04 1.41.05 2.63.38 3.58.94.24.14.32.45.18.69-.09.16-.27.25-.51.25zM12.01 15.49c-.28 0-.5-.22-.5-.5v-2.16c0-.28.22-.5.5-.5s.5.22.5.5v2.16c0 .28-.22.5-.5.5z"/>
+              </svg>
             </div>
           </div>
 
-          <div class="info-row">
-            <span class="info-label">PC Hostname:</span>
-            <span id="pc-name-val" class="info-val">...</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Network Port:</span>
-            <span id="pc-port-val" class="info-val">47890</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Split-Key Vault:</span>
-            <span id="vault-status-val" class="info-val">ChaCha20-Poly1305 (Ready)</span>
+          <div class="fingerprint-status-box">
+            <h3 id="fingerprint-headline">Biometric Sensor Armed & Ready</h3>
+            <p id="fingerprint-hint">Click fingerprint sensor disc or button below to test unlock challenge</p>
           </div>
 
-          <div style="display: flex; gap: 10px; margin-top: 1.5rem;">
+          <div class="biometric-actions" style="margin-top: 1.25rem; display: flex; gap: 10px;">
             <button class="btn btn-primary" onclick="testUnlock()" style="flex: 1;">
-              <span>🧪</span> Test Biometric Challenge
+              <span>⚡</span> Test Biometric Challenge
             </button>
             <button class="btn btn-danger" onclick="openUnpairModal()">
               <span>🗑️</span> Unpair Device
@@ -153,24 +152,38 @@
 
         <div style="display: flex; flex-direction: column; gap: 1.5rem;">
           <div class="card">
+            <div class="card-badge success">HARDWARE LINKED</div>
+            <h2 class="card-title">📱 Paired Smartphone Details</h2>
+            <p class="card-subtitle">Active biometric enclave authorized for authentication</p>
+
+            <div class="paired-device-display">
+              <div class="device-avatar">📱</div>
+              <div class="device-details">
+                <h3 id="active-phone-name">Samsung Galaxy / Pixel</h3>
+                <p id="active-phone-status">🟢 Hardware Connected • Standby</p>
+              </div>
+            </div>
+
+            <div class="info-row">
+              <span class="info-label">PC Hostname:</span>
+              <span id="pc-name-val" class="info-val">...</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Network Port:</span>
+              <span id="pc-port-val" class="info-val">47890</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Split-Key Vault:</span>
+              <span id="vault-status-val" class="info-val">ChaCha20-Poly1305 (Ready)</span>
+            </div>
+          </div>
+
+          <div class="card">
             <h2 class="card-title">🔑 Update PC Login Password</h2>
             <p class="card-subtitle">Encrypted inside local split-key vault with ZeroizeOnDrop protection</p>
             <div style="display: flex; gap: 10px;">
               <input type="password" id="new-password" placeholder="Enter PC Login Password" style="flex: 1; padding: 10px 14px; background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); border-radius: 10px; color: #FFF; font-family: var(--font-mono);">
               <button class="btn btn-secondary" onclick="savePassword()">Save Password</button>
-            </div>
-          </div>
-
-          <div class="card">
-            <h2 class="card-title">🛡️ Security Policy Active</h2>
-            <p class="card-subtitle">Remote Biometric Authentication Settings</p>
-            <div class="info-row">
-              <span class="info-label">Lockscreen & Wake:</span>
-              <span id="lockscreen-status-val" class="info-val" style="color: var(--accent-green);">Auto-Armed</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Password Fallback:</span>
-              <span class="info-val" style="color: var(--accent-cyan);">Enabled (PAM Fallback)</span>
             </div>
           </div>
         </div>
@@ -284,6 +297,37 @@
     </div>
   </main>
 
+  <!-- BIOMETRIC CHALLENGE ACTIVE HUD OVERLAY -->
+  <div id="biometric-challenge-modal" class="modal-overlay">
+    <div class="modal-card biometric-hud-card">
+      <div class="card-badge success" id="hud-badge">CHALLENGE ACTIVE</div>
+      <h3 class="modal-title" id="hud-title">🔐 Biometric Authentication</h3>
+      <p class="modal-subtitle" id="hud-subtitle">Touch your registered fingerprint sensor on phone to authorize PC unlock</p>
+
+      <div class="pulse-fingerprint-container scanning" id="hud-fingerprint-container" style="margin: 1.5rem auto;">
+        <div class="pulse-ring ring-1"></div>
+        <div class="pulse-ring ring-2"></div>
+        <div class="pulse-ring ring-3"></div>
+        
+        <div class="fingerprint-disc scanning" id="hud-fingerprint-disc">
+          <div class="scanner-laser active"></div>
+          <svg class="fingerprint-icon" viewBox="0 0 24 24">
+            <path d="M17.81 4.47c-.08 0-.16-.02-.23-.06C15.66 3.42 14 3 12.01 3c-1.98 0-3.86.47-5.57 1.41-.24.13-.54.04-.68-.2-.13-.24-.04-.55.2-.68C7.82 2.52 9.86 2 12.01 2c2.13 0 3.99.47 6.03 1.52.25.13.34.43.21.67-.1.18-.28.28-.44.28zM3.5 9.72c-.1 0-.2-.03-.29-.09-.23-.16-.28-.47-.12-.7.99-1.4 2.25-2.5 3.75-3.27C9.9 4.04 14 4.03 17.15 5.65c1.5.77 2.76 1.86 3.75 3.25.16.22.11.54-.12.7-.23.16-.54.11-.7-.12-.9-1.26-2.04-2.25-3.39-2.94-2.87-1.47-6.54-1.47-9.4 0-1.36.7-2.5 1.7-3.4 2.97-.08.14-.23.21-.39.21zm6.25 12.07c-.13 0-.26-.05-.35-.15-.87-.87-1.34-1.43-2.01-2.64-.69-1.23-1.05-2.73-1.05-4.34 0-2.97 2.54-5.39 5.66-5.39s5.66 2.42 5.66 5.39c0 .28-.22.5-.5.5s-.5-.22-.5-.5c0-2.42-2.09-4.39-4.66-4.39-2.57 0-4.66 1.97-4.66 4.39 0 1.44.32 2.77.93 3.85.64 1.15 1.08 1.64 1.85 2.42.19.2.19.51 0 .71-.11.1-.24.16-.38.16zm8.26-3.83c-.09 0-.17-.02-.26-.07-.79-.47-1.85-.75-3.08-.79-2.02-.07-3.79.52-5.41 1.79-.22.17-.53.14-.7-.07-.17-.22-.14-.53.07-.7 1.85-1.45 3.89-2.12 6.13-2.04 1.41.05 2.63.38 3.58.94.24.14.32.45.18.69-.09.16-.27.25-.51.25zM12.01 15.49c-.28 0-.5-.22-.5-.5v-2.16c0-.28.22-.5.5-.5s.5.22.5.5v2.16c0 .28-.22.5-.5.5z"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="hud-timer-bar">
+        <div id="hud-timer-fill" class="hud-timer-fill"></div>
+      </div>
+      <p id="hud-timer-text" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 6px;">Awaiting biometric hardware signature (5s)...</p>
+
+      <div class="modal-actions" style="margin-top: 1.25rem;">
+        <button class="btn btn-secondary" onclick="closeBiometricModal()" style="width: 100%;">Cancel Challenge</button>
+      </div>
+    </div>
+  </div>
+
   <!-- UNPAIR CONFIRMATION MODAL -->
   <div id="unpair-modal" class="modal-overlay">
     <div class="modal-card">
@@ -303,6 +347,6 @@
     <span id="toast-message">Action completed successfully!</span>
   </div>
 
-  <script src="./main.js"></script>
+  <script type="module" src="./main.js"></script>
 </body>
 </html>

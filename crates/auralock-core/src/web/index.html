@@ -46,7 +46,7 @@
 
     header {
       backdrop-filter: blur(20px);
-      background: rgba(7, 9, 14, 0.8);
+      background: rgba(7, 9, 14, 0.85);
       border-bottom: 1px solid var(--border-color);
       padding: 1rem 2rem;
       position: sticky;
@@ -120,6 +120,11 @@
     .status-dot.connected {
       background: var(--accent-green);
       box-shadow: 0 0 12px var(--accent-green);
+    }
+
+    .status-dot.disconnected {
+      background: var(--accent-red);
+      box-shadow: 0 0 10px var(--accent-red);
     }
 
     .nav-tabs {
@@ -200,91 +205,123 @@
       background: var(--bg-card);
       backdrop-filter: blur(16px);
       border: 1px solid var(--border-color);
-      border-radius: 18px;
+      border-radius: 16px;
       padding: 1.75rem;
       position: relative;
-      overflow: hidden;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     }
 
     .card-title {
       font-size: 1.15rem;
       font-weight: 700;
-      margin-bottom: 0.5rem;
+      margin-bottom: 4px;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
 
     .card-subtitle {
       font-size: 0.85rem;
       color: var(--text-muted);
-      margin-bottom: 1.5rem;
+      margin-bottom: 1.25rem;
     }
 
     .qr-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 1.5rem;
       background: #FFFFFF;
-      border-radius: 14px;
-      box-shadow: 0 0 35px rgba(0, 255, 136, 0.15);
-      margin-bottom: 1.5rem;
-      width: 240px;
-      height: 240px;
-      margin-left: auto;
-      margin-right: auto;
-    }
-
-    #qr-canvas {
-      width: 100%;
-      height: 100%;
+      padding: 16px;
+      border-radius: 12px;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      margin: 0 auto 1.25rem auto;
+      box-shadow: 0 0 30px rgba(0, 210, 255, 0.15);
     }
 
     .pin-badge {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      background: rgba(0, 255, 136, 0.1);
-      border: 1px solid rgba(0, 255, 136, 0.3);
-      padding: 10px 20px;
-      border-radius: 12px;
+      display: inline-block;
       font-family: var(--font-mono);
       font-size: 1.5rem;
       font-weight: 700;
-      color: var(--accent-green);
       letter-spacing: 4px;
-      margin-bottom: 1.25rem;
+      color: var(--accent-green);
+      background: rgba(0, 255, 136, 0.08);
+      border: 1px dashed rgba(0, 255, 136, 0.35);
+      padding: 6px 20px;
+      border-radius: 10px;
+      margin-bottom: 12px;
       cursor: pointer;
-      position: relative;
     }
 
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      font-size: 0.9rem;
+    }
+
+    .info-label { color: var(--text-muted); }
+    .info-val { font-family: var(--font-mono); font-weight: 600; color: #FFF; }
+
+    .paired-device-display {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      margin-bottom: 1.5rem;
+    }
+
+    .device-avatar {
+      font-size: 2.2rem;
+      background: rgba(0, 255, 136, 0.1);
+      width: 56px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 14px;
+      border: 1px solid rgba(0, 255, 136, 0.3);
+    }
+
+    .device-details h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 3px;
+    }
+
+    .device-details p {
+      font-size: 0.85rem;
+      color: var(--accent-green);
+    }
+
+    /* Buttons */
     .btn {
+      padding: 10px 18px;
+      border-radius: 10px;
+      font-family: var(--font-main);
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s ease;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
-      padding: 10px 18px;
-      border-radius: 10px;
-      font-family: var(--font-main);
-      font-size: 0.9rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      border: none;
     }
 
     .btn-primary {
       background: linear-gradient(135deg, #00FF88, #00D2FF);
       color: #07090E;
-      box-shadow: 0 4px 15px rgba(0, 255, 136, 0.3);
+      font-weight: 700;
     }
 
     .btn-primary:hover {
-      box-shadow: 0 6px 22px rgba(0, 255, 136, 0.5);
+      box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
       transform: translateY(-1px);
     }
 
@@ -295,7 +332,8 @@
     }
 
     .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
     }
 
     .btn-danger {
@@ -305,41 +343,121 @@
     }
 
     .btn-danger:hover {
-      background: rgba(255, 51, 102, 0.22);
+      background: rgba(255, 51, 102, 0.2);
+      border-color: var(--accent-red);
     }
 
-    /* AuraDrop Dropzone */
-    .dropzone {
-      border: 2px dashed rgba(0, 210, 255, 0.35);
+    /* Dropzone & Transfer */
+    .transfer-control-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
       border-radius: 16px;
-      padding: 3rem 2rem;
-      text-align: center;
-      background: rgba(0, 210, 255, 0.02);
-      transition: all 0.25s ease;
-      cursor: pointer;
+      padding: 1.25rem 1.75rem;
       margin-bottom: 1.5rem;
     }
 
+    .transfer-toggle-info h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 2px;
+    }
+
+    .transfer-toggle-info p {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    .transfer-toggle-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .transfer-status-tag {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-muted);
+    }
+
+    .transfer-status-tag.active {
+      background: rgba(0, 255, 136, 0.15);
+      color: var(--accent-green);
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 52px;
+      height: 28px;
+    }
+
+    .switch input { opacity: 0; width: 0; height: 0; }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #334155;
+      transition: .3s;
+      border-radius: 34px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 20px;
+      width: 20px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background: linear-gradient(135deg, #00FF88, #00D2FF);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(24px);
+    }
+
+    .dropzone {
+      border: 2px dashed rgba(0, 210, 255, 0.3);
+      border-radius: 14px;
+      padding: 3rem 1.5rem;
+      text-align: center;
+      background: rgba(0, 210, 255, 0.02);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
     .dropzone:hover, .dropzone.dragover {
-      border-color: var(--accent-green);
-      background: rgba(0, 255, 136, 0.06);
-      transform: scale(1.01);
+      border-color: var(--accent-cyan);
+      background: rgba(0, 210, 255, 0.06);
     }
 
     .dropzone svg {
       width: 48px;
       height: 48px;
       fill: var(--accent-cyan);
-      margin-bottom: 1rem;
+      margin-bottom: 12px;
     }
 
     .progress-bar-container {
-      background: rgba(255, 255, 255, 0.06);
-      border-radius: 999px;
-      height: 8px;
       width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
       overflow: hidden;
-      margin: 1rem 0 0.5rem;
+      margin-top: 14px;
       display: none;
     }
 
@@ -347,32 +465,42 @@
       height: 100%;
       width: 0%;
       background: linear-gradient(90deg, #00FF88, #00D2FF);
-      transition: width 0.1s linear;
+      transition: width 0.2s ease;
     }
 
-    /* Received Files Table */
+    .clipboard-box {
+      width: 100%;
+      height: 130px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      padding: 12px;
+      resize: none;
+      margin-bottom: 12px;
+    }
+
+    .clipboard-box:focus {
+      outline: none;
+      border-color: var(--accent-cyan);
+    }
+
     .files-list {
       display: flex;
       flex-direction: column;
       gap: 10px;
-      max-height: 400px;
-      overflow-y: auto;
     }
 
     .file-item {
       display: flex;
-      align-items: center;
       justify-content: space-between;
+      align-items: center;
       padding: 12px 16px;
       background: rgba(255, 255, 255, 0.03);
       border: 1px solid var(--border-color);
       border-radius: 12px;
-      transition: all 0.2s ease;
-    }
-
-    .file-item:hover {
-      background: rgba(255, 255, 255, 0.06);
-      border-color: rgba(0, 210, 255, 0.25);
     }
 
     .file-info {
@@ -381,70 +509,12 @@
       gap: 12px;
     }
 
-    .file-icon {
-      width: 36px;
-      height: 36px;
-      border-radius: 8px;
-      background: rgba(0, 210, 255, 0.1);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--accent-cyan);
-    }
-
-    .file-details h4 {
-      font-size: 0.95rem;
-      font-weight: 600;
-    }
-
-    .file-details p {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
-
-    .info-row {
-      display: flex;
-      justify-content: space-between;
-      padding: 10px 0;
-      border-bottom: 1px solid var(--border-color);
-      font-size: 0.9rem;
-    }
-
-    .info-row:last-child {
-      border-bottom: none;
-    }
-
-    .info-label {
-      color: var(--text-muted);
-    }
-
-    .info-val {
-      font-family: var(--font-mono);
-      font-weight: 600;
-      color: var(--text-main);
-    }
-
-    .clipboard-box {
-      width: 100%;
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 12px;
-      color: var(--text-main);
-      font-family: var(--font-mono);
-      font-size: 0.9rem;
-      resize: vertical;
-      min-height: 90px;
-      margin-bottom: 1rem;
-    }
-
-    .clipboard-box:focus {
-      outline: none;
-      border-color: var(--accent-cyan);
-    }
+    .file-icon { font-size: 1.5rem; }
+    .file-details h4 { font-size: 0.95rem; font-weight: 600; }
+    .file-details p { font-size: 0.8rem; color: var(--text-muted); }
 
     .log-container {
-      background: #030508;
+      background: rgba(0, 0, 0, 0.4);
       border: 1px solid var(--border-color);
       border-radius: 12px;
       padding: 1rem;
@@ -456,14 +526,8 @@
       line-height: 1.6;
     }
 
-    .log-entry {
-      margin-bottom: 4px;
-    }
-
-    .log-time {
-      color: #4A5568;
-    }
-
+    .log-entry { margin-bottom: 4px; }
+    .log-time { color: #4A5568; }
     .log-success { color: var(--accent-green); }
     .log-info { color: var(--accent-cyan); }
     .log-warn { color: var(--accent-yellow); }
@@ -494,6 +558,238 @@
     #toast.show {
       transform: translateY(0);
       opacity: 1;
+    }
+
+    /* ==========================================================================
+       FINGERPRINT SCANNER & PULSE BIOMETRIC WIDGET
+       ========================================================================== */
+    .biometric-scanner-card {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+      text-align: center;
+    }
+
+    .pulse-fingerprint-container {
+      position: relative;
+      width: 180px;
+      height: 180px;
+      margin: 1.25rem auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .pulse-ring {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      pointer-events: none;
+      border: 2px solid var(--accent-cyan);
+      opacity: 0;
+    }
+
+    .pulse-fingerprint-container.connected .pulse-ring,
+    .pulse-fingerprint-container.scanning .pulse-ring {
+      animation: pulseConcentric 2.4s cubic-bezier(0.25, 0.8, 0.25, 1) infinite;
+    }
+
+    .pulse-fingerprint-container .ring-1 {
+      width: 90px;
+      height: 90px;
+      animation-delay: 0s;
+    }
+
+    .pulse-fingerprint-container .ring-2 {
+      width: 130px;
+      height: 130px;
+      animation-delay: 0.8s;
+    }
+
+    .pulse-fingerprint-container .ring-3 {
+      width: 170px;
+      height: 170px;
+      animation-delay: 1.6s;
+    }
+
+    @keyframes pulseConcentric {
+      0% {
+        transform: translate(-50%, -50%) scale(0.65);
+        opacity: 0.85;
+        border-color: var(--accent-cyan);
+        box-shadow: 0 0 15px rgba(0, 210, 255, 0.4);
+      }
+      50% {
+        opacity: 0.4;
+        border-color: var(--accent-green);
+      }
+      100% {
+        transform: translate(-50%, -50%) scale(1.3);
+        opacity: 0;
+        border-color: transparent;
+        box-shadow: none;
+      }
+    }
+
+    .fingerprint-disc {
+      position: relative;
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      background: radial-gradient(circle at center, #0E2A38 0%, #081622 70%, #050B12 100%);
+      border: 2px solid rgba(0, 210, 255, 0.45);
+      box-shadow: 0 0 30px rgba(0, 210, 255, 0.3), inset 0 0 20px rgba(0, 210, 255, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      z-index: 2;
+    }
+
+    .pulse-fingerprint-container:hover .fingerprint-disc {
+      transform: scale(1.08);
+      border-color: var(--accent-green);
+      box-shadow: 0 0 40px rgba(0, 255, 136, 0.5), inset 0 0 20px rgba(0, 255, 136, 0.35);
+    }
+
+    .fingerprint-icon {
+      width: 54px;
+      height: 54px;
+      fill: #00D2FF;
+      filter: drop-shadow(0 0 10px rgba(0, 210, 255, 0.7));
+      transition: all 0.3s ease;
+    }
+
+    .pulse-fingerprint-container:hover .fingerprint-icon {
+      fill: #00FF88;
+      filter: drop-shadow(0 0 14px var(--accent-green));
+    }
+
+    .scanner-laser {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #00FF88, #00D2FF, transparent);
+      box-shadow: 0 0 12px #00FF88, 0 0 6px #00D2FF;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    .pulse-fingerprint-container.scanning .scanner-laser,
+    .scanner-laser.active {
+      opacity: 1;
+      animation: laserScan 1.5s ease-in-out infinite alternate;
+    }
+
+    @keyframes laserScan {
+      0% { top: 8%; opacity: 0.3; }
+      50% { opacity: 1; }
+      100% { top: 88%; opacity: 0.3; }
+    }
+
+    .pulse-fingerprint-container.verified .fingerprint-disc {
+      background: radial-gradient(circle at center, #0F3D2A 0%, #0A241A 70%, #05140E 100%);
+      border-color: var(--accent-green);
+      box-shadow: 0 0 50px rgba(0, 255, 136, 0.9), inset 0 0 25px rgba(0, 255, 136, 0.6);
+      transform: scale(1.15);
+    }
+
+    .pulse-fingerprint-container.verified .fingerprint-icon {
+      fill: #00FF88;
+      filter: drop-shadow(0 0 18px var(--accent-green));
+    }
+
+    .pulse-fingerprint-container.denied .fingerprint-disc {
+      background: radial-gradient(circle at center, #3D0F18 0%, #240A0F 70%, #140508 100%);
+      border-color: var(--accent-red);
+      box-shadow: 0 0 50px rgba(255, 51, 102, 0.9), inset 0 0 25px rgba(255, 51, 102, 0.6);
+      animation: shakeDisc 0.4s ease;
+    }
+
+    .pulse-fingerprint-container.denied .fingerprint-icon {
+      fill: var(--accent-red);
+      filter: drop-shadow(0 0 18px var(--accent-red));
+    }
+
+    @keyframes shakeDisc {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-8px); }
+      40%, 80% { transform: translateX(8px); }
+    }
+
+    .fingerprint-status-box {
+      text-align: center;
+      margin-top: 0.5rem;
+      width: 100%;
+    }
+
+    .fingerprint-status-box h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 3px;
+      color: #FFF;
+    }
+
+    .fingerprint-status-box p {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(8px);
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.show {
+      display: flex;
+    }
+
+    .modal-card {
+      background: #0F172A;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 20px;
+      padding: 2rem;
+      max-width: 440px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.7);
+    }
+
+    .biometric-hud-card {
+      max-width: 460px;
+      background: radial-gradient(circle at top, #132238 0%, #0C1524 100%);
+      border: 1px solid rgba(0, 210, 255, 0.35);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85), 0 0 45px rgba(0, 210, 255, 0.2);
+    }
+
+    .hud-timer-bar {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 14px;
+    }
+
+    .hud-timer-fill {
+      height: 100%;
+      width: 100%;
+      background: linear-gradient(90deg, #00FF88, #00D2FF);
+      transition: width 0.1s linear;
     }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -528,7 +824,7 @@
       <span>🔐</span> Security & Pairing
     </button>
     <button class="tab-btn" onclick="switchTab('auradrop')">
-      <span>🚀</span> AuraDrop (PC ➔ Phone)
+      <span>🚀</span> AuraDrop (Transfer)
     </button>
     <button class="tab-btn" onclick="switchTab('received')">
       <span>📥</span> Received Files (<span id="received-badge">0</span>)
@@ -602,35 +898,34 @@
 
       <!-- VIEW B: PAIRED ACTIVE DASHBOARD (SHOWN WHEN PAIRED) -->
       <div id="paired-view" class="grid-2" style="display: none;">
-        <div class="card">
-          <div style="display: inline-block; padding: 4px 10px; background: rgba(0,255,136,0.15); border: 1px solid rgba(0,255,136,0.4); border-radius: 6px; font-size: 0.75rem; font-weight: 700; color: var(--accent-green); margin-bottom: 12px;">PAIRED & ARMED</div>
-          <h2 class="card-title">📱 Active Paired Smartphone</h2>
-          <p class="card-subtitle">Physical biometric hardware key authorized for PC unlock</p>
+        <!-- HERO BIOMETRIC PULSE SCANNER CARD -->
+        <div class="card biometric-scanner-card" id="biometric-scanner-card">
+          <div class="card-badge success" id="biometric-badge-status" style="display: inline-block; padding: 4px 10px; background: rgba(0,255,136,0.15); border: 1px solid rgba(0,255,136,0.4); border-radius: 6px; font-size: 0.75rem; font-weight: 700; color: var(--accent-green); margin-bottom: 12px;">PAIRED & ARMED</div>
+          <h2 class="card-title">🛡️ Hardware Biometric Security</h2>
+          <p class="card-subtitle">Touch smartphone sensor to unlock PC via zero-trust Ed25519 cryptographic key</p>
 
-          <div class="info-row">
-            <span class="info-label">Paired Device:</span>
-            <span id="phone-name-val" class="info-val" style="color: var(--accent-green);">Samsung Galaxy / Pixel</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Connection Status:</span>
-            <span id="phone-conn-val" class="info-val">Standby</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">PC Hostname:</span>
-            <span id="pc-name-val" class="info-val">...</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Daemon Port:</span>
-            <span id="pc-port-val" class="info-val">47890</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Split-Key Vault:</span>
-            <span id="vault-status-val" class="info-val">Encrypted (Ready)</span>
+          <!-- CONCENTRIC PULSE FINGERPRINT VISUALIZER -->
+          <div class="pulse-fingerprint-container connected" id="pulse-fingerprint-btn" onclick="testUnlock()" title="Click to test Biometric Unlock">
+            <div class="pulse-ring ring-1"></div>
+            <div class="pulse-ring ring-2"></div>
+            <div class="pulse-ring ring-3"></div>
+            
+            <div class="fingerprint-disc" id="fingerprint-disc">
+              <div class="scanner-laser" id="scanner-laser"></div>
+              <svg class="fingerprint-icon" viewBox="0 0 24 24">
+                <path d="M17.81 4.47c-.08 0-.16-.02-.23-.06C15.66 3.42 14 3 12.01 3c-1.98 0-3.86.47-5.57 1.41-.24.13-.54.04-.68-.2-.13-.24-.04-.55.2-.68C7.82 2.52 9.86 2 12.01 2c2.13 0 3.99.47 6.03 1.52.25.13.34.43.21.67-.1.18-.28.28-.44.28zM3.5 9.72c-.1 0-.2-.03-.29-.09-.23-.16-.28-.47-.12-.7.99-1.4 2.25-2.5 3.75-3.27C9.9 4.04 14 4.03 17.15 5.65c1.5.77 2.76 1.86 3.75 3.25.16.22.11.54-.12.7-.23.16-.54.11-.7-.12-.9-1.26-2.04-2.25-3.39-2.94-2.87-1.47-6.54-1.47-9.4 0-1.36.7-2.5 1.7-3.4 2.97-.08.14-.23.21-.39.21zm6.25 12.07c-.13 0-.26-.05-.35-.15-.87-.87-1.34-1.43-2.01-2.64-.69-1.23-1.05-2.73-1.05-4.34 0-2.97 2.54-5.39 5.66-5.39s5.66 2.42 5.66 5.39c0 .28-.22.5-.5.5s-.5-.22-.5-.5c0-2.42-2.09-4.39-4.66-4.39-2.57 0-4.66 1.97-4.66 4.39 0 1.44.32 2.77.93 3.85.64 1.15 1.08 1.64 1.85 2.42.19.2.19.51 0 .71-.11.1-.24.16-.38.16zm8.26-3.83c-.09 0-.17-.02-.26-.07-.79-.47-1.85-.75-3.08-.79-2.02-.07-3.79.52-5.41 1.79-.22.17-.53.14-.7-.07-.17-.22-.14-.53.07-.7 1.85-1.45 3.89-2.12 6.13-2.04 1.41.05 2.63.38 3.58.94.24.14.32.45.18.69-.09.16-.27.25-.51.25zM12.01 15.49c-.28 0-.5-.22-.5-.5v-2.16c0-.28.22-.5.5-.5s.5.22.5.5v2.16c0 .28-.22.5-.5.5z"/>
+              </svg>
+            </div>
           </div>
 
-          <div style="display: flex; gap: 10px; margin-top: 1.5rem;">
+          <div class="fingerprint-status-box">
+            <h3 id="fingerprint-headline">Biometric Sensor Armed & Ready</h3>
+            <p id="fingerprint-hint">Click fingerprint sensor disc or button below to test unlock challenge</p>
+          </div>
+
+          <div class="biometric-actions" style="margin-top: 1.25rem; display: flex; gap: 10px; width: 100%;">
             <button class="btn btn-primary" onclick="testUnlock()" style="flex: 1;">
-              <span>🧪</span> Test Biometric Challenge
+              <span>⚡</span> Test Biometric Challenge
             </button>
             <button class="btn btn-danger" onclick="unpairDevice()">
               <span>🗑️</span> Unpair Device
@@ -640,6 +935,33 @@
 
         <div style="display: flex; flex-direction: column; gap: 1.5rem;">
           <div class="card">
+            <div style="display: inline-block; padding: 4px 10px; background: rgba(0,255,136,0.15); border: 1px solid rgba(0,255,136,0.4); border-radius: 6px; font-size: 0.75rem; font-weight: 700; color: var(--accent-green); margin-bottom: 12px;">HARDWARE LINKED</div>
+            <h2 class="card-title">📱 Paired Smartphone Details</h2>
+            <p class="card-subtitle">Active biometric enclave authorized for authentication</p>
+
+            <div class="info-row">
+              <span class="info-label">Paired Device:</span>
+              <span id="phone-name-val" class="info-val" style="color: var(--accent-green);">Samsung Galaxy / Pixel</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Connection Status:</span>
+              <span id="phone-conn-val" class="info-val">Standby</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">PC Hostname:</span>
+              <span id="pc-name-val" class="info-val">...</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Daemon Port:</span>
+              <span id="pc-port-val" class="info-val">47890</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Split-Key Vault:</span>
+              <span id="vault-status-val" class="info-val">Encrypted (Ready)</span>
+            </div>
+          </div>
+
+          <div class="card">
             <h2 class="card-title">🔑 Update PC Login Password</h2>
             <p class="card-subtitle">Encrypted securely into local PAM split-key vault (ChaCha20-Poly1305)</p>
             <div style="display: flex; gap: 10px;">
@@ -647,39 +969,55 @@
               <button class="btn btn-secondary" onclick="savePassword()">Save to Vault</button>
             </div>
           </div>
-
-          <div class="card">
-            <h2 class="card-title">🛡️ Security Policy Active</h2>
-            <p class="card-subtitle">Remote Biometric Authentication Settings</p>
-            <div class="info-row">
-              <span class="info-label">Lockscreen & Wake Trigger:</span>
-              <span class="info-val" style="color: var(--accent-green);">Auto-Armed</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Password Fallback:</span>
-              <span class="info-val" style="color: var(--accent-cyan);">Enabled (PAM Auto-Fallback)</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">New Pairing Policy:</span>
-              <span class="info-val">Locked (Unpair to switch phone)</span>
-            </div>
-          </div>
         </div>
       </div>
     </div>
 
-    <!-- TAB 2: AURADROP (SEND TO PHONE) -->
+    <!-- TAB 2: AURADROP TRANSFER -->
     <div id="tab-auradrop" class="tab-content">
-      <div class="grid-2">
+      <div class="transfer-control-bar">
+        <div class="transfer-toggle-info">
+          <h3>⚡ AuraDrop Transfer Channel</h3>
+          <p id="transfer-desc-text">Bidirectional drag & drop file sharing and live clipboard synchronization</p>
+        </div>
+        <div class="transfer-toggle-container">
+          <span id="transfer-toggle-status-label" class="transfer-status-tag">OFF</span>
+          <label class="switch" id="transfer-switch-wrapper">
+            <input type="checkbox" id="transfer-toggle" onchange="handleTransferToggle(this.checked)">
+            <span class="slider round"></span>
+          </label>
+        </div>
+      </div>
+
+      <div id="transfer-unlinked-view" class="card" style="text-align: center; padding: 3rem 1.5rem; display: none;">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">📱</div>
+        <h2 class="card-title" id="transfer-unlinked-title" style="margin-bottom: 8px; justify-content: center;">Phone Not Linked</h2>
+        <p class="card-subtitle" id="transfer-unlinked-desc" style="max-width: 500px; margin: 0 auto 1.5rem auto;">
+          AuraDrop requires your paired smartphone to be live linked. Tap 'Tap to Link' on your phone to activate AuraDrop.
+        </p>
+      </div>
+
+      <div id="transfer-off-view" class="card" style="text-align: center; padding: 3rem 1.5rem;">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">🔒</div>
+        <h2 class="card-title" style="margin-bottom: 8px; justify-content: center;">AuraDrop Channel is Paused</h2>
+        <p class="card-subtitle" style="max-width: 500px; margin: 0 auto 1.5rem auto;">
+          To transfer files with your linked phone, flip the toggle switch above to <strong>ON</strong>.
+        </p>
+        <button class="btn btn-primary" onclick="enableTransferNow()" style="display: inline-flex; align-items: center; gap: 8px; margin: 0 auto;">
+          <span>⚡</span> Open Transfer Channel
+        </button>
+      </div>
+
+      <div id="transfer-active-view" class="grid-2" style="display: none;">
         <div class="card">
-          <h2 class="card-title">⚡ AuraDrop Send (Laptop ➔ Mobile)</h2>
-          <p class="card-subtitle">Instantly stream any file to your paired phone over local high-speed Wi-Fi</p>
+          <h2 class="card-title">📤 Send Files to Phone</h2>
+          <p class="card-subtitle">Drag and drop files to stream directly to mobile storage</p>
 
           <input type="file" id="file-input" style="display: none;" onchange="handleFileSelected(this.files)">
           <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
             <svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
             <h3 style="font-size: 1.1rem; margin-bottom: 6px;">Drag & Drop Files Here</h3>
-            <p style="font-size: 0.85rem; color: var(--text-muted);">or click to browse from PC</p>
+            <p style="font-size: 0.85rem; color: var(--text-muted);">or click anywhere to browse from laptop</p>
           </div>
 
           <div id="upload-progress-box" class="progress-bar-container">
@@ -689,8 +1027,8 @@
         </div>
 
         <div class="card">
-          <h2 class="card-title">📋 Push Clipboard / Text to Phone</h2>
-          <p class="card-subtitle">Share links, notes, or verification codes directly to mobile screen</p>
+          <h2 class="card-title">📋 Instant Clipboard / Notes Push</h2>
+          <p class="card-subtitle">Send text, URLs, or authentication tokens directly to phone</p>
 
           <textarea id="clipboard-text" class="clipboard-box" placeholder="Type or paste text/URL here to send to phone..."></textarea>
           <button class="btn btn-primary" onclick="sendClipboard()" style="width: 100%;">
@@ -700,16 +1038,16 @@
       </div>
     </div>
 
-    <!-- TAB 3: RECEIVED FILES (PHONE TO PC) -->
+    <!-- TAB 3: RECEIVED FILES -->
     <div id="tab-received" class="tab-content">
       <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
           <div>
             <h2 class="card-title">📥 Received Files from Phone</h2>
-            <p class="card-subtitle" style="margin-bottom: 0;">Files sent via AuraDrop saved directly to your PC</p>
+            <p class="card-subtitle" style="margin-bottom: 0;">Files sent via AuraDrop saved into ~/Downloads/AuraLock</p>
           </div>
           <button class="btn btn-secondary" onclick="openDownloadsFolder()">
-            <span>📂</span> Open Downloads/AuraLock Folder
+            <span>📂</span> Open Downloads Folder
           </button>
         </div>
 
@@ -724,18 +1062,49 @@
       <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
           <div>
-            <h2 class="card-title">📊 Live Daemon Event Stream</h2>
-            <p class="card-subtitle" style="margin-bottom: 0;">Real-time biometric challenges, PAM IPC triggers & handshake logs</p>
+            <h2 class="card-title">📊 Live Event Console</h2>
+            <p class="card-subtitle" style="margin-bottom: 0;">Biometric challenges, PAM socket requests, and network events</p>
           </div>
           <button class="btn btn-secondary" onclick="clearLogs()">Clear Console</button>
         </div>
 
         <div id="log-container" class="log-container">
-          <div class="log-entry"><span class="log-time">[System]</span> <span class="log-info">AuraLock Desktop UI connected to core daemon at port 47890.</span></div>
+          <div class="log-entry"><span class="log-time">[System]</span> <span class="log-info">AuraLock Web Control Center initialized.</span></div>
         </div>
       </div>
     </div>
   </main>
+
+  <!-- BIOMETRIC CHALLENGE ACTIVE HUD OVERLAY -->
+  <div id="biometric-challenge-modal" class="modal-overlay">
+    <div class="modal-card biometric-hud-card">
+      <div class="card-badge success" id="hud-badge" style="display: inline-block; padding: 4px 10px; background: rgba(0,255,136,0.15); border: 1px solid rgba(0,255,136,0.4); border-radius: 6px; font-size: 0.75rem; font-weight: 700; color: var(--accent-green); margin-bottom: 12px;">CHALLENGE ACTIVE</div>
+      <h3 class="modal-title" id="hud-title" style="font-size: 1.3rem; font-weight: 700; margin-bottom: 8px;">🔐 Biometric Authentication</h3>
+      <p class="modal-subtitle" id="hud-subtitle" style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">Touch your registered fingerprint sensor on phone to authorize PC unlock</p>
+
+      <div class="pulse-fingerprint-container scanning" id="hud-fingerprint-container" style="margin: 1.5rem auto;">
+        <div class="pulse-ring ring-1"></div>
+        <div class="pulse-ring ring-2"></div>
+        <div class="pulse-ring ring-3"></div>
+        
+        <div class="fingerprint-disc scanning" id="hud-fingerprint-disc">
+          <div class="scanner-laser active"></div>
+          <svg class="fingerprint-icon" viewBox="0 0 24 24">
+            <path d="M17.81 4.47c-.08 0-.16-.02-.23-.06C15.66 3.42 14 3 12.01 3c-1.98 0-3.86.47-5.57 1.41-.24.13-.54.04-.68-.2-.13-.24-.04-.55.2-.68C7.82 2.52 9.86 2 12.01 2c2.13 0 3.99.47 6.03 1.52.25.13.34.43.21.67-.1.18-.28.28-.44.28zM3.5 9.72c-.1 0-.2-.03-.29-.09-.23-.16-.28-.47-.12-.7.99-1.4 2.25-2.5 3.75-3.27C9.9 4.04 14 4.03 17.15 5.65c1.5.77 2.76 1.86 3.75 3.25.16.22.11.54-.12.7-.23.16-.54.11-.7-.12-.9-1.26-2.04-2.25-3.39-2.94-2.87-1.47-6.54-1.47-9.4 0-1.36.7-2.5 1.7-3.4 2.97-.08.14-.23.21-.39.21zm6.25 12.07c-.13 0-.26-.05-.35-.15-.87-.87-1.34-1.43-2.01-2.64-.69-1.23-1.05-2.73-1.05-4.34 0-2.97 2.54-5.39 5.66-5.39s5.66 2.42 5.66 5.39c0 .28-.22.5-.5.5s-.5-.22-.5-.5c0-2.42-2.09-4.39-4.66-4.39-2.57 0-4.66 1.97-4.66 4.39 0 1.44.32 2.77.93 3.85.64 1.15 1.08 1.64 1.85 2.42.19.2.19.51 0 .71-.11.1-.24.16-.38.16zm8.26-3.83c-.09 0-.17-.02-.26-.07-.79-.47-1.85-.75-3.08-.79-2.02-.07-3.79.52-5.41 1.79-.22.17-.53.14-.7-.07-.17-.22-.14-.53.07-.7 1.85-1.45 3.89-2.12 6.13-2.04 1.41.05 2.63.38 3.58.94.24.14.32.45.18.69-.09.16-.27.25-.51.25zM12.01 15.49c-.28 0-.5-.22-.5-.5v-2.16c0-.28.22-.5.5-.5s.5.22.5.5v2.16c0 .28-.22.5-.5.5z"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="hud-timer-bar">
+        <div id="hud-timer-fill" class="hud-timer-fill"></div>
+      </div>
+      <p id="hud-timer-text" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 6px;">Awaiting biometric hardware signature (5s)...</p>
+
+      <div style="margin-top: 1.25rem;">
+        <button class="btn btn-secondary" onclick="closeBiometricModal()" style="width: 100%;">Cancel Challenge</button>
+      </div>
+    </div>
+  </div>
 
   <div id="toast">
     <span id="toast-icon">✅</span>
@@ -745,14 +1114,19 @@
   <script>
     let currentPin = "";
     let qrcodeObj = null;
+    let isScanningActive = false;
+    let hudTimerInterval = null;
+    let hudTimeRemaining = 5.0;
+    let isPhoneConnectedState = false;
+    let isPairedState = false;
 
     function switchTab(tabId) {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-      
-      const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.onclick.toString().includes(tabId));
+
+      const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.getAttribute('onclick')?.includes(tabId));
       if (btn) btn.classList.add('active');
-      
+
       const content = document.getElementById('tab-' + tabId);
       if (content) content.classList.add('active');
     }
@@ -779,6 +1153,146 @@
       document.getElementById('log-container').innerHTML = '';
     }
 
+    // FINGERPRINT UI CONTROLLERS
+    function updateFingerprintUi(state, headline, hint) {
+      const container = document.getElementById('pulse-fingerprint-btn');
+      const disc = document.getElementById('fingerprint-disc');
+      const hl = document.getElementById('fingerprint-headline');
+      const ht = document.getElementById('fingerprint-hint');
+      const laser = document.getElementById('scanner-laser');
+
+      if (!container || !disc) return;
+
+      container.className = 'pulse-fingerprint-container ' + state;
+      disc.className = 'fingerprint-disc ' + state;
+
+      if (laser) {
+        if (state === 'scanning') {
+          laser.classList.add('active');
+        } else {
+          laser.classList.remove('active');
+        }
+      }
+
+      if (hl && headline) hl.innerText = headline;
+      if (ht && hint) ht.innerText = hint;
+    }
+
+    function openBiometricModal() {
+      const modal = document.getElementById('biometric-challenge-modal');
+      const hudContainer = document.getElementById('hud-fingerprint-container');
+      const hudDisc = document.getElementById('hud-fingerprint-disc');
+      const hudBadge = document.getElementById('hud-badge');
+      const hudTitle = document.getElementById('hud-title');
+      const hudSubtitle = document.getElementById('hud-subtitle');
+      const timerFill = document.getElementById('hud-timer-fill');
+      const timerText = document.getElementById('hud-timer-text');
+
+      if (hudContainer) hudContainer.className = 'pulse-fingerprint-container scanning';
+      if (hudDisc) hudDisc.className = 'fingerprint-disc scanning';
+      if (hudBadge) {
+        hudBadge.style.background = 'rgba(0,255,136,0.15)';
+        hudBadge.style.color = 'var(--accent-green)';
+        hudBadge.innerText = 'CHALLENGE ACTIVE';
+      }
+      if (hudTitle) hudTitle.innerText = '🔐 Biometric Authentication';
+      if (hudSubtitle) hudSubtitle.innerText = 'Touch your registered fingerprint sensor on phone to authorize PC unlock';
+
+      hudTimeRemaining = 5.0;
+      if (timerFill) {
+        timerFill.style.width = '100%';
+        timerFill.style.background = 'linear-gradient(90deg, #00FF88, #00D2FF)';
+      }
+      if (timerText) timerText.innerText = 'Awaiting biometric hardware signature (5.0s)...';
+
+      if (hudTimerInterval) clearInterval(hudTimerInterval);
+      hudTimerInterval = setInterval(() => {
+        hudTimeRemaining -= 0.1;
+        if (timerFill) timerFill.style.width = `${Math.max(0, (hudTimeRemaining / 5.0) * 100)}%`;
+        if (timerText) timerText.innerText = `Awaiting biometric hardware signature (${Math.max(0, hudTimeRemaining).toFixed(1)}s)...`;
+
+        if (hudTimeRemaining <= 0) {
+          clearInterval(hudTimerInterval);
+          if (isScanningActive) {
+            handleBiometricResult(false, 'Challenge expired (5s timeout)');
+          }
+        }
+      }, 100);
+
+      if (modal) modal.classList.add('show');
+    }
+
+    function closeBiometricModal() {
+      const modal = document.getElementById('biometric-challenge-modal');
+      if (modal) modal.classList.remove('show');
+      if (hudTimerInterval) {
+        clearInterval(hudTimerInterval);
+        hudTimerInterval = null;
+      }
+      isScanningActive = false;
+      updateFingerprintUi(isPhoneConnectedState ? 'connected' : 'standby', 
+        isPhoneConnectedState ? 'Biometric Sensor Armed & Ready' : 'Hardware Paired • Standby', 
+        isPhoneConnectedState ? 'Click fingerprint sensor disc or button below to test unlock' : 'Open AuraLock on phone to connect');
+    }
+
+    function handleBiometricResult(success, message) {
+      if (hudTimerInterval) {
+        clearInterval(hudTimerInterval);
+        hudTimerInterval = null;
+      }
+
+      const hudContainer = document.getElementById('hud-fingerprint-container');
+      const hudDisc = document.getElementById('hud-fingerprint-disc');
+      const hudBadge = document.getElementById('hud-badge');
+      const hudTitle = document.getElementById('hud-title');
+      const hudSubtitle = document.getElementById('hud-subtitle');
+      const timerFill = document.getElementById('hud-timer-fill');
+      const timerText = document.getElementById('hud-timer-text');
+
+      if (success) {
+        updateFingerprintUi('verified', '✨ Biometric Signature Verified!', 'PC Authorized & Unlocked 🔓');
+        if (hudContainer) hudContainer.className = 'pulse-fingerprint-container verified';
+        if (hudDisc) hudDisc.className = 'fingerprint-disc verified';
+        if (hudBadge) {
+          hudBadge.style.background = 'rgba(0,255,136,0.15)';
+          hudBadge.style.color = 'var(--accent-green)';
+          hudBadge.innerText = 'VERIFIED ✅';
+        }
+        if (hudTitle) hudTitle.innerText = '🔓 Biometric Verified!';
+        if (hudSubtitle) hudSubtitle.innerText = 'Cryptographic signature accepted. PC unlocked.';
+        if (timerFill) {
+          timerFill.style.width = '100%';
+          timerFill.style.background = 'var(--accent-green)';
+        }
+        if (timerText) timerText.innerText = 'Hardware Keystore Authenticated ✨';
+
+        setTimeout(() => {
+          closeBiometricModal();
+        }, 1600);
+      } else {
+        updateFingerprintUi('denied', '❌ Biometric Denied / Timed Out', message || 'Please retry fingerprint scan on phone');
+        if (hudContainer) hudContainer.className = 'pulse-fingerprint-container denied';
+        if (hudDisc) hudDisc.className = 'fingerprint-disc denied';
+        if (hudBadge) {
+          hudBadge.style.background = 'rgba(255,51,102,0.15)';
+          hudBadge.style.color = 'var(--accent-red)';
+          hudBadge.innerText = 'FAILED ❌';
+        }
+        if (hudTitle) hudTitle.innerText = '⚠️ Verification Failed';
+        if (hudSubtitle) hudSubtitle.innerText = message || 'Biometric authentication was rejected or timed out.';
+        if (timerFill) {
+          timerFill.style.width = '0%';
+          timerFill.style.background = 'var(--accent-red)';
+        }
+        if (timerText) timerText.innerText = 'Authentication Rejected ❌';
+
+        setTimeout(() => {
+          closeBiometricModal();
+        }, 2200);
+      }
+    }
+
+    // Status Fetching
     async function fetchStatus() {
       try {
         const res = await fetch('/api/status');
@@ -786,27 +1300,53 @@
         
         document.getElementById('pc-name-val').innerText = data.pc_name || 'AuraLock-PC';
         document.getElementById('pc-port-val').innerText = data.port || 47890;
+        isPhoneConnectedState = !!data.is_phone_connected;
+        isPairedState = !!data.is_paired;
 
-        // Dynamic view toggle: When paired, remove QR pairing setup and show Paired Active Card
-        const unpairedView = document.getElementById('unpaired-view');
         const pairedView = document.getElementById('paired-view');
-        if (unpairedView && pairedView) {
-          if (data.is_paired) {
-            unpairedView.style.display = 'none';
-            pairedView.style.display = 'grid';
+        const unpairedView = document.getElementById('unpaired-view');
+
+        if (data.is_paired) {
+          unpairedView.style.display = 'none';
+          pairedView.style.display = 'grid';
+          const badgeStatus = document.getElementById('biometric-badge-status');
+          if (data.is_phone_connected) {
+            if (badgeStatus) {
+              badgeStatus.innerText = 'BIOMETRIC ARMED';
+              badgeStatus.style.background = 'rgba(0,255,136,0.15)';
+              badgeStatus.style.color = 'var(--accent-green)';
+            }
+            if (!isScanningActive) {
+              updateFingerprintUi('connected', 'Biometric Sensor Armed & Ready', 'Click fingerprint sensor disc or button below to test unlock');
+            }
           } else {
-            unpairedView.style.display = 'grid';
-            pairedView.style.display = 'none';
+            if (badgeStatus) {
+              badgeStatus.innerText = 'PAIRED • STANDBY';
+              badgeStatus.style.background = 'rgba(255,183,3,0.15)';
+              badgeStatus.style.color = 'var(--accent-yellow)';
+            }
+            if (!isScanningActive) {
+              updateFingerprintUi('standby', 'Hardware Paired • Standby', 'Open AuraLock on phone to connect biometric session');
+            }
+          }
+        } else {
+          unpairedView.style.display = 'grid';
+          pairedView.style.display = 'none';
+          if (!qrcodeObj) {
+            fetchQr();
           }
         }
 
         const phoneConn = document.getElementById('phone-conn-val');
         if (phoneConn) {
           if (data.is_phone_connected) {
-            phoneConn.innerText = 'Connected & Armed';
+            phoneConn.innerText = `🟢 Connected (${data.connected_phone || 'Active'})`;
             phoneConn.style.color = 'var(--accent-green)';
+          } else if (data.is_paired) {
+            phoneConn.innerText = '🟡 Standby (Listening)';
+            phoneConn.style.color = 'var(--accent-yellow)';
           } else {
-            phoneConn.innerText = 'Standby (Awaiting Phone Connection)';
+            phoneConn.innerText = '⚪ Unpaired';
             phoneConn.style.color = 'var(--text-muted)';
           }
         }
@@ -871,6 +1411,52 @@
           document.getElementById('vault-status-val').innerText = 'Unset (Password Required)';
           document.getElementById('vault-status-val').style.color = 'var(--accent-yellow)';
         }
+
+        // Transfer Channel Toggle
+        const transferToggle = document.getElementById('transfer-toggle');
+        const transferStatusLabel = document.getElementById('transfer-toggle-status-label');
+        const transferOffView = document.getElementById('transfer-off-view');
+        const transferUnlinkedView = document.getElementById('transfer-unlinked-view');
+        const transferActiveView = document.getElementById('transfer-active-view');
+        const transferSwitchWrapper = document.getElementById('transfer-switch-wrapper');
+
+        if (!data.is_paired) {
+          if (transferToggle) { transferToggle.checked = false; transferToggle.disabled = true; }
+          if (transferStatusLabel) { transferStatusLabel.innerText = "LOCKED"; transferStatusLabel.className = "transfer-status-tag"; }
+          if (transferSwitchWrapper) transferSwitchWrapper.style.opacity = "0.5";
+          if (transferUnlinkedView) {
+            transferUnlinkedView.style.display = 'block';
+            document.getElementById('transfer-unlinked-title').innerText = "Device Not Paired";
+            document.getElementById('transfer-unlinked-desc').innerText = "Please pair your smartphone in Security & Pairing tab first.";
+          }
+          if (transferOffView) transferOffView.style.display = 'none';
+          if (transferActiveView) transferActiveView.style.display = 'none';
+        } else if (!data.is_phone_connected) {
+          if (transferToggle) { transferToggle.checked = false; transferToggle.disabled = true; }
+          if (transferStatusLabel) { transferStatusLabel.innerText = "STANDBY"; transferStatusLabel.className = "transfer-status-tag"; }
+          if (transferSwitchWrapper) transferSwitchWrapper.style.opacity = "0.5";
+          if (transferUnlinkedView) {
+            transferUnlinkedView.style.display = 'block';
+            document.getElementById('transfer-unlinked-title').innerText = "Phone Standby (Not Linked)";
+            document.getElementById('transfer-unlinked-desc').innerText = `Paired phone (${data.paired_phone || 'Device'}) is in standby. Tap 'Tap to Link' on phone to activate AuraDrop.`;
+          }
+          if (transferOffView) transferOffView.style.display = 'none';
+          if (transferActiveView) transferActiveView.style.display = 'none';
+        } else {
+          if (transferToggle) { transferToggle.disabled = false; transferToggle.checked = !!data.transfer_enabled; }
+          if (transferSwitchWrapper) transferSwitchWrapper.style.opacity = "1";
+          if (transferUnlinkedView) transferUnlinkedView.style.display = 'none';
+
+          if (data.transfer_enabled) {
+            if (transferStatusLabel) { transferStatusLabel.innerText = "ON"; transferStatusLabel.className = "transfer-status-tag active"; }
+            if (transferOffView) transferOffView.style.display = 'none';
+            if (transferActiveView) transferActiveView.style.display = 'grid';
+          } else {
+            if (transferStatusLabel) { transferStatusLabel.innerText = "OFF"; transferStatusLabel.className = "transfer-status-tag"; }
+            if (transferOffView) transferOffView.style.display = 'block';
+            if (transferActiveView) transferActiveView.style.display = 'none';
+          }
+        }
       } catch (e) {
         console.error("Status fetch error", e);
       }
@@ -916,19 +1502,35 @@
     }
 
     async function testUnlock() {
+      if (!isPairedState) {
+        showToast("Please pair smartphone first", "⚠️");
+        return;
+      }
+      if (!isPhoneConnectedState) {
+        showToast("Phone is currently disconnected/standby", "⚠️");
+        return;
+      }
+
+      isScanningActive = true;
+      updateFingerprintUi('scanning', '⚡ Challenging Phone Biometrics...', 'Touch registered fingerprint on phone');
+      openBiometricModal();
       showToast("Sending biometric challenge to phone...", "🧪");
       log("Triggering manual test biometric challenge...", "info");
+
       try {
         const res = await fetch('/api/unlock/test', { method: 'POST' });
         const data = await res.json();
         if (data.success) {
           showToast("Challenge sent! Touch fingerprint on phone.", "📱");
+          log("Challenge transmitted. Waiting for phone biometric signature...", "info");
         } else {
           showToast(data.message || "No phone connected", "⚠️");
           log("Challenge failed: " + data.message, "warn");
+          handleBiometricResult(false, data.message || "Device unreachable");
         }
       } catch (e) {
         showToast("Error sending challenge", "❌");
+        handleBiometricResult(false, "Network error");
       }
     }
 
@@ -957,16 +1559,43 @@
     }
 
     async function unpairDevice() {
-      if (!confirm("Are you sure you want to unpair your Android phone?")) return;
+      if (!confirm("Are you sure you want to unpair this smartphone?")) return;
       try {
-        await fetch('/api/vault/unpair', { method: 'POST' });
-        showToast("Device unpaired", "🗑️");
-        fetchStatus();
-        fetchQr();
-        log("Device unpaired by user", "warn");
+        const res = await fetch('/api/vault/unpair', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: "0000" })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast("Device unpaired successfully", "🗑️");
+          log("Unpaired smartphone from PC", "warn");
+          fetchStatus();
+          fetchQr();
+        }
       } catch (e) {
-        showToast("Failed to unpair", "❌");
+        showToast("Failed to unpair device", "❌");
       }
+    }
+
+    async function handleTransferToggle(enabled) {
+      try {
+        await fetch('/api/auradrop/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled })
+        });
+        showToast(enabled ? "Transfer Channel Opened ⚡" : "Transfer Channel Closed 🔒", enabled ? "⚡" : "🔒");
+        fetchStatus();
+      } catch (e) {
+        showToast("Failed to toggle transfer", "❌");
+      }
+    }
+
+    function enableTransferNow() {
+      const toggle = document.getElementById('transfer-toggle');
+      if (toggle) toggle.checked = true;
+      handleTransferToggle(true);
     }
 
     async function sendClipboard() {
@@ -997,13 +1626,13 @@
     async function handleFileSelected(files) {
       if (!files || files.length === 0) return;
       const file = files[0];
-      
+
       const progressBox = document.getElementById('upload-progress-box');
       const progressFill = document.getElementById('upload-progress-fill');
       const statusText = document.getElementById('upload-status-text');
 
       progressBox.style.display = 'block';
-      progressFill.style.width = '10%';
+      progressFill.style.width = '15%';
       statusText.innerText = `Streaming ${file.name} to Phone...`;
       log(`Starting AuraDrop file transfer: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`, "info");
 
@@ -1037,6 +1666,8 @@
       try {
         const res = await fetch('/api/auradrop/files');
         const files = await res.json();
+        if (!files) return;
+
         const list = document.getElementById('files-list');
         document.getElementById('received-badge').innerText = files.length;
 
@@ -1054,7 +1685,7 @@
                 <p>${(f.file_size / 1024 / 1024).toFixed(2)} MB • From ${f.sender_name || 'Phone'}</p>
               </div>
             </div>
-            <a href="/api/auradrop/download/${encodeURIComponent(f.file_name)}" class="btn btn-secondary" style="padding: 6px 12px; text-decoration: none;">
+            <a href="/api/auradrop/download/${encodeURIComponent(f.file_name)}" class="btn btn-secondary" style="padding: 6px 12px; text-decoration: none;" download>
               ⬇️ Save
             </a>
           </div>
@@ -1075,18 +1706,20 @@
 
     // Drag & Drop Setup
     const dropzone = document.getElementById('dropzone');
-    ['dragenter', 'dragover'].forEach(name => {
-      dropzone.addEventListener(name, (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
-    });
-    ['dragleave', 'drop'].forEach(name => {
-      dropzone.addEventListener(name, (e) => { e.preventDefault(); dropzone.classList.remove('dragover'); });
-    });
-    dropzone.addEventListener('drop', (e) => {
-      const dt = e.dataTransfer;
-      if (dt.files && dt.files.length > 0) {
-        handleFileSelected(dt.files);
-      }
-    });
+    if (dropzone) {
+      ['dragenter', 'dragover'].forEach(name => {
+        dropzone.addEventListener(name, (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+      });
+      ['dragleave', 'drop'].forEach(name => {
+        dropzone.addEventListener(name, (e) => { e.preventDefault(); dropzone.classList.remove('dragover'); });
+      });
+      dropzone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        if (dt.files && dt.files.length > 0) {
+          handleFileSelected(dt.files);
+        }
+      });
+    }
 
     // WebSocket / Event Stream Setup
     function setupWebSocket() {
@@ -1117,9 +1750,11 @@
             if (ev.data.success) {
               log("Biometric signature verified! PC Authorized 🔓", "success");
               showToast("Biometric Verified! PC Unlocked 🚀", "🔓");
+              handleBiometricResult(true, "Biometric signature verified!");
             } else {
               log(`Unlock rejected: ${ev.data.message}`, "error");
               showToast(`Unlock denied: ${ev.data.message}`, "❌");
+              handleBiometricResult(false, ev.data.message || "Unlock rejected");
             }
           } else if (ev.type === 'FileTransferCompleted') {
             if (ev.data.is_incoming) {
@@ -1146,7 +1781,7 @@
     fetchQr();
     fetchReceivedFiles();
     setupWebSocket();
-    setInterval(fetchStatus, 5000);
+    setInterval(fetchStatus, 4000);
   </script>
 </body>
 </html>

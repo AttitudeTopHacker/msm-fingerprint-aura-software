@@ -5,10 +5,12 @@
 
 set -e
 
-VERSION="1.3.3"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+VERSION=$(tr -d '\r\n' < "$ROOT_DIR/VERSION" 2>/dev/null || echo "1.3.3")
 PACKAGE_NAME="auralock"
 ARCH="amd64"
-BUILD_DIR="dist/deb_pkg"
+BUILD_DIR="$ROOT_DIR/dist/deb_pkg"
 DEB_NAME="${PACKAGE_NAME}_${VERSION}_${ARCH}.deb"
 
 echo "=================================================="

@@ -381,19 +381,41 @@ class MainActivity : FragmentActivity() {
             }
         }
 
-        // Auto-request Bluetooth and Notification permissions on app start
+        // Auto-request Camera (QR Scan), Bluetooth, Notification, and File/Media Storage permissions on app start
         LaunchedEffect(Unit) {
             try {
                 val permissionsToRequest = mutableListOf<String>()
+
+                // Camera for QR Scanner
+                val hasCamera = checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                if (!hasCamera) permissionsToRequest.add(Manifest.permission.CAMERA)
+
+                // Bluetooth Scan & Connect
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     val hasConnect = checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
                     val hasScan = checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
                     if (!hasConnect) permissionsToRequest.add(Manifest.permission.BLUETOOTH_CONNECT)
                     if (!hasScan) permissionsToRequest.add(Manifest.permission.BLUETOOTH_SCAN)
+                } else {
+                    val hasFineLoc = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                    if (!hasFineLoc) permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
                 }
+
+                // Push Notifications & Storage
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     val hasNotif = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
                     if (!hasNotif) permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+                    val hasImages = checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
+                    val hasVideo = checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
+                    val hasAudio = checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
+                    if (!hasImages) permissionsToRequest.add(Manifest.permission.READ_MEDIA_IMAGES)
+                    if (!hasVideo) permissionsToRequest.add(Manifest.permission.READ_MEDIA_VIDEO)
+                    if (!hasAudio) permissionsToRequest.add(Manifest.permission.READ_MEDIA_AUDIO)
+                } else {
+                    val hasReadStorage = checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+                    val hasWriteStorage = checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+                    if (!hasReadStorage) permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+                    if (!hasWriteStorage) permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                 }
                 if (permissionsToRequest.isNotEmpty()) {
                     requestBluetoothPermissionLauncher.launch(permissionsToRequest.toTypedArray())

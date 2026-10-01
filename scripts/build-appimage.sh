@@ -5,10 +5,12 @@
 
 set -e
 
-VERSION="1.3.3"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+VERSION=$(tr -d '\r\n' < "$ROOT_DIR/VERSION" 2>/dev/null || echo "1.3.3")
 PACKAGE_NAME="auralock"
 ARCH="amd64"
-PROJECT_ROOT="$(pwd)"
+PROJECT_ROOT="$ROOT_DIR"
 DIST_DIR="${PROJECT_ROOT}/dist"
 APPIMAGE_NAME="${PACKAGE_NAME}_${VERSION}_${ARCH}.AppImage"
 APP_DIR="${DIST_DIR}/AppDir"

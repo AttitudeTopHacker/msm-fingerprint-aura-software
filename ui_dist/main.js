@@ -2,6 +2,9 @@ let currentPin = "";
 let pairingQrObj = null;
 let isPairedState = false;
 let isPhoneConnectedState = false;
+let isScanningActive = false;
+let hudTimerInterval = null;
+let hudTimeRemaining = 5.0;
 
 // Helper to check if Tauri API is available
 function checkIsTauri() {
@@ -136,6 +139,25 @@ async function fetchStatus() {
       document.getElementById('active-phone-status').innerText = data.is_phone_connected
         ? `🟢 Hardware Connected (${data.connected_phone || 'Active'})`
         : '🟡 Hardware Paired • Listening for Connection';
+      
+      const badgeStatus = document.getElementById('biometric-badge-status');
+      if (data.is_phone_connected) {
+        if (badgeStatus) {
+          badgeStatus.innerText = 'BIOMETRIC ARMED';
+          badgeStatus.className = 'card-badge success';
+        }
+        if (!isScanningActive) {
+          updateFingerprintUi('connected', 'Biometric Sensor Armed & Ready', 'Click fingerprint sensor disc or button to test unlock');
+        }
+      } else {
+        if (badgeStatus) {
+          badgeStatus.innerText = 'PAIRED • STANDBY';
+          badgeStatus.className = 'card-badge warning';
+        }
+        if (!isScanningActive) {
+          updateFingerprintUi('standby', 'Hardware Paired • Standby', 'Open AuraLock on phone to connect biometric session');
+        }
+      }
     } else {
       unpairedView.style.display = 'grid';
       pairedView.style.display = 'none';
@@ -370,10 +392,159 @@ window.enableTransferNow = function () {
   window.handleTransferToggle(true);
 };
 
+// BIOMETRIC PULSE FINGERPRINT & MODAL CONTROLLERS
+function updateFingerprintUi(state, headline, hint) {
+  const container = document.getElementById('pulse-fingerprint-btn');
+  const disc = document.getElementById('fingerprint-disc');
+  const hl = document.getElementById('fingerprint-headline');
+  const ht = document.getElementById('fingerprint-hint');
+  const laser = document.getElementById('scanner-laser');
+
+  if (!container || !disc) return;
+
+  container.className = 'pulse-fingerprint-container ' + state;
+  disc.className = 'fingerprint-disc ' + state;
+
+  if (laser) {
+    if (state === 'scanning') {
+      laser.classList.add('active');
+    } else {
+      laser.classList.remove('active');
+    }
+  }
+
+  if (hl && headline) hl.innerText = headline;
+  if (ht && hint) ht.innerText = hint;
+}
+
+window.openBiometricModal = function () {
+  const modal = document.getElementById('biometric-challenge-modal');
+  const hudContainer = document.getElementById('hud-fingerprint-container');
+  const hudDisc = document.getElementById('hud-fingerprint-disc');
+  const hudBadge = document.getElementById('hud-badge');
+  const hudTitle = document.getElementById('hud-title');
+  const hudSubtitle = document.getElementById('hud-subtitle');
+  const timerFill = document.getElementById('hud-timer-fill');
+  const timerText = document.getElementById('hud-timer-text');
+
+  if (hudContainer) hudContainer.className = 'pulse-fingerprint-container scanning';
+  if (hudDisc) hudDisc.className = 'fingerprint-disc scanning';
+  if (hudBadge) {
+    hudBadge.className = 'card-badge success';
+    hudBadge.innerText = 'CHALLENGE ACTIVE';
+  }
+  if (hudTitle) hudTitle.innerText = '🔐 Biometric Authentication';
+  if (hudSubtitle) hudSubtitle.innerText = 'Touch your registered fingerprint sensor on phone to authorize PC unlock';
+
+  hudTimeRemaining = 5.0;
+  if (timerFill) {
+    timerFill.style.width = '100%';
+    timerFill.style.background = 'linear-gradient(90deg, #00FF88, #00D2FF)';
+  }
+  if (timerText) timerText.innerText = 'Awaiting biometric hardware signature (5.0s)...';
+
+  if (hudTimerInterval) clearInterval(hudTimerInterval);
+  hudTimerInterval = setInterval(() => {
+    hudTimeRemaining -= 0.1;
+    if (timerFill) timerFill.style.width = `${Math.max(0, (hudTimeRemaining / 5.0) * 100)}%`;
+    if (timerText) timerText.innerText = `Awaiting biometric hardware signature (${Math.max(0, hudTimeRemaining).toFixed(1)}s)...`;
+
+    if (hudTimeRemaining <= 0) {
+      clearInterval(hudTimerInterval);
+      if (isScanningActive) {
+        handleBiometricResult(false, 'Challenge expired (5s timeout)');
+      }
+    }
+  }, 100);
+
+  if (modal) modal.classList.add('show');
+};
+
+window.closeBiometricModal = function () {
+  const modal = document.getElementById('biometric-challenge-modal');
+  if (modal) modal.classList.remove('show');
+  if (hudTimerInterval) {
+    clearInterval(hudTimerInterval);
+    hudTimerInterval = null;
+  }
+  isScanningActive = false;
+  updateFingerprintUi(isPhoneConnectedState ? 'connected' : 'standby', 
+    isPhoneConnectedState ? 'Biometric Sensor Armed & Ready' : 'Hardware Paired • Standby', 
+    isPhoneConnectedState ? 'Click fingerprint sensor disc or button below to test unlock' : 'Open AuraLock on phone to connect');
+};
+
+function handleBiometricResult(success, message) {
+  if (hudTimerInterval) {
+    clearInterval(hudTimerInterval);
+    hudTimerInterval = null;
+  }
+
+  const hudContainer = document.getElementById('hud-fingerprint-container');
+  const hudDisc = document.getElementById('hud-fingerprint-disc');
+  const hudBadge = document.getElementById('hud-badge');
+  const hudTitle = document.getElementById('hud-title');
+  const hudSubtitle = document.getElementById('hud-subtitle');
+  const timerFill = document.getElementById('hud-timer-fill');
+  const timerText = document.getElementById('hud-timer-text');
+
+  if (success) {
+    updateFingerprintUi('verified', '✨ Biometric Signature Verified!', 'PC Authorized & Unlocked 🔓');
+    if (hudContainer) hudContainer.className = 'pulse-fingerprint-container verified';
+    if (hudDisc) hudDisc.className = 'fingerprint-disc verified';
+    if (hudBadge) {
+      hudBadge.className = 'card-badge success';
+      hudBadge.innerText = 'VERIFIED ✅';
+    }
+    if (hudTitle) hudTitle.innerText = '🔓 Biometric Verified!';
+    if (hudSubtitle) hudSubtitle.innerText = 'Cryptographic signature accepted. PC unlocked.';
+    if (timerFill) {
+      timerFill.style.width = '100%';
+      timerFill.style.background = 'var(--accent-green)';
+    }
+    if (timerText) timerText.innerText = 'Hardware Keystore Authenticated ✨';
+
+    setTimeout(() => {
+      window.closeBiometricModal();
+    }, 1600);
+  } else {
+    updateFingerprintUi('denied', '❌ Biometric Denied / Timed Out', message || 'Please retry fingerprint scan on phone');
+    if (hudContainer) hudContainer.className = 'pulse-fingerprint-container denied';
+    if (hudDisc) hudDisc.className = 'fingerprint-disc denied';
+    if (hudBadge) {
+      hudBadge.className = 'card-badge warning';
+      hudBadge.innerText = 'FAILED ❌';
+    }
+    if (hudTitle) hudTitle.innerText = '⚠️ Verification Failed';
+    if (hudSubtitle) hudSubtitle.innerText = message || 'Biometric authentication was rejected or timed out.';
+    if (timerFill) {
+      timerFill.style.width = '0%';
+      timerFill.style.background = 'var(--accent-red)';
+    }
+    if (timerText) timerText.innerText = 'Authentication Rejected ❌';
+
+    setTimeout(() => {
+      window.closeBiometricModal();
+    }, 2200);
+  }
+}
+
 // BIOMETRIC TEST UNLOCK
 window.testUnlock = async function () {
+  if (!isPairedState) {
+    showToast("Please pair smartphone first", "⚠️");
+    return;
+  }
+  if (!isPhoneConnectedState) {
+    showToast("Phone is currently disconnected/standby", "⚠️");
+    return;
+  }
+
+  isScanningActive = true;
+  updateFingerprintUi('scanning', '⚡ Challenging Phone Biometrics...', 'Touch registered fingerprint on phone');
+  window.openBiometricModal();
   showToast("Sending biometric challenge to phone...", "🧪");
   log("Triggering manual test biometric challenge...", "info");
+
   try {
     let data;
     if (checkIsTauri()) {
@@ -385,12 +556,15 @@ window.testUnlock = async function () {
 
     if (data && data.success) {
       showToast("Challenge sent! Touch fingerprint on phone.", "📱");
+      log("Challenge transmitted. Waiting for phone biometric signature...", "info");
     } else {
       showToast(data?.message || "No phone connected", "⚠️");
       log("Challenge failed: " + (data?.message || "Device unreachable"), "warn");
+      handleBiometricResult(false, data?.message || "Device unreachable");
     }
   } catch (e) {
     showToast("Error sending challenge", "❌");
+    handleBiometricResult(false, "Network or IPC error");
   }
 };
 
@@ -593,9 +767,11 @@ function setupWebSocket() {
         if (ev.data.success) {
           log("Biometric signature verified! PC Authorized 🔓", "success");
           showToast("Biometric Verified! PC Unlocked 🚀", "🔓");
+          handleBiometricResult(true, "Biometric signature verified!");
         } else {
           log(`Unlock rejected: ${ev.data.message}`, "error");
           showToast(`Unlock denied: ${ev.data.message}`, "❌");
+          handleBiometricResult(false, ev.data.message || "Unlock rejected");
         }
       } else if (ev.type === 'FileTransferCompleted') {
         if (ev.data.is_incoming) {
