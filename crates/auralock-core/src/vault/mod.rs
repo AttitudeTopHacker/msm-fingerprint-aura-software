@@ -43,15 +43,13 @@ pub struct PairedPhone {
 }
 
 impl PairedPhone {
-    pub fn get_public_key_bytes(&self) -> Result<[u8; 32]> {
+    pub fn get_public_key_bytes(&self) -> Result<Vec<u8>> {
         let bytes = hex::decode(&self.public_key_hex)
             .map_err(|e| AuraLockError::CryptoError(format!("Invalid public key hex: {e}")))?;
-        if bytes.len() != 32 {
-            return Err(AuraLockError::CryptoError("Invalid public key length".into()));
+        if bytes.is_empty() {
+            return Err(AuraLockError::CryptoError("Empty public key".into()));
         }
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(&bytes);
-        Ok(arr)
+        Ok(bytes)
     }
 }
 

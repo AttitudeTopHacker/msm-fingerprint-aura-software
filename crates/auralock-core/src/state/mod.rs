@@ -3,7 +3,7 @@
  * Proprietary software of msm.movin organization.
  */
 
-use crate::crypto::{generate_nonce_32, verify_ed25519_signature};
+use crate::crypto::generate_nonce_32;
 use crate::error::{AuraLockError, Result};
 use crate::protocol::{UnlockChallenge, UnlockResponse, UnlockResult};
 use crate::vault::PairedPhone;
@@ -137,19 +137,14 @@ impl StateManager {
             return Err(AuraLockError::ExpiredOrReplayedNonce);
         }
 
-        // 3. Verify Ed25519 signature
+        // 3. Verify biometric signature (supports ECDSA P-256 and Ed25519)
         let pubkey_bytes = phone.get_public_key_bytes()?;
         let signable = active.challenge.get_signable_payload();
 
         let sig_bytes = hex::decode(&resp.signature_hex)
             .map_err(|e| AuraLockError::CryptoError(format!("Invalid signature hex: {e}")))?;
-        if sig_bytes.len() != 64 {
-            return Err(AuraLockError::CryptoError("Invalid signature length".into()));
-        }
-        let mut sig_arr = [0u8; 64];
-        sig_arr.copy_from_slice(&sig_bytes);
 
-        match verify_ed25519_signature(&pubkey_bytes, &signable, &sig_arr) {
+        match crate::crypto::verify_biometric_signature(&pubkey_bytes, &signable, &sig_bytes) {
             Ok(()) => {
                 info!("Biometric signature verified successfully for challenge {}", resp.challenge_id);
                 state.failed_attempts = 0;

@@ -591,20 +591,6 @@ impl NetworkService {
             ProtocolMessage::PairingReq(req) => {
                 info!("Received pairing request from phone: {}", req.phone_name);
 
-                // Reject if a device is already paired
-                if self.vault_mgr.is_paired() {
-                    warn!("Pairing rejected: A device is already paired with this PC");
-                    let resp = ProtocolMessage::PairingResp(PairingResponse {
-                        success: false,
-                        pairing_id: String::new(),
-                        message: "A device is already paired with this PC. Please click 'Unpair Device' on PC first.".into(),
-                    });
-                    if let Some(tx) = &*self.active_client.lock().await {
-                        let _ = tx.send(resp).await;
-                    }
-                    return Ok(());
-                }
-
                 let active_pin = self.active_pairing_pin.lock().await.clone();
                 let recent_pins = self.recent_pairing_pins.lock().await.clone();
                 let latest_qr_pin = self.latest_qr_data.lock().await.as_ref().map(|q| q.pin.clone());

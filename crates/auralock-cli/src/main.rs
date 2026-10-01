@@ -18,7 +18,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[derive(Parser)]
 #[command(name = "auralock")]
 #[command(author = "msm.movin")]
-#[command(version = "1.3.0")]
+#[command(version = "1.3.1")]
 #[command(about = "Instant Remote Biometric Unlock & AuraDrop for Windows & Linux", long_about = None)]
 struct Cli {
     #[command(subcommand)]

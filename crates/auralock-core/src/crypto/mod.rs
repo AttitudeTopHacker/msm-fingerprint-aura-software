@@ -29,6 +29,9 @@ pub fn generate_nonce_12() -> [u8; 12] {
     nonce
 }
 
+use p256::ecdsa::{Signature as P256Signature, VerifyingKey as P256VerifyingKey};
+use p256::pkcs8::DecodePublicKey;
+
 /// Verifies an Ed25519 signature against a public key and raw message payload
 pub fn verify_ed25519_signature(
     public_key_bytes: &[u8; 32],
@@ -43,6 +46,51 @@ pub fn verify_ed25519_signature(
     verifying_key
         .verify(message, &signature)
         .map_err(|_| AuraLockError::InvalidSignature)
+}
+
+/// Verifies an ECDSA P-256 (secp256r1) signature from Android KeyStore
+pub fn verify_p256_ecdsa_signature(
+    public_key_bytes: &[u8],
+    message: &[u8],
+    signature_bytes: &[u8],
+) -> Result<()> {
+    let verifying_key = if let Ok(key) = P256VerifyingKey::from_public_key_der(public_key_bytes) {
+        key
+    } else if let Ok(key) = P256VerifyingKey::from_sec1_bytes(public_key_bytes) {
+        key
+    } else {
+        return Err(AuraLockError::CryptoError("Failed to parse P-256 public key".into()));
+    };
+
+    let signature = if let Ok(sig) = P256Signature::from_der(signature_bytes) {
+        sig
+    } else if let Ok(sig) = P256Signature::from_slice(signature_bytes) {
+        sig
+    } else {
+        return Err(AuraLockError::CryptoError("Failed to parse ECDSA signature".into()));
+    };
+
+    verifying_key
+        .verify(message, &signature)
+        .map_err(|_| AuraLockError::InvalidSignature)
+}
+
+/// Universal biometric signature verifier (supports Android KeyStore P-256 ECDSA and Ed25519)
+pub fn verify_biometric_signature(
+    public_key_bytes: &[u8],
+    message: &[u8],
+    signature_bytes: &[u8],
+) -> Result<()> {
+    if public_key_bytes.len() == 32 && signature_bytes.len() == 64 {
+        let mut pk = [0u8; 32];
+        pk.copy_from_slice(public_key_bytes);
+        let mut sig = [0u8; 64];
+        sig.copy_from_slice(signature_bytes);
+        if verify_ed25519_signature(&pk, message, &sig).is_ok() {
+            return Ok(());
+        }
+    }
+    verify_p256_ecdsa_signature(public_key_bytes, message, signature_bytes)
 }
 
 /// Generates a new ephemeral X25519 keypair for key exchange

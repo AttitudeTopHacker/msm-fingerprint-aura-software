@@ -185,7 +185,7 @@ class AuraLockClient(
             writer?.println(json.toString())
             
             var attempts = 0
-            while (attempts < 10) {
+            while (attempts < 25) {
                 attempts++
                 val respLine = reader?.readLine() ?: return@withContext PairingResult(false, "No response from PC socket")
                 if (respLine.isBlank()) continue
@@ -197,15 +197,8 @@ class AuraLockClient(
                     val success = payload?.optBoolean("success", false) == true
                     val msg = payload?.optString("message") ?: if (success) "Paired successfully" else "Pairing rejected by PC"
                     return@withContext PairingResult(success, msg)
-                } else if (type == "Pong") {
-                    // Stale heartbeat pong, continue waiting for PairingResp
-                    continue
-                } else if (respJson.has("payload")) {
-                    val payload = respJson.optJSONObject("payload")
-                    val success = payload?.optBoolean("success", false) == true
-                    val msg = payload?.optString("message") ?: if (success) "Paired successfully" else "Pairing rejected by PC"
-                    return@withContext PairingResult(success, msg)
                 }
+                // Silently skip background events (e.g. BluetoothStatus, Pong) while waiting for PairingResp
             }
             PairingResult(false, "Timed out waiting for Pairing response from PC")
         } catch (e: Exception) {

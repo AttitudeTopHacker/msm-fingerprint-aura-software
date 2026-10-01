@@ -1168,29 +1168,6 @@ class MainActivity : FragmentActivity() {
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    OutlinedButton(
-                        onClick = { showUnpairConfirmDialog = true },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.35f)),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color(0xFFEF4444)
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.LinkOff,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = Color(0xFFEF4444)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Unpair $pcName", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    }
                 } else {
                     Button(
                         onClick = onScanQrClicked,
