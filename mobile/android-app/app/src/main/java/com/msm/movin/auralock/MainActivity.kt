@@ -66,6 +66,7 @@ import com.msm.movin.auralock.crypto.CryptoManager
 import com.msm.movin.auralock.model.*
 import com.msm.movin.auralock.network.AuraLockClient
 import com.msm.movin.auralock.network.ChallengeEvent
+import com.msm.movin.auralock.service.AuraLockService
 import com.msm.movin.auralock.ui.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -91,7 +92,10 @@ class MainActivity : FragmentActivity() {
     private var transferState by mutableStateOf(AuraDropTransferState())
     private var latestReceivedClipboard by mutableStateOf<String?>(null)
     private var isConnectedState by mutableStateOf(false)
-    private var isPairedState by mutableStateOf(true)
+    private var isPairedState by mutableStateOf(false)
+    private var pcNameState by mutableStateOf("")
+    private var pcIpState by mutableStateOf("")
+    private var pcPortState by mutableIntStateOf(47890)
     private var statusMessageState by mutableStateOf("Ready to link with PC")
     private var isBluetoothEnabledState = mutableStateOf(false)
     private var isPcBluetoothEnabledState = mutableStateOf(false)
@@ -130,11 +134,62 @@ class MainActivity : FragmentActivity() {
             val adapter = bm?.adapter ?: BluetoothAdapter.getDefaultAdapter()
             adapter?.isEnabled == true
         } catch (e: SecurityException) {
-            // Android 12+ throws SecurityException if BLUETOOTH_CONNECT not yet granted; assume true so user is not blocked
-            true
+            false
         } catch (e: Throwable) {
             false
         }
+    }
+
+    private fun unpairBluetoothDevices(targetPcName: String) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                return
+            }
+            val bm = getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager
+            val adapter = bm?.adapter ?: BluetoothAdapter.getDefaultAdapter()
+            val bonded = adapter?.bondedDevices ?: return
+            for (device in bonded) {
+                val devName = try { device.name ?: "" } catch (_: SecurityException) { "" }
+                if ((targetPcName.isNotBlank() && devName.contains(targetPcName, ignoreCase = true)) ||
+                    devName.contains("AuraLock", ignoreCase = true) ||
+                    devName.contains("msm", ignoreCase = true)) {
+                    try {
+                        val removeBondMethod = device.javaClass.getMethod("removeBond")
+                        removeBondMethod.invoke(device)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+        } catch (e: Throwable) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun performLocalUnpairCleanUp() {
+        val targetName = pcNameState
+        autoReconnectJob?.cancel()
+        client?.disconnect()
+        client = null
+        isConnectedState = false
+        isPairedState = false
+        pcNameState = ""
+        pcIpState = ""
+        pcPortState = 47890
+        isPcBluetoothEnabledState.value = false
+        statusMessageState = "Ready to link with PC"
+        isUserManuallyDisconnected = true
+
+        prefs.edit()
+            .putBoolean("is_paired", false)
+            .remove("pc_name")
+            .remove("pc_ip")
+            .remove("pc_port")
+            .apply()
+
+        AuraLockService.stop(this)
+        unpairBluetoothDevices(targetName)
     }
 
     private fun setupRealtimeReceivers() {
@@ -150,22 +205,20 @@ class MainActivity : FragmentActivity() {
                         isBluetoothEnabledState.value = isEnabled
 
                         if (isTurningOff || !isEnabled) {
-                            // Immediately stop and pause active tasks if Bluetooth is turned off
+                            // Stop active client if Bluetooth is turned off
                             if (isConnectedState || client != null) {
                                 client?.disconnect()
                                 client = null
                                 isConnectedState = false
+                                AuraLockService.stop(this@MainActivity)
                                 statusMessageState = "🔴 Bluetooth is Off — Security Paused"
                                 Toast.makeText(this@MainActivity, "⚠️ Bluetooth turned off. AuraLock paused.", Toast.LENGTH_SHORT).show()
                             }
                         } else if (isEnabled) {
                             statusMessageState = if (isConnectedState) "🟢 Linked & Armed" else if (isPairedState) "Standby — Auto-Connecting..." else "Ready to link with PC"
                             // Auto-reconnect if paired and auto_connect enabled
-                            if (isPairedState && !isConnectedState && prefs.getBoolean("auto_connect", true) && !isUserManuallyDisconnected) {
-                                val savedIp = prefs.getString("pc_ip", "10.132.234.46") ?: "10.132.234.46"
-                                val savedPort = prefs.getInt("pc_port", 47890)
-                                val savedName = prefs.getString("pc_name", "Salman-PC") ?: "Salman-PC"
-                                startAutoReconnectLoop(savedIp, savedPort, savedName)
+                            if (isPairedState && !isConnectedState && pcIpState.isNotBlank() && prefs.getBoolean("auto_connect", true) && !isUserManuallyDisconnected) {
+                                startAutoReconnectLoop(pcIpState, pcPortState, pcNameState)
                             }
                         }
                     }
@@ -191,11 +244,8 @@ class MainActivity : FragmentActivity() {
                 override fun onAvailable(network: Network) {
                     runOnUiThread {
                         networkTransportState.value = getNetworkTransportStatus()
-                        if (isPairedState && !isConnectedState && prefs.getBoolean("auto_connect", true) && !isUserManuallyDisconnected) {
-                            val savedIp = prefs.getString("pc_ip", "10.132.234.46") ?: "10.132.234.46"
-                            val savedPort = prefs.getInt("pc_port", 47890)
-                            val savedName = prefs.getString("pc_name", "Salman-PC") ?: "Salman-PC"
-                            startAutoReconnectLoop(savedIp, savedPort, savedName)
+                        if (isPairedState && !isConnectedState && pcIpState.isNotBlank() && prefs.getBoolean("auto_connect", true) && !isUserManuallyDisconnected) {
+                            startAutoReconnectLoop(pcIpState, pcPortState, pcNameState)
                         }
                     }
                 }
@@ -235,7 +285,10 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
-            isPairedState = prefs.getBoolean("is_paired", true)
+            isPairedState = prefs.getBoolean("is_paired", false)
+            pcNameState = prefs.getString("pc_name", "") ?: ""
+            pcIpState = prefs.getString("pc_ip", "") ?: ""
+            pcPortState = prefs.getInt("pc_port", 47890)
             isBluetoothEnabledState.value = isBluetoothEnabled()
             networkTransportState.value = getNetworkTransportStatus()
             biometricPrompt = BiometricAuthPrompt(this)
@@ -266,11 +319,8 @@ class MainActivity : FragmentActivity() {
         super.onResume()
         isBluetoothEnabledState.value = isBluetoothEnabled()
         networkTransportState.value = getNetworkTransportStatus()
-        if (isPairedState && !isConnectedState && prefs.getBoolean("auto_connect", true) && !isUserManuallyDisconnected) {
-            val savedIp = prefs.getString("pc_ip", "10.132.234.46") ?: "10.132.234.46"
-            val savedPort = prefs.getInt("pc_port", 47890)
-            val savedName = prefs.getString("pc_name", "Salman-PC") ?: "Salman-PC"
-            startAutoReconnectLoop(savedIp, savedPort, savedName)
+        if (isPairedState && !isConnectedState && pcIpState.isNotBlank() && prefs.getBoolean("auto_connect", true) && !isUserManuallyDisconnected) {
+            startAutoReconnectLoop(pcIpState, pcPortState, pcNameState)
         }
     }
 
@@ -305,14 +355,9 @@ class MainActivity : FragmentActivity() {
     fun MainAppScreen() {
         var currentScreen by remember { mutableStateOf(ScreenState.DASHBOARD) }
 
-        val autoConnectEnabled = remember { prefs.getBoolean("auto_connect", true) }
-        val savedPcName = remember { prefs.getString("pc_name", "Salman-PC") ?: "Salman-PC" }
-        val savedPcIp = remember { prefs.getString("pc_ip", "10.132.234.46") ?: "10.132.234.46" }
-        val savedPcPort = remember { prefs.getInt("pc_port", 47890) }
-
-        var pcName by remember { mutableStateOf(savedPcName) }
-        var pcIp by remember { mutableStateOf(savedPcIp) }
-        var pcPort by remember { mutableStateOf(savedPcPort) }
+        var autoConnectEnabledState by remember { mutableStateOf(prefs.getBoolean("auto_connect", true)) }
+        var backgroundServiceEnabledState by remember { mutableStateOf(prefs.getBoolean("background_service_enabled", true)) }
+        var hapticsEnabledState by remember { mutableStateOf(prefs.getBoolean("haptics_enabled", true)) }
 
         var showManualDialog by remember { mutableStateOf(false) }
         var showBluetoothSheet by remember { mutableStateOf(false) }
@@ -328,28 +373,30 @@ class MainActivity : FragmentActivity() {
             contract = ActivityResultContracts.RequestMultiplePermissions()
         ) { _ ->
             isBluetoothEnabledState.value = isBluetoothEnabled()
-            if (isBluetoothEnabledState.value && isPairedState && !isConnectedState && autoConnectEnabled) {
-                connectToDaemon(pcIp, pcPort, pcName) { success, msg ->
+            if (isBluetoothEnabledState.value && isPairedState && !isConnectedState && autoConnectEnabledState && pcIpState.isNotBlank()) {
+                connectToDaemon(pcIpState, pcPortState, pcNameState) { success, msg ->
                     isConnectedState = success
                     statusMessageState = msg
                 }
             }
         }
 
-        // Auto-request Bluetooth permissions on Android 12+ on app start
+        // Auto-request Bluetooth and Notification permissions on app start
         LaunchedEffect(Unit) {
             try {
+                val permissionsToRequest = mutableListOf<String>()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     val hasConnect = checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
                     val hasScan = checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
-                    if (!hasConnect || !hasScan) {
-                        requestBluetoothPermissionLauncher.launch(
-                            arrayOf(
-                                Manifest.permission.BLUETOOTH_CONNECT,
-                                Manifest.permission.BLUETOOTH_SCAN
-                            )
-                        )
-                    }
+                    if (!hasConnect) permissionsToRequest.add(Manifest.permission.BLUETOOTH_CONNECT)
+                    if (!hasScan) permissionsToRequest.add(Manifest.permission.BLUETOOTH_SCAN)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val hasNotif = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                    if (!hasNotif) permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                if (permissionsToRequest.isNotEmpty()) {
+                    requestBluetoothPermissionLauncher.launch(permissionsToRequest.toTypedArray())
                 }
             } catch (e: Throwable) {
                 e.printStackTrace()
@@ -394,11 +441,11 @@ class MainActivity : FragmentActivity() {
             }
         }
 
-        // Auto-connect on launch if enabled (only if Bluetooth is enabled)
+        // Auto-connect on launch if enabled (only if Bluetooth is enabled and device is paired)
         LaunchedEffect(Unit) {
-            if (autoConnectEnabled && isPairedState && !isConnectedState && isBluetoothEnabledState.value) {
+            if (autoConnectEnabledState && isPairedState && !isConnectedState && isBluetoothEnabledState.value && pcIpState.isNotBlank()) {
                 delay(300)
-                connectToDaemon(pcIp, pcPort, pcName) { success, msg ->
+                connectToDaemon(pcIpState, pcPortState, pcNameState) { success, msg ->
                     isConnectedState = success
                     statusMessageState = msg
                 }
@@ -407,15 +454,14 @@ class MainActivity : FragmentActivity() {
 
         val performUnpair: () -> Unit = {
             lifecycleScope.launch {
-                if (isConnectedState) {
-                    client?.sendUnpairRequest()
+                try {
+                    if (isConnectedState && client != null) {
+                        client?.sendUnpairRequest()
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
-                client?.disconnect()
-                client = null
-                isConnectedState = false
-                isPairedState = false
-                statusMessageState = "Ready to link with PC"
-                prefs.edit().clear().apply()
+                performLocalUnpairCleanUp()
                 Toast.makeText(this@MainActivity, "Device Unpaired Successfully", Toast.LENGTH_SHORT).show()
             }
         }
@@ -430,9 +476,9 @@ class MainActivity : FragmentActivity() {
                             if (state.step == ConnectionStep.SECURE_TUNNEL_ACTIVE) {
                                 isConnectedState = true
                                 isPairedState = true
-                                pcName = qrData.pcName
-                                pcIp = qrData.ip
-                                pcPort = qrData.port
+                                pcNameState = qrData.pcName
+                                pcIpState = qrData.ip
+                                pcPortState = qrData.port
                                 statusMessageState = "Paired & Listening for Lockscreen"
 
                                 prefs.edit()
@@ -462,8 +508,8 @@ class MainActivity : FragmentActivity() {
                     isConnected = isConnectedState,
                     isPaired = isPairedState,
                     statusMessage = statusMessageState,
-                    pcName = pcName,
-                    pcIp = pcIp,
+                    pcName = pcNameState,
+                    pcIp = pcIpState,
                     isPhoneBluetoothOn = isBluetoothEnabledState.value,
                     isPcBluetoothOn = isPcBluetoothEnabledState.value,
                     networkTransport = networkTransportState.value,
@@ -473,9 +519,11 @@ class MainActivity : FragmentActivity() {
                     onConnectDirect = {
                         checkBluetoothAndExecute {
                             isUserManuallyDisconnected = false
-                            connectToDaemon(pcIp, pcPort, pcName) { success, msg ->
-                                isConnectedState = success
-                                statusMessageState = msg
+                            if (pcIpState.isNotBlank()) {
+                                connectToDaemon(pcIpState, pcPortState, pcNameState) { success, msg ->
+                                    isConnectedState = success
+                                    statusMessageState = msg
+                                }
                             }
                         }
                     },
@@ -492,14 +540,32 @@ class MainActivity : FragmentActivity() {
                         client?.disconnect()
                         client = null
                         isConnectedState = false
+                        AuraLockService.stop(this@MainActivity)
                         statusMessageState = "🔴 Paused (Manual Disconnect)"
                         Toast.makeText(this@MainActivity, "Disconnected from PC", Toast.LENGTH_SHORT).show()
                     },
                     onUnpairClicked = performUnpair,
                     onLockPcClicked = {
                         lifecycleScope.launch {
-                            if (client != null && isConnectedState) {
-                                val sent = client?.sendRemoteLock() ?: false
+                            if (!isPairedState || pcIpState.isBlank()) {
+                                Toast.makeText(this@MainActivity, "No PC is paired yet", Toast.LENGTH_SHORT).show()
+                                return@launch
+                            }
+                            var activeClient = client
+                            if (activeClient == null || !isConnectedState) {
+                                Toast.makeText(this@MainActivity, "Connecting to lock PC...", Toast.LENGTH_SHORT).show()
+                                val newClient = AuraLockClient(pcIpState, pcPortState)
+                                if (newClient.connect()) {
+                                    client = newClient
+                                    isConnectedState = true
+                                    activeClient = newClient
+                                    AuraLockService.start(this@MainActivity, pcNameState)
+                                    listenToClientEvents(newClient, pcIpState, pcPortState, pcNameState)
+                                }
+                            }
+                            val targetClient = activeClient
+                            if (targetClient != null) {
+                                val sent = targetClient.sendRemoteLock()
                                 if (sent) {
                                     triggerHapticFeedback()
                                     Toast.makeText(this@MainActivity, "🔒 PC Screen Locked", Toast.LENGTH_SHORT).show()
@@ -507,21 +573,35 @@ class MainActivity : FragmentActivity() {
                                     Toast.makeText(this@MainActivity, "Failed to send lock signal to PC", Toast.LENGTH_SHORT).show()
                                 }
                             } else {
-                                Toast.makeText(this@MainActivity, "PC is not connected", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this@MainActivity, "Cannot reach PC to lock", Toast.LENGTH_SHORT).show()
                             }
                         }
                     },
                     onUnlockPcClicked = {
                         checkBluetoothAndExecute {
-                            if (client != null && isConnectedState) {
-                                lifecycleScope.launch {
-                                    val sent = client?.sendUnlockTrigger() ?: false
+                            lifecycleScope.launch {
+                                var activeClient = client
+                                if (activeClient == null || !isConnectedState) {
+                                    if (isPairedState && pcIpState.isNotBlank()) {
+                                        val newClient = AuraLockClient(pcIpState, pcPortState)
+                                        if (newClient.connect()) {
+                                            client = newClient
+                                            isConnectedState = true
+                                            activeClient = newClient
+                                            AuraLockService.start(this@MainActivity, pcNameState)
+                                            listenToClientEvents(newClient, pcIpState, pcPortState, pcNameState)
+                                        }
+                                    }
+                                }
+                                val targetClient = activeClient
+                                if (targetClient != null && isConnectedState) {
+                                    val sent = targetClient.sendUnlockTrigger()
                                     if (!sent) {
                                         testBiometricsPrompt()
                                     }
+                                } else {
+                                    testBiometricsPrompt()
                                 }
-                            } else {
-                                testBiometricsPrompt()
                             }
                         }
                     },
@@ -602,7 +682,7 @@ class MainActivity : FragmentActivity() {
         // Manual Setup Dialog
         if (showManualDialog) {
             ManualPairDialog(
-                initialIp = pcIp,
+                initialIp = pcIpState,
                 onConfirm = { qrData ->
                     showManualDialog = false
                     initiatePairing(qrData) { state ->
@@ -610,9 +690,9 @@ class MainActivity : FragmentActivity() {
                         if (state.step == ConnectionStep.SECURE_TUNNEL_ACTIVE) {
                             isConnectedState = true
                             isPairedState = true
-                            pcName = qrData.pcName
-                            pcIp = qrData.ip
-                            pcPort = qrData.port
+                            pcNameState = qrData.pcName
+                            pcIpState = qrData.ip
+                            pcPortState = qrData.port
                             statusMessageState = "Paired & Listening for Lockscreen"
 
                             prefs.edit()
@@ -639,7 +719,7 @@ class MainActivity : FragmentActivity() {
         if (showAuraDropSheet) {
             AuraDropSheet(
                 isConnected = isConnectedState,
-                pcName = pcName,
+                pcName = pcNameState,
                 transferState = transferState,
                 receivedFiles = receivedFiles,
                 latestReceivedClipboard = latestReceivedClipboard,
@@ -653,7 +733,7 @@ class MainActivity : FragmentActivity() {
         if (showBluetoothSheet) {
             BluetoothInfoSheet(
                 isConnected = isConnectedState,
-                currentIp = pcIp,
+                currentIp = pcIpState,
                 isPhoneBluetoothOn = isBluetoothEnabledState.value,
                 isPcBluetoothOn = isPcBluetoothEnabledState.value,
                 onDismiss = { showBluetoothSheet = false }
@@ -663,17 +743,35 @@ class MainActivity : FragmentActivity() {
         // Settings Dialog
         if (showSettingsDialog) {
             SettingsDialog(
-                pcName = pcName,
-                pcIp = pcIp,
-                pcPort = pcPort,
+                pcName = pcNameState,
+                pcIp = pcIpState,
+                pcPort = pcPortState,
                 isPaired = isPairedState,
                 isConnected = isConnectedState,
-                autoConnectEnabled = autoConnectEnabled,
-                hapticsEnabled = prefs.getBoolean("haptics_enabled", true),
+                backgroundServiceEnabled = backgroundServiceEnabledState,
+                autoConnectEnabled = autoConnectEnabledState,
+                hapticsEnabled = hapticsEnabledState,
+                onBackgroundServiceToggled = { enabled ->
+                    backgroundServiceEnabledState = enabled
+                    prefs.edit().putBoolean("background_service_enabled", enabled).apply()
+                    if (!enabled) {
+                        AuraLockService.stop(this@MainActivity)
+                        Toast.makeText(this@MainActivity, "🛑 Background Service Disabled (Battery Saver Mode)", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this@MainActivity, "⚡ Background Service Enabled & Reconnecting...", Toast.LENGTH_SHORT).show()
+                        if (isConnectedState) {
+                            AuraLockService.start(this@MainActivity, pcNameState)
+                        } else if (isPairedState && pcIpState.isNotBlank() && !isUserManuallyDisconnected) {
+                            startAutoReconnectLoop(pcIpState, pcPortState, pcNameState)
+                        }
+                    }
+                },
                 onAutoConnectToggled = { enabled ->
+                    autoConnectEnabledState = enabled
                     prefs.edit().putBoolean("auto_connect", enabled).apply()
                 },
                 onHapticsToggled = { enabled ->
+                    hapticsEnabledState = enabled
                     prefs.edit().putBoolean("haptics_enabled", enabled).apply()
                 },
                 onTestPing = { onResult ->
@@ -2138,12 +2236,14 @@ class MainActivity : FragmentActivity() {
                 )
 
                 val phoneName = "${Build.MANUFACTURER} ${Build.MODEL}"
+                AuraLockService.updateTransfer(this@MainActivity, fileName, 0.05f, isIncoming = false)
                 val success = client?.sendFileToPc(
                     fileName = fileName,
                     fileBytes = bytes,
                     mimeType = mimeType,
                     phoneName = phoneName
                 ) { progress, bytesSent, total ->
+                    AuraLockService.updateTransfer(this@MainActivity, fileName, progress, isIncoming = false)
                     transferState = transferState.copy(
                         progress = progress,
                         bytesTransferred = bytesSent,
@@ -2152,9 +2252,11 @@ class MainActivity : FragmentActivity() {
                 } ?: false
 
                 if (success) {
+                    AuraLockService.start(this@MainActivity, pcNameState)
                     transferState = transferState.copy(isTransferring = false, isCompleted = true)
                     Toast.makeText(this@MainActivity, "✅ Sent $fileName to PC!", Toast.LENGTH_SHORT).show()
                 } else {
+                    AuraLockService.start(this@MainActivity, pcNameState)
                     transferState = transferState.copy(isTransferring = false, isError = true)
                     Toast.makeText(this@MainActivity, "Failed to send file", Toast.LENGTH_SHORT).show()
                 }
@@ -2200,133 +2302,18 @@ class MainActivity : FragmentActivity() {
         return name
     }
 
-    private fun startAutoReconnectLoop(
-        ip: String,
-        port: Int,
-        targetPcName: String
-    ) {
-        if (!isPairedState || isConnectedState || isUserManuallyDisconnected) return
-        if (autoReconnectJob?.isActive == true) return
-
-        autoReconnectJob = lifecycleScope.launch {
-            statusMessageState = "🔄 Searching & auto-linking to $targetPcName..."
-            while (!isConnectedState && isPairedState && !isUserManuallyDisconnected) {
-                if (isBluetoothEnabledState.value) {
-                    val clientInstance = AuraLockClient(ip, port)
-                    val connected = clientInstance.connect()
-                    if (connected) {
-                        client = clientInstance
-                        isConnectedState = true
-                        statusMessageState = "🟢 Linked & Armed"
-                        Toast.makeText(this@MainActivity, "⚡ Connected to $targetPcName!", Toast.LENGTH_SHORT).show()
-
-                        clientInstance.listenForEvents(
-                            onChallenge = { challenge -> handleChallenge(challenge) },
-                            onIncomingFileOffer = { offer ->
-                                transferState = AuraDropTransferState(
-                                    isTransferring = true,
-                                    activeFileId = offer.fileId,
-                                    activeFileName = offer.fileName,
-                                    isIncoming = true,
-                                    totalBytes = offer.fileSize,
-                                    progress = 0.05f
-                                )
-                            },
-                            onFileProgress = { event ->
-                                transferState = transferState.copy(
-                                    isTransferring = true,
-                                    activeFileName = event.fileName,
-                                    isIncoming = event.isIncoming,
-                                    progress = event.progress,
-                                    bytesTransferred = event.bytesTransferred,
-                                    totalBytes = event.totalBytes
-                                )
-                            },
-                            onFileReceived = { fileId, fileName, file ->
-                                transferState = transferState.copy(isTransferring = false, isCompleted = true)
-                                receivedFiles.add(
-                                    0,
-                                    AuraDropFileItem(
-                                        fileId = fileId,
-                                        fileName = fileName,
-                                        fileSize = file.length(),
-                                        localUri = file.absolutePath,
-                                        isIncoming = true,
-                                        isCompleted = true
-                                    )
-                                )
-                                Toast.makeText(this@MainActivity, "📥 Received $fileName from PC!", Toast.LENGTH_LONG).show()
-                                triggerHapticFeedback()
-                            },
-                            onClipboardReceived = { text, _ ->
-                                latestReceivedClipboard = text
-                                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = ClipData.newPlainText("AuraLock PC", text)
-                                clipboard.setPrimaryClip(clip)
-                                Toast.makeText(this@MainActivity, "📋 Text received from PC: $text", Toast.LENGTH_SHORT).show()
-                                triggerHapticFeedback()
-                            },
-                            onPcBluetoothStatus = { isActive ->
-                                isPcBluetoothEnabledState.value = isActive
-                            },
-                            onUnpaired = {
-                                client?.disconnect()
-                                client = null
-                                isConnectedState = false
-                                isPairedState = false
-                                isPcBluetoothEnabledState.value = false
-                                statusMessageState = "Ready to link with PC"
-                                prefs.edit().clear().apply()
-                                Toast.makeText(this@MainActivity, "Device Unpaired by PC", Toast.LENGTH_LONG).show()
-                            },
-                            onDisconnect = {
-                                isConnectedState = false
-                                isPcBluetoothEnabledState.value = false
-                                client = null
-                                statusMessageState = "🔴 Disconnected — Auto-Reconnecting..."
-                                if (isPairedState && !isUserManuallyDisconnected) {
-                                    startAutoReconnectLoop(ip, port, targetPcName)
-                                }
-                            }
-                        )
-                        break
-                    }
-                }
-                delay(3000)
-            }
-        }
-    }
-
-    private fun connectToDaemon(
+    private fun listenToClientEvents(
+        clientInstance: AuraLockClient,
         ip: String,
         port: Int,
         targetPcName: String,
-        onResult: (Boolean, String) -> Unit
+        onDisconnectExtra: (() -> Unit)? = null
     ) {
-        isUserManuallyDisconnected = false
-        autoReconnectJob?.cancel()
         lifecycleScope.launch {
-            val clientInstance = AuraLockClient(ip, port)
-            val connected = clientInstance.connect()
-
-            if (!connected) {
-                onResult(false, "Could not reach PC at $ip:$port. Auto-reconnecting in background...")
-                Toast.makeText(this@MainActivity, "Searching for $targetPcName...", Toast.LENGTH_SHORT).show()
-                startAutoReconnectLoop(ip, port, targetPcName)
-                return@launch
-            }
-
-            client = clientInstance
-            isConnectedState = true
-            onResult(true, "🟢 Linked & Armed")
-            Toast.makeText(this@MainActivity, "⚡ Connected to $targetPcName!", Toast.LENGTH_SHORT).show()
-
-            // Start full event listener loop (Challenges + AuraDrop + Clipboard)
             clientInstance.listenForEvents(
-                onChallenge = { challenge ->
-                    handleChallenge(challenge)
-                },
+                onChallenge = { challenge -> handleChallenge(challenge) },
                 onIncomingFileOffer = { offer ->
+                    AuraLockService.updateTransfer(this@MainActivity, offer.fileName, 0.05f, isIncoming = true)
                     transferState = AuraDropTransferState(
                         isTransferring = true,
                         activeFileId = offer.fileId,
@@ -2337,6 +2324,7 @@ class MainActivity : FragmentActivity() {
                     )
                 },
                 onFileProgress = { event ->
+                    AuraLockService.updateTransfer(this@MainActivity, event.fileName, event.progress, isIncoming = event.isIncoming)
                     transferState = transferState.copy(
                         isTransferring = true,
                         activeFileName = event.fileName,
@@ -2347,10 +2335,8 @@ class MainActivity : FragmentActivity() {
                     )
                 },
                 onFileReceived = { fileId, fileName, file ->
-                    transferState = transferState.copy(
-                        isTransferring = false,
-                        isCompleted = true
-                    )
+                    AuraLockService.start(this@MainActivity, pcNameState)
+                    transferState = transferState.copy(isTransferring = false, isCompleted = true)
                     receivedFiles.add(
                         0,
                         AuraDropFileItem(
@@ -2377,25 +2363,79 @@ class MainActivity : FragmentActivity() {
                     isPcBluetoothEnabledState.value = isActive
                 },
                 onUnpaired = {
-                    client?.disconnect()
-                    client = null
-                    isConnectedState = false
-                    isPairedState = false
-                    isPcBluetoothEnabledState.value = false
-                    statusMessageState = "Ready to link with PC"
-                    prefs.edit().clear().apply()
+                    performLocalUnpairCleanUp()
                     Toast.makeText(this@MainActivity, "Device Unpaired by PC", Toast.LENGTH_LONG).show()
                 },
                 onDisconnect = {
                     isConnectedState = false
                     isPcBluetoothEnabledState.value = false
                     client = null
+                    AuraLockService.stop(this@MainActivity)
+                    onDisconnectExtra?.invoke()
                     statusMessageState = "🔴 Disconnected — Auto-Reconnecting..."
-                    if (isPairedState && !isUserManuallyDisconnected) {
+                    if (isPairedState && !isUserManuallyDisconnected && ip.isNotBlank()) {
                         startAutoReconnectLoop(ip, port, targetPcName)
                     }
                 }
             )
+        }
+    }
+
+    private fun startAutoReconnectLoop(
+        ip: String,
+        port: Int,
+        targetPcName: String
+    ) {
+        if (!isPairedState || isConnectedState || isUserManuallyDisconnected || ip.isBlank()) return
+        if (autoReconnectJob?.isActive == true) return
+
+        autoReconnectJob = lifecycleScope.launch {
+            statusMessageState = "🔄 Searching & auto-linking to $targetPcName..."
+            while (!isConnectedState && isPairedState && !isUserManuallyDisconnected && ip.isNotBlank()) {
+                if (isBluetoothEnabledState.value) {
+                    val clientInstance = AuraLockClient(ip, port)
+                    val connected = clientInstance.connect()
+                    if (connected) {
+                        client = clientInstance
+                        isConnectedState = true
+                        AuraLockService.start(this@MainActivity, targetPcName)
+                        statusMessageState = "🟢 Linked & Armed"
+                        Toast.makeText(this@MainActivity, "⚡ Connected to $targetPcName!", Toast.LENGTH_SHORT).show()
+                        listenToClientEvents(clientInstance, ip, port, targetPcName)
+                        break
+                    }
+                }
+                delay(3000)
+            }
+        }
+    }
+
+    private fun connectToDaemon(
+        ip: String,
+        port: Int,
+        targetPcName: String,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        if (ip.isBlank()) return
+        isUserManuallyDisconnected = false
+        autoReconnectJob?.cancel()
+        lifecycleScope.launch {
+            val clientInstance = AuraLockClient(ip, port)
+            val connected = clientInstance.connect()
+
+            if (!connected) {
+                onResult(false, "Could not reach PC at $ip:$port. Auto-reconnecting in background...")
+                Toast.makeText(this@MainActivity, "Searching for $targetPcName...", Toast.LENGTH_SHORT).show()
+                startAutoReconnectLoop(ip, port, targetPcName)
+                return@launch
+            }
+
+            client = clientInstance
+            isConnectedState = true
+            AuraLockService.start(this@MainActivity, targetPcName)
+            onResult(true, "🟢 Linked & Armed")
+            Toast.makeText(this@MainActivity, "⚡ Connected to $targetPcName!", Toast.LENGTH_SHORT).show()
+            listenToClientEvents(clientInstance, ip, port, targetPcName)
         }
     }
 
@@ -2478,77 +2518,30 @@ class MainActivity : FragmentActivity() {
                 delay(600)
 
                 client = clientInstance
+                isConnectedState = true
+                isPairedState = true
+                pcNameState = qrData.pcName
+                pcIpState = qrData.ip
+                pcPortState = qrData.port
+                isUserManuallyDisconnected = false
+
+                prefs.edit()
+                    .putBoolean("is_paired", true)
+                    .putString("pc_name", qrData.pcName)
+                    .putString("pc_ip", qrData.ip)
+                    .putInt("pc_port", qrData.port)
+                    .apply()
+
+                AuraLockService.start(this@MainActivity, qrData.pcName)
                 onProgress(ConnectionProgressState(isConnecting = false, step = ConnectionStep.SECURE_TUNNEL_ACTIVE))
                 Toast.makeText(this@MainActivity, "✨ Paired with ${qrData.pcName} successfully!", Toast.LENGTH_LONG).show()
 
-                // Start Event Listener Loop
-                clientInstance.listenForEvents(
-                    onChallenge = { challenge ->
-                        handleChallenge(challenge)
-                    },
-                    onIncomingFileOffer = { offer ->
-                        transferState = AuraDropTransferState(
-                            isTransferring = true,
-                            activeFileId = offer.fileId,
-                            activeFileName = offer.fileName,
-                            isIncoming = true,
-                            totalBytes = offer.fileSize,
-                            progress = 0.05f
-                        )
-                    },
-                    onFileProgress = { event ->
-                        transferState = transferState.copy(
-                            isTransferring = true,
-                            activeFileName = event.fileName,
-                            isIncoming = event.isIncoming,
-                            progress = event.progress,
-                            bytesTransferred = event.bytesTransferred,
-                            totalBytes = event.totalBytes
-                        )
-                    },
-                    onFileReceived = { fileId, fileName, file ->
-                        transferState = transferState.copy(
-                            isTransferring = false,
-                            isCompleted = true
-                        )
-                        receivedFiles.add(
-                            0,
-                            AuraDropFileItem(
-                                fileId = fileId,
-                                fileName = fileName,
-                                fileSize = file.length(),
-                                localUri = file.absolutePath,
-                                isIncoming = true,
-                                isCompleted = true
-                            )
-                        )
-                        Toast.makeText(this@MainActivity, "📥 Received $fileName from PC!", Toast.LENGTH_LONG).show()
-                        triggerHapticFeedback()
-                    },
-                    onClipboardReceived = { text, _ ->
-                        latestReceivedClipboard = text
-                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        val clip = ClipData.newPlainText("AuraLock PC", text)
-                        clipboard.setPrimaryClip(clip)
-                        Toast.makeText(this@MainActivity, "📋 Text received from PC: $text", Toast.LENGTH_SHORT).show()
-                        triggerHapticFeedback()
-                    },
-                    onPcBluetoothStatus = { isActive ->
-                        isPcBluetoothEnabledState.value = isActive
-                    },
-                    onUnpaired = {
-                        client?.disconnect()
-                        client = null
-                        isConnectedState = false
-                        isPairedState = false
-                        isPcBluetoothEnabledState.value = false
-                        statusMessageState = "Ready to link with PC"
-                        prefs.edit().clear().apply()
-                        Toast.makeText(this@MainActivity, "Device Unpaired by PC", Toast.LENGTH_LONG).show()
-                    },
-                    onDisconnect = {
-                        isConnectedState = false
-                        isPcBluetoothEnabledState.value = false
+                listenToClientEvents(
+                    clientInstance = clientInstance,
+                    ip = qrData.ip,
+                    port = qrData.port,
+                    targetPcName = qrData.pcName,
+                    onDisconnectExtra = {
                         onProgress(
                             ConnectionProgressState(
                                 isConnecting = false,

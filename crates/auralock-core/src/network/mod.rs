@@ -937,7 +937,7 @@ pub fn is_pc_bluetooth_active() -> bool {
     }
 }
 
-/// Helper function to trigger Linux desktop lockscreen
+/// Helper function to trigger Linux / Windows desktop lockscreen
 pub fn lock_pc_screen() {
     #[cfg(target_os = "linux")]
     {
@@ -946,14 +946,48 @@ pub fn lock_pc_screen() {
             .arg("lock-session")
             .spawn();
 
-        // 2. GNOME screensaver lock fallback
+        // 2. GNOME & FreeDesktop DBus ScreenSaver Lock
+        let _ = std::process::Command::new("dbus-send")
+            .args(["--type=method_call", "--dest=org.gnome.ScreenSaver", "/org/gnome/ScreenSaver", "org.gnome.ScreenSaver.Lock"])
+            .spawn();
+
+        let _ = std::process::Command::new("dbus-send")
+            .args(["--type=method_call", "--dest=org.freedesktop.ScreenSaver", "/org/freedesktop/ScreenSaver", "org.freedesktop.ScreenSaver.Lock"])
+            .spawn();
+
+        // 3. GNOME screensaver command fallback
         let _ = std::process::Command::new("gnome-screensaver-command")
             .arg("-l")
             .spawn();
 
-        // 3. XDG screensaver lock fallback
+        // 4. Cinnamon screensaver fallback
+        let _ = std::process::Command::new("cinnamon-screensaver-command")
+            .arg("-l")
+            .spawn();
+
+        // 5. MATE screensaver fallback
+        let _ = std::process::Command::new("mate-screensaver-command")
+            .arg("-l")
+            .spawn();
+
+        // 6. XDG screensaver lock fallback
         let _ = std::process::Command::new("xdg-screensaver")
             .arg("lock")
+            .spawn();
+
+        // 7. KDE qdbus fallback
+        let _ = std::process::Command::new("qdbus")
+            .args(["org.freedesktop.ScreenSaver", "/ScreenSaver", "Lock"])
+            .spawn();
+
+        // 8. XFCE screen lock
+        let _ = std::process::Command::new("xflock4")
+            .spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("rundll32.exe")
+            .args(["user32.dll,LockWorkStation"])
             .spawn();
     }
 }
@@ -967,12 +1001,31 @@ pub fn unlock_pc_screen() {
             .arg("unlock-session")
             .spawn();
 
-        // 2. GNOME screensaver deactivate fallback
+        // 2. GNOME / FreeDesktop ScreenSaver Deactivate
+        let _ = std::process::Command::new("dbus-send")
+            .args(["--type=method_call", "--dest=org.gnome.ScreenSaver", "/org/gnome/ScreenSaver", "org.gnome.ScreenSaver.SetActive", "boolean:false"])
+            .spawn();
+
+        let _ = std::process::Command::new("dbus-send")
+            .args(["--type=method_call", "--dest=org.freedesktop.ScreenSaver", "/org/freedesktop/ScreenSaver", "org.freedesktop.ScreenSaver.SetActive", "boolean:false"])
+            .spawn();
+
+        // 3. GNOME screensaver deactivate fallback
         let _ = std::process::Command::new("gnome-screensaver-command")
             .arg("-d")
             .spawn();
 
-        // 3. XDG screensaver reset fallback
+        // 4. Cinnamon screensaver deactivate fallback
+        let _ = std::process::Command::new("cinnamon-screensaver-command")
+            .arg("-d")
+            .spawn();
+
+        // 5. MATE screensaver deactivate fallback
+        let _ = std::process::Command::new("mate-screensaver-command")
+            .arg("-d")
+            .spawn();
+
+        // 6. XDG screensaver reset fallback
         let _ = std::process::Command::new("xdg-screensaver")
             .arg("reset")
             .spawn();

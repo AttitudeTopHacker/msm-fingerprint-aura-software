@@ -34,8 +34,10 @@ fun SettingsDialog(
     pcPort: Int,
     isPaired: Boolean,
     isConnected: Boolean,
+    backgroundServiceEnabled: Boolean,
     autoConnectEnabled: Boolean,
     hapticsEnabled: Boolean,
+    onBackgroundServiceToggled: (Boolean) -> Unit,
     onAutoConnectToggled: (Boolean) -> Unit,
     onHapticsToggled: (Boolean) -> Unit,
     onTestPing: (onResult: (Long?) -> Unit) -> Unit,
@@ -112,7 +114,7 @@ fun SettingsDialog(
 
                 // Section 1: Connection & Automation
                 Text(
-                    text = "CONNECTION PREFERENCES",
+                    text = "CONNECTION & BACKGROUND PREFERENCES",
                     color = Color(0xFF64748B),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
@@ -120,6 +122,17 @@ fun SettingsDialog(
                         .fillMaxWidth()
                         .padding(start = 4.dp, bottom = 8.dp)
                 )
+
+                SettingsToggleItem(
+                    title = "Background Service & Sync",
+                    subtitle = if (backgroundServiceEnabled) "Active background link & transfers when screen locks" else "Disabled — stops service when closed (Battery Saver)",
+                    icon = Icons.Default.CloudSync,
+                    iconTint = if (backgroundServiceEnabled) Color(0xFF10B981) else Color(0xFF64748B),
+                    checked = backgroundServiceEnabled,
+                    onCheckedChange = onBackgroundServiceToggled
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
 
                 SettingsToggleItem(
                     title = "Auto-Connect on Startup",

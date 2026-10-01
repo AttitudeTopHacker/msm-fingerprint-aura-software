@@ -141,6 +141,25 @@ class AuraLockClient(
         }
     }
 
+    private var lastKnownPcBtStatus = false
+
+    @Synchronized
+    fun sendRaw(jsonStr: String): Boolean {
+        return try {
+            val sock = socket
+            if (sock == null || !sock.isConnected || sock.isClosed) {
+                return false
+            }
+            val w = writer ?: return false
+            w.println(jsonStr)
+            w.flush()
+            !w.checkError()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
     private fun startHeartbeat() {
         heartbeatJob?.cancel()
         heartbeatJob = CoroutineScope(Dispatchers.IO).launch {
@@ -161,7 +180,7 @@ class AuraLockClient(
                     put("phone_name", phoneName)
                 })
             }
-            writer?.println(json.toString())
+            sendRaw(json.toString())
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -182,7 +201,7 @@ class AuraLockClient(
                     put("pin", pin)
                 })
             }
-            writer?.println(json.toString())
+            sendRaw(json.toString())
             
             var attempts = 0
             while (attempts < 25) {
@@ -197,8 +216,10 @@ class AuraLockClient(
                     val success = payload?.optBoolean("success", false) == true
                     val msg = payload?.optString("message") ?: if (success) "Paired successfully" else "Pairing rejected by PC"
                     return@withContext PairingResult(success, msg)
+                } else if (type == "BluetoothStatus") {
+                    val payload = respJson.optJSONObject("payload")
+                    lastKnownPcBtStatus = payload?.optBoolean("is_active", false) ?: false
                 }
-                // Silently skip background events (e.g. BluetoothStatus, Pong) while waiting for PairingResp
             }
             PairingResult(false, "Timed out waiting for Pairing response from PC")
         } catch (e: Exception) {
@@ -218,6 +239,10 @@ class AuraLockClient(
         onDisconnect: () -> Unit
     ) = withContext(Dispatchers.IO) {
         try {
+            // Report last known PC bluetooth status immediately if available
+            withContext(Dispatchers.Main) {
+                onPcBluetoothStatus(lastKnownPcBtStatus)
+            }
             while (isRunning && socket?.isConnected == true && socket?.isClosed == false) {
                 val line = reader?.readLine() ?: break
                 if (line.isBlank()) continue
@@ -460,7 +485,7 @@ class AuraLockClient(
                     put("timestamp_epoch", timestampEpoch)
                 })
             }
-            writer?.println(json.toString())
+            sendRaw(json.toString())
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -471,7 +496,7 @@ class AuraLockClient(
             val json = JSONObject().apply {
                 put("type", "Ping")
             }
-            writer?.println(json.toString())
+            sendRaw(json.toString())
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -485,8 +510,15 @@ class AuraLockClient(
                     put("reason", reason)
                 })
             }
-            writer?.println(json.toString())
-            true
+            var ok = sendRaw(json.toString())
+            if (!ok) {
+                // Socket might have gone stale; reconnect quickly and retry
+                disconnect()
+                if (connect()) {
+                    ok = sendRaw(json.toString())
+                }
+            }
+            ok
         } catch (e: Exception) {
             e.printStackTrace()
             false
@@ -501,8 +533,14 @@ class AuraLockClient(
                     put("phone_name", phoneName)
                 })
             }
-            writer?.println(json.toString())
-            true
+            var ok = sendRaw(json.toString())
+            if (!ok) {
+                disconnect()
+                if (connect()) {
+                    ok = sendRaw(json.toString())
+                }
+            }
+            ok
         } catch (e: Exception) {
             e.printStackTrace()
             false
@@ -510,7 +548,7 @@ class AuraLockClient(
     }
 
     fun sendUnpairRequest(phoneName: String = "${Build.MANUFACTURER} ${Build.MODEL}"): Boolean {
-        try {
+        return try {
             val json = JSONObject().apply {
                 put("type", "UnpairReq")
                 put("payload", JSONObject().apply {
@@ -518,11 +556,10 @@ class AuraLockClient(
                     put("phone_name", phoneName)
                 })
             }
-            writer?.println(json.toString())
-            return true
+            sendRaw(json.toString())
         } catch (e: Exception) {
             e.printStackTrace()
-            return false
+            false
         }
     }
 

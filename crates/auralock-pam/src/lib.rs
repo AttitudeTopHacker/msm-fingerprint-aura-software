@@ -6,7 +6,7 @@
 #[cfg(unix)]
 use auralock_core::ipc::{IpcClient, DEFAULT_UNIX_SOCKET_PATH};
 #[cfg(unix)]
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 #[cfg(unix)]
 use std::os::raw::{c_char, c_int, c_void};
 
@@ -18,17 +18,79 @@ pub const PAM_AUTH_ERR: c_int = 7;
 pub const PAM_IGNORE: c_int = 25;
 #[cfg(unix)]
 pub const PAM_USER: c_int = 2;
+#[cfg(unix)]
+pub const PAM_CONV: c_int = 5;
+#[cfg(unix)]
+pub const PAM_TEXT_INFO: c_int = 4;
+#[cfg(unix)]
+pub const PAM_ERROR_MSG: c_int = 3;
+
+#[cfg(unix)]
+#[repr(C)]
+struct PamMessage {
+    msg_style: c_int,
+    msg: *const c_char,
+}
+
+#[cfg(unix)]
+#[repr(C)]
+struct PamResponse {
+    resp: *mut c_char,
+    resp_retcode: c_int,
+}
+
+#[cfg(unix)]
+#[repr(C)]
+struct PamConv {
+    conv: Option<
+        unsafe extern "C" fn(
+            num_msg: c_int,
+            msg: *mut *const PamMessage,
+            resp: *mut *mut PamResponse,
+            appdata_ptr: *mut c_void,
+        ) -> c_int,
+    >,
+    appdata_ptr: *mut c_void,
+}
 
 #[cfg(unix)]
 extern "C" {
     fn pam_get_item(pamh: *mut c_void, item_type: c_int, item: *mut *const c_void) -> c_int;
+    fn free(ptr: *mut c_void);
+}
+
+#[cfg(unix)]
+fn send_pam_info(pamh: *mut c_void, message: &str, is_error: bool) {
+    unsafe {
+        let mut conv_ptr: *const c_void = std::ptr::null();
+        if pam_get_item(pamh, PAM_CONV, &mut conv_ptr) != PAM_SUCCESS || conv_ptr.is_null() {
+            return;
+        }
+        let conv_struct = &*(conv_ptr as *const PamConv);
+        if let Some(conv_fn) = conv_struct.conv {
+            if let Ok(c_msg) = CString::new(message) {
+                let msg = PamMessage {
+                    msg_style: if is_error { PAM_ERROR_MSG } else { PAM_TEXT_INFO },
+                    msg: c_msg.as_ptr(),
+                };
+                let mut msg_ptr: *const PamMessage = &msg;
+                let mut resp_ptr: *mut PamResponse = std::ptr::null_mut();
+                let _ = conv_fn(1, &mut msg_ptr, &mut resp_ptr, conv_struct.appdata_ptr);
+                if !resp_ptr.is_null() {
+                    if !(*resp_ptr).resp.is_null() {
+                        free((*resp_ptr).resp as *mut c_void);
+                    }
+                    free(resp_ptr as *mut c_void);
+                }
+            }
+        }
+    }
 }
 
 /// Linux PAM Authentication Hook
 ///
 /// When the screen lock or login prompt is triggered on Linux (GNOME, KDE, GDM, SDDM, etc.),
-/// this function communicates with the local AuraLock background daemon.
-/// If the user validates via phone fingerprint within 10 seconds, this returns PAM_SUCCESS.
+/// this function communicates with the local AuraLock background daemon and displays native lock screen prompts.
 #[cfg(unix)]
 #[no_mangle]
 pub extern "C" fn pam_sm_authenticate(
@@ -53,6 +115,9 @@ pub extern "C" fn pam_sm_authenticate(
         return PAM_IGNORE;
     }
 
+    // Display native UI prompt on lockscreen
+    send_pam_info(pamh, "📱 [AuraLock] Touch fingerprint on your phone to unlock...", false);
+
     // Run async IPC request synchronously inside the PAM thread
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -65,10 +130,12 @@ pub extern "C" fn pam_sm_authenticate(
     match runtime.block_on(IpcClient::request_unlock(DEFAULT_UNIX_SOCKET_PATH, &username)) {
         Ok(true) => {
             // Biometric verified by phone!
+            send_pam_info(pamh, "✨ [AuraLock] Biometric verified! Unlocking...", false);
             PAM_SUCCESS
         }
         Ok(false) => {
             // Phone rejected or timed out; allow fallback to standard password
+            send_pam_info(pamh, "⚠️ [AuraLock] Biometric timed out / rejected. Please enter password:", true);
             PAM_AUTH_ERR
         }
         Err(_) => {
