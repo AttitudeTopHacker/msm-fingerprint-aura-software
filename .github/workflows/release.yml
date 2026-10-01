@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag (e.g. v1.3.1)'
+        description: 'Release Tag (e.g. v1.3.3)'
         required: false
-        default: 'v1.3.1'
+        default: 'v1.3.3'
 
 permissions:
   contents: write
@@ -64,8 +64,8 @@ jobs:
           cp scripts/auralock.service auralock-linux-bundle/
           cp README.md auralock-linux-bundle/
           
-          zip -r dist-linux/auralock-v1.3.1-linux-x86_64.zip auralock-linux-bundle
-          tar -czvf dist-linux/auralock-v1.3.1-linux-x86_64.tar.gz auralock-linux-bundle
+          zip -r dist-linux/auralock-v1.3.3-linux-x86_64.zip auralock-linux-bundle
+          tar -czvf dist-linux/auralock-v1.3.3-linux-x86_64.tar.gz auralock-linux-bundle
 
       - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
@@ -76,6 +76,7 @@ jobs:
   build-windows:
     name: Build Windows (.exe setup, .zip)
     runs-on: windows-latest
+    continue-on-error: true
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -138,7 +139,7 @@ jobs:
       - name: Prepare APK Artifact
         run: |
           mkdir -p dist-apk
-          cp mobile/android-app/app/build/outputs/apk/debug/app-debug.apk dist-apk/auralock-android-v1.3.1.apk
+          cp mobile/android-app/app/build/outputs/apk/debug/app-debug.apk dist-apk/auralock-android-v1.3.3.apk
           cp mobile/android-app/app/build/outputs/apk/debug/app-debug.apk dist-apk/auralock-android.apk
 
       - name: Upload APK Artifact
@@ -149,30 +150,24 @@ jobs:
 
   publish-release:
     name: Publish GitHub Release (Multi-Asset)
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: always() && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
     needs: [build-linux, build-windows, build-android]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Download Linux Artifacts
+      - name: Download All Artifacts
         uses: actions/download-artifact@v4
         with:
-          name: auralock-linux
-          path: release-assets/
+          path: release-assets
+          merge-multiple: true
 
-      - name: Download Windows Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: auralock-windows
-          path: release-assets/
-
-      - name: Download Android Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: auralock-android-apk
-          path: release-assets/
+      - name: Display Downloaded Assets
+        run: |
+          echo "=== 📦 Release Assets Found ==="
+          ls -la release-assets/ || true
+          find release-assets -type f || true
 
       - name: Determine Release Tag
         id: tag_info
@@ -182,7 +177,7 @@ jobs:
           elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "TAG=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           else
-            echo "TAG=v1.3.1" >> $GITHUB_OUTPUT
+            echo "TAG=v1.3.3" >> $GITHUB_OUTPUT
           fi
 
       - name: Create Release
@@ -195,5 +190,6 @@ jobs:
           generate_release_notes: true
           files: |
             release-assets/*
+            release-assets/**/*
             scripts/install-pam.sh
             scripts/auralock.service

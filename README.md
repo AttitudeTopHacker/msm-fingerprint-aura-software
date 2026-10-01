@@ -47,7 +47,7 @@ sudo ./scripts/install-pam.sh
 
 ### 2. Install Android App on Physical Device
 
-1. Download **`auralock-android-v1.3.1.apk`** directly from [GitHub Actions Artifacts](https://github.com/AttitudeTopHacker/msm-fingerprint-aura-software/actions) or [GitHub Releases](https://github.com/AttitudeTopHacker/msm-fingerprint-aura-software/releases).
+1. Download **`auralock-android-v1.3.3.apk`** directly from [GitHub Actions Artifacts](https://github.com/AttitudeTopHacker/msm-fingerprint-aura-software/actions) or [GitHub Releases](https://github.com/AttitudeTopHacker/msm-fingerprint-aura-software/releases).
 2. Install the APK on your Android smartphone (enable *Install Unknown Apps* in settings if prompted).
 3. Ensure your phone and PC are connected to the same Wi-Fi network (or BLE proximity).
 

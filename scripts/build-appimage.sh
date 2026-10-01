@@ -5,7 +5,7 @@
 
 set -e
 
-VERSION="1.3.1"
+VERSION="1.3.3"
 PACKAGE_NAME="auralock"
 ARCH="amd64"
 PROJECT_ROOT="$(pwd)"
