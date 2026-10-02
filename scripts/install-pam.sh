@@ -10,11 +10,13 @@ echo "════════════════════════�
 echo "  🌟 AuraLock Linux PAM Module Installer (msm.movin)"
 echo "════════════════════════════════════════════════════"
 
-SO_SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/target/release/libpam_auralock.so"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+SO_SOURCE="$ROOT_DIR/target/release/libpam_auralock.so"
 
 if [ ! -f "$SO_SOURCE" ]; then
-    echo "❌ Error: libpam_auralock.so not found. Please run 'cargo build --release' first."
-    exit 1
+    echo "🔨 Building PAM module in release mode..."
+    cargo build --release --package auralock-pam
 fi
 
 DEST_DIR="/lib/security"
@@ -27,12 +29,17 @@ sudo cp "$SO_SOURCE" "$DEST_DIR/pam_auralock.so"
 sudo chmod 755 "$DEST_DIR/pam_auralock.so"
 sudo chown root:root "$DEST_DIR/pam_auralock.so"
 
-echo "✅ Installed successfully!"
+# Install pam-config profile if directory exists (Ubuntu / Debian / Mint)
+if [ -d "/usr/share/pam-configs" ]; then
+    echo "⚙️ Registering with PAM auth update (/usr/share/pam-configs/auralock)..."
+    sudo cp "$SCRIPT_DIR/pam-config-auralock" "/usr/share/pam-configs/auralock"
+    sudo chmod 644 "/usr/share/pam-configs/auralock"
+    sudo pam-auth-update --package || true
+fi
+
 echo ""
-echo "📝 To enable AuraLock on your lockscreen (e.g. GDM / GNOME / KDE / SDDM):"
-echo "Add the following line to the TOP of /etc/pam.d/common-auth (or /etc/pam.d/gdm-password):"
-echo ""
-echo "   auth sufficient pam_auralock.so"
-echo ""
-echo "Note: 'sufficient' means phone biometric will unlock immediately if approved,"
-echo "      but standard password fallback will continue to work if phone is offline."
+echo "=================================================="
+echo "  🎉 AuraLock Lock Screen & Sudo PAM is now ACTIVE!"
+echo "  When you lock your screen (Super + L) or use sudo,"
+echo "  AuraLock will prompt on screen & phone."
+echo "=================================================="

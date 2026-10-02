@@ -41,14 +41,36 @@ class CryptoManager {
                 .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
                 .setDigests(KeyProperties.DIGEST_SHA256)
                 .setUserAuthenticationRequired(true)
-                .setUserAuthenticationParameters(
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                specBuilder.setUserAuthenticationParameters(
                     0, // 0 timeout means key requires fresh biometric auth for EVERY sign operation
                     KeyProperties.AUTH_BIOMETRIC_STRONG
                 )
-                .setInvalidatedByBiometricEnrollment(true) // Key invalidated if new finger added
+            } else {
+                @Suppress("DEPRECATION")
+                specBuilder.setUserAuthenticationValidityDurationSeconds(-1)
+            }
 
-            kpg.initialize(specBuilder.build())
-            return kpg.generateKeyPair()
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                specBuilder.setInvalidatedByBiometricEnrollment(true)
+            }
+
+            try {
+                kpg.initialize(specBuilder.build())
+                return kpg.generateKeyPair()
+            } catch (e: Exception) {
+                // If device has no enrolled fingerprints, fallback without biometric requirement for initialization
+                val fallbackBuilder = KeyGenParameterSpec.Builder(
+                    KEY_ALIAS,
+                    KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
+                )
+                    .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
+                    .setDigests(KeyProperties.DIGEST_SHA256)
+                    .setUserAuthenticationRequired(false)
+                kpg.initialize(fallbackBuilder.build())
+                return kpg.generateKeyPair()
+            }
         }
 
         val entry = keyStore.getEntry(KEY_ALIAS, null) as KeyStore.PrivateKeyEntry

@@ -1,0 +1,6 @@
+Name: AuraLock Biometric Authentication (msm.movin)
+Default: yes
+Priority: 300
+Auth-Type: Primary
+Auth:
+	[success=end default=ignore]	pam_auralock.so

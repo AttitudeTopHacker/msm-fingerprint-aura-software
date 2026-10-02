@@ -53,6 +53,14 @@ chmod 644 "$BUILD_DIR/lib/security/pam_auralock.so"
 cp scripts/auralock.service "$BUILD_DIR/etc/systemd/system/auralock.service"
 chmod 644 "$BUILD_DIR/etc/systemd/system/auralock.service"
 
+# Copy PAM Config & GNOME Lock Screen Extension
+mkdir -p "$BUILD_DIR/usr/share/pam-configs"
+cp scripts/pam-config-auralock "$BUILD_DIR/usr/share/pam-configs/auralock"
+chmod 644 "$BUILD_DIR/usr/share/pam-configs/auralock"
+
+mkdir -p "$BUILD_DIR/usr/share/gnome-shell/extensions/auralock@msm.movin"
+cp -r gnome-extension/auralock@msm.movin/* "$BUILD_DIR/usr/share/gnome-shell/extensions/auralock@msm.movin/"
+
 # Copy App Icons
 if [ -f "src-tauri/icons/icon.png" ]; then
     cp "src-tauri/icons/icon.png" "$BUILD_DIR/usr/share/pixmaps/auralock.png"
@@ -104,6 +112,11 @@ if [ "$1" = "configure" ]; then
     systemctl enable auralock.service || true
     systemctl restart auralock.service || true
 
+    if command -v pam-auth-update > /dev/null 2>&1; then
+        echo "🔐 Activating AuraLock PAM Authentication..."
+        pam-auth-update --package || true
+    fi
+
     if command -v update-desktop-database > /dev/null 2>&1; then
         update-desktop-database -q /usr/share/applications || true
     fi
@@ -130,6 +143,11 @@ if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
     echo "🛑 Stopping and disabling auralock service..."
     systemctl stop auralock.service || true
     systemctl disable auralock.service || true
+
+    rm -f /usr/share/pam-configs/auralock
+    if command -v pam-auth-update > /dev/null 2>&1; then
+        pam-auth-update --package || true
+    fi
 
     if command -v update-desktop-database > /dev/null 2>&1; then
         update-desktop-database -q /usr/share/applications || true

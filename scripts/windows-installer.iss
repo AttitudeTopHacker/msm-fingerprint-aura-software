@@ -1,8 +1,8 @@
 ; Script generated for AuraLock Windows Installer (msm.movin)
-; Builds: auralock_1.3.4_x64-setup.exe
+; Builds: auralock_1.3.5_x64-setup.exe
 
 #define MyAppName "AuraLock"
-#define MyAppVersion "1.3.4"
+#define MyAppVersion "1.3.5"
 #define MyAppPublisher "msm.movin"
 #define MyAppURL "https://github.com/AttitudeTopHacker/msm-fingerprint-aura-software"
 #define MyAppExeName "auralock.exe"
@@ -19,7 +19,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=..\dist
-OutputBaseFilename=auralock_1.3.4_x64-setup
+OutputBaseFilename=auralock_1.3.5_x64-setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
