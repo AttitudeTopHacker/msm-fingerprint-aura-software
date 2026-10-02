@@ -27,8 +27,8 @@ rm -rf "$BUILD_DIR" dist/"$DEB_NAME"
 mkdir -p "$BUILD_DIR/DEBIAN"
 mkdir -p "$BUILD_DIR/usr/bin"
 mkdir -p "$BUILD_DIR/usr/local/bin"
+mkdir -p "$BUILD_DIR/lib/x86_64-linux-gnu/security"
 mkdir -p "$BUILD_DIR/lib/security"
-mkdir -p "$BUILD_DIR/usr/lib/security"
 mkdir -p "$BUILD_DIR/usr/share/pam-configs"
 mkdir -p "$BUILD_DIR/etc/systemd/system"
 mkdir -p "$BUILD_DIR/usr/share/applications"
@@ -49,9 +49,9 @@ if [ -f "target/release/auralock" ]; then
     chmod 755 "$BUILD_DIR/usr/bin/auralock-cli" "$BUILD_DIR/usr/local/bin/auralock-cli"
 fi
 
+cp target/release/libpam_auralock.so "$BUILD_DIR/lib/x86_64-linux-gnu/security/pam_auralock.so"
 cp target/release/libpam_auralock.so "$BUILD_DIR/lib/security/pam_auralock.so"
-cp target/release/libpam_auralock.so "$BUILD_DIR/usr/lib/security/pam_auralock.so"
-chmod 644 "$BUILD_DIR/lib/security/pam_auralock.so" "$BUILD_DIR/usr/lib/security/pam_auralock.so"
+chmod 644 "$BUILD_DIR/lib/x86_64-linux-gnu/security/pam_auralock.so" "$BUILD_DIR/lib/security/pam_auralock.so"
 
 cp scripts/pam-config-auralock "$BUILD_DIR/usr/share/pam-configs/auralock"
 chmod 644 "$BUILD_DIR/usr/share/pam-configs/auralock"
