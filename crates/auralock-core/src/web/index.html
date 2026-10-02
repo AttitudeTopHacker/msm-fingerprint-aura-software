@@ -1,12 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AuraLock Control Center • msm.movin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet">
   <style>
     :root {
       --bg-dark: #07090E;
@@ -33,7 +36,7 @@
 
     body {
       background-color: var(--bg-dark);
-      background-image: 
+      background-image:
         radial-gradient(circle at 10% 15%, rgba(0, 210, 255, 0.08) 0%, transparent 40%),
         radial-gradient(circle at 90% 85%, rgba(0, 255, 136, 0.06) 0%, transparent 40%);
       color: var(--text-main);
@@ -181,8 +184,15 @@
     }
 
     @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 1; transform: translateY(0); }
+      from {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     .grid-2 {
@@ -195,6 +205,7 @@
       .grid-2 {
         grid-template-columns: 1fr;
       }
+
       .nav-tabs {
         overflow-x: auto;
         padding-bottom: 8px;
@@ -261,8 +272,15 @@
       font-size: 0.9rem;
     }
 
-    .info-label { color: var(--text-muted); }
-    .info-val { font-family: var(--font-mono); font-weight: 600; color: #FFF; }
+    .info-label {
+      color: var(--text-muted);
+    }
+
+    .info-val {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: #FFF;
+    }
 
     .paired-device-display {
       display: flex;
@@ -398,12 +416,19 @@
       height: 28px;
     }
 
-    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
 
     .slider {
       position: absolute;
       cursor: pointer;
-      top: 0; left: 0; right: 0; bottom: 0;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
       background-color: #334155;
       transition: .3s;
       border-radius: 34px;
@@ -421,11 +446,11 @@
       border-radius: 50%;
     }
 
-    input:checked + .slider {
+    input:checked+.slider {
       background: linear-gradient(135deg, #00FF88, #00D2FF);
     }
 
-    input:checked + .slider:before {
+    input:checked+.slider:before {
       transform: translateX(24px);
     }
 
@@ -439,7 +464,8 @@
       transition: all 0.2s ease;
     }
 
-    .dropzone:hover, .dropzone.dragover {
+    .dropzone:hover,
+    .dropzone.dragover {
       border-color: var(--accent-cyan);
       background: rgba(0, 210, 255, 0.06);
     }
@@ -509,9 +535,19 @@
       gap: 12px;
     }
 
-    .file-icon { font-size: 1.5rem; }
-    .file-details h4 { font-size: 0.95rem; font-weight: 600; }
-    .file-details p { font-size: 0.8rem; color: var(--text-muted); }
+    .file-icon {
+      font-size: 1.5rem;
+    }
+
+    .file-details h4 {
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    .file-details p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
 
     .log-container {
       background: rgba(0, 0, 0, 0.4);
@@ -526,12 +562,29 @@
       line-height: 1.6;
     }
 
-    .log-entry { margin-bottom: 4px; }
-    .log-time { color: #4A5568; }
-    .log-success { color: var(--accent-green); }
-    .log-info { color: var(--accent-cyan); }
-    .log-warn { color: var(--accent-yellow); }
-    .log-error { color: var(--accent-red); }
+    .log-entry {
+      margin-bottom: 4px;
+    }
+
+    .log-time {
+      color: #4A5568;
+    }
+
+    .log-success {
+      color: var(--accent-green);
+    }
+
+    .log-info {
+      color: var(--accent-cyan);
+    }
+
+    .log-warn {
+      color: var(--accent-yellow);
+    }
+
+    .log-error {
+      color: var(--accent-red);
+    }
 
     /* Toast Notification */
     #toast {
@@ -623,10 +676,12 @@
         border-color: var(--accent-cyan);
         box-shadow: 0 0 15px rgba(0, 210, 255, 0.4);
       }
+
       50% {
         opacity: 0.4;
         border-color: var(--accent-green);
       }
+
       100% {
         transform: translate(-50%, -50%) scale(1.3);
         opacity: 0;
@@ -690,9 +745,19 @@
     }
 
     @keyframes laserScan {
-      0% { top: 8%; opacity: 0.3; }
-      50% { opacity: 1; }
-      100% { top: 88%; opacity: 0.3; }
+      0% {
+        top: 8%;
+        opacity: 0.3;
+      }
+
+      50% {
+        opacity: 1;
+      }
+
+      100% {
+        top: 88%;
+        opacity: 0.3;
+      }
     }
 
     .pulse-fingerprint-container.verified .fingerprint-disc {
@@ -720,9 +785,21 @@
     }
 
     @keyframes shakeDisc {
-      0%, 100% { transform: translateX(0); }
-      20%, 60% { transform: translateX(-8px); }
-      40%, 80% { transform: translateX(8px); }
+
+      0%,
+      100% {
+        transform: translateX(0);
+      }
+
+      20%,
+      60% {
+        transform: translateX(-8px);
+      }
+
+      40%,
+      80% {
+        transform: translateX(8px);
+      }
     }
 
     .fingerprint-status-box {
@@ -745,7 +822,10 @@
 
     .modal-overlay {
       position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
       background: rgba(0, 0, 0, 0.8);
       backdrop-filter: blur(8px);
       z-index: 2000;
@@ -766,7 +846,7 @@
       max-width: 440px;
       width: 90%;
       text-align: center;
-      box-shadow: 0 20px 50px rgba(0,0,0,0.7);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
     }
 
     .biometric-hud-card {
@@ -791,15 +871,422 @@
       background: linear-gradient(90deg, #00FF88, #00D2FF);
       transition: width 0.1s linear;
     }
+
+    /* FULLSCREEN AURALOCK OVERLAY LOCK SCREEN (OPTION 2) */
+    .auralock-overlay-lockscreen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 999999;
+      background-color: #04070D;
+      background-image:
+        radial-gradient(circle at 50% 20%, rgba(0, 210, 255, 0.12) 0%, transparent 60%),
+        radial-gradient(circle at 50% 80%, rgba(0, 255, 136, 0.08) 0%, transparent 50%);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 1.5rem 2.5rem;
+      backdrop-filter: blur(30px);
+      user-select: none;
+      overflow: hidden;
+      animation: lockscreenFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes lockscreenFadeIn {
+      from {
+        opacity: 0;
+        transform: scale(1.02);
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    .auralock-overlay-lockscreen.unlocking {
+      animation: lockscreenUnlockOut 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes lockscreenUnlockOut {
+      0% {
+        opacity: 1;
+        transform: scale(1);
+        filter: blur(0);
+      }
+
+      100% {
+        opacity: 0;
+        transform: scale(1.05);
+        filter: blur(20px);
+        pointer-events: none;
+      }
+    }
+
+    .lockscreen-ambient-glow {
+      position: absolute;
+      top: 40%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(0, 210, 255, 0.18) 0%, rgba(0, 255, 136, 0.08) 40%, transparent 70%);
+      border-radius: 50%;
+      pointer-events: none;
+      filter: blur(60px);
+      z-index: 1;
+    }
+
+    .lockscreen-mesh-grid {
+      position: absolute;
+      inset: 0;
+      background-size: 40px 40px;
+      background-image:
+        linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .lockscreen-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 10;
+    }
+
+    .lock-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      letter-spacing: 0.5px;
+      color: #E2E8F0;
+    }
+
+    .lock-indicators {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .lock-badge-pill {
+      padding: 6px 14px;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(0, 255, 136, 0.3);
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #00FF88;
+      box-shadow: 0 0 15px rgba(0, 255, 136, 0.15);
+    }
+
+    .lock-screen-btn-icon {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      transition: all 0.2s;
+    }
+
+    .lock-screen-btn-icon:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #FFF;
+    }
+
+    .lockscreen-center-hub {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      z-index: 10;
+      margin: auto 0;
+    }
+
+    .lockscreen-clock-wrapper {
+      text-align: center;
+    }
+
+    .lockscreen-digital-time {
+      font-size: 4.8rem;
+      font-weight: 800;
+      letter-spacing: -2px;
+      color: #FFFFFF;
+      text-shadow: 0 0 35px rgba(0, 210, 255, 0.4), 0 0 70px rgba(0, 255, 136, 0.2);
+      line-height: 1;
+    }
+
+    .time-ampm {
+      font-size: 1.8rem;
+      font-weight: 600;
+      color: #38BDF8;
+      margin-left: 6px;
+      text-shadow: none;
+    }
+
+    .lockscreen-digital-date {
+      font-size: 1.15rem;
+      font-weight: 500;
+      color: #94A3B8;
+      margin-top: 8px;
+      letter-spacing: 0.5px;
+    }
+
+    .lockscreen-aura-core {
+      position: relative;
+      width: 140px;
+      height: 140px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      margin: 0.5rem 0;
+    }
+
+    .aura-pulse-wave {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 2px solid rgba(0, 210, 255, 0.4);
+      pointer-events: none;
+      animation: auraPulseWave 2.8s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+    }
+
+    .wave-1 {
+      animation-delay: 0s;
+    }
+
+    .wave-2 {
+      animation-delay: 0.9s;
+    }
+
+    .wave-3 {
+      animation-delay: 1.8s;
+    }
+
+    @keyframes auraPulseWave {
+      0% {
+        transform: translate(-50%, -50%) scale(0.85);
+        opacity: 0.8;
+      }
+
+      50% {
+        opacity: 0.35;
+        border-color: #00FF88;
+      }
+
+      100% {
+        transform: translate(-50%, -50%) scale(2.1);
+        opacity: 0;
+      }
+    }
+
+    .lockscreen-finger-disc {
+      position: relative;
+      width: 110px;
+      height: 110px;
+      border-radius: 50%;
+      background: radial-gradient(circle at center, #0F2A38 0%, #081622 70%, #03080E 100%);
+      border: 2px solid rgba(0, 210, 255, 0.6);
+      box-shadow: 0 0 35px rgba(0, 210, 255, 0.45), inset 0 0 25px rgba(0, 210, 255, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      z-index: 2;
+    }
+
+    .lockscreen-aura-core:hover .lockscreen-finger-disc {
+      transform: scale(1.08);
+      border-color: #00FF88;
+      box-shadow: 0 0 50px rgba(0, 255, 136, 0.6), inset 0 0 30px rgba(0, 255, 136, 0.35);
+    }
+
+    .lock-finger-svg {
+      width: 64px;
+      height: 64px;
+      filter: drop-shadow(0 0 12px rgba(0, 210, 255, 0.8));
+    }
+
+    .lock-laser-beam {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #00FF88, #00D2FF, transparent);
+      box-shadow: 0 0 14px #00FF88;
+      opacity: 0.85;
+      animation: lockLaserAnim 1.8s ease-in-out infinite alternate;
+    }
+
+    @keyframes lockLaserAnim {
+      0% {
+        top: 10%;
+        opacity: 0.3;
+      }
+
+      50% {
+        opacity: 1;
+      }
+
+      100% {
+        top: 88%;
+        opacity: 0.3;
+      }
+    }
+
+    .lockscreen-aura-core.verified .lockscreen-finger-disc {
+      background: radial-gradient(circle at center, #0E3B27 0%, #072216 70%, #03120A 100%);
+      border-color: #00FF88;
+      box-shadow: 0 0 65px rgba(0, 255, 136, 0.95), inset 0 0 35px rgba(0, 255, 136, 0.7);
+      transform: scale(1.15);
+    }
+
+    .lockscreen-status-box {
+      text-align: center;
+    }
+
+    .lockscreen-status-box h2 {
+      font-size: 1.45rem;
+      font-weight: 700;
+      color: #FFFFFF;
+      margin-bottom: 4px;
+    }
+
+    .lockscreen-status-box p {
+      font-size: 0.92rem;
+      color: #38BDF8;
+      font-weight: 500;
+    }
+
+    .lockscreen-emergency-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      margin-top: 0.5rem;
+      width: 100%;
+      max-width: 360px;
+    }
+
+    .emergency-input-wrap {
+      display: flex;
+      width: 100%;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      overflow: hidden;
+      padding: 4px;
+      transition: all 0.2s;
+    }
+
+    .emergency-input-wrap:focus-within {
+      border-color: rgba(0, 210, 255, 0.6);
+      box-shadow: 0 0 20px rgba(0, 210, 255, 0.25);
+    }
+
+    .emergency-input-wrap input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      padding: 10px 14px;
+      color: #FFF;
+      font-size: 0.95rem;
+      outline: none;
+      font-family: inherit;
+    }
+
+    .emergency-input-wrap input::placeholder {
+      color: #64748B;
+      font-size: 0.85rem;
+    }
+
+    .emergency-unlock-btn {
+      background: linear-gradient(135deg, #00D2FF 0%, #00FF88 100%);
+      border: none;
+      border-radius: 8px;
+      padding: 0 16px;
+      color: #07090E;
+      font-weight: 700;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .emergency-unlock-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 15px rgba(0, 255, 136, 0.4);
+    }
+
+    .emergency-hint {
+      font-size: 0.78rem;
+      color: #64748B;
+      text-align: center;
+    }
+
+    .lockscreen-bottombar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 10;
+    }
+
+    .paired-phone-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #94A3B8;
+    }
+
+    .lock-quick-actions button {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      color: #38BDF8;
+      border-radius: 999px;
+      padding: 6px 14px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .lock-quick-actions button:hover {
+      background: rgba(0, 210, 255, 0.15);
+      border-color: rgba(0, 210, 255, 0.4);
+      color: #FFF;
+    }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
+
 <body>
 
   <header>
     <div class="brand">
       <div class="brand-logo">
-        <svg viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+        <svg viewBox="0 0 24 24">
+          <path
+            d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" />
+        </svg>
       </div>
       <div class="brand-text">
         <h1>AuraLock Control Center</h1>
@@ -816,6 +1303,10 @@
         <div class="status-dot" id="wifi-dot"></div>
         <span id="wifi-text">📶 Wi-Fi: Standby</span>
       </div>
+      <button class="btn btn-secondary" onclick="lockScreenOverlay()" title="Lock Screen (Ctrl+L)"
+        style="padding: 6px 14px; border-radius: 999px; font-weight: 600; display: flex; align-items: center; gap: 6px; background: rgba(0, 255, 136, 0.1); border-color: rgba(0, 255, 136, 0.3); color: #00FF88;">
+        <span>🔒</span> Lock PC
+      </button>
     </div>
   </header>
 
@@ -866,7 +1357,8 @@
                 <div style="font-size: 1.5rem;">🔑</div>
                 <div>
                   <h4 style="font-size: 0.95rem; font-weight: 600; color: #FFF;">Hardware Keystore Signature</h4>
-                  <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">Private Ed25519 signature keys never leave the phone's hardware TEE enclave.</p>
+                  <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">Private Ed25519 signature
+                    keys never leave the phone's hardware TEE enclave.</p>
                 </div>
               </div>
 
@@ -874,21 +1366,26 @@
                 <div style="font-size: 1.5rem;">🛡️</div>
                 <div>
                   <h4 style="font-size: 0.95rem; font-weight: 600; color: #FFF;">Single Paired Device Policy</h4>
-                  <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">Only 1 smartphone can be paired at a time. Once paired, pairing setup is locked until unpaired.</p>
+                  <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">Only 1 smartphone can be
+                    paired at a time. Once paired, pairing setup is locked until unpaired.</p>
                 </div>
               </div>
 
               <div style="display: flex; gap: 12px; align-items: flex-start;">
                 <div style="font-size: 1.5rem;">💤</div>
                 <div>
-                  <h4 style="font-size: 0.95rem; font-weight: 600; color: #FFF;">Sleep, Boot & Lockscreen Protection</h4>
-                  <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">Triggers fingerprint challenge automatically on wakeup, sleep, restart or login. Fallback to PC password available anytime.</p>
+                  <h4 style="font-size: 0.95rem; font-weight: 600; color: #FFF;">Sleep, Boot & Lockscreen Protection
+                  </h4>
+                  <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">Triggers fingerprint
+                    challenge automatically on wakeup, sleep, restart or login. Fallback to PC password available
+                    anytime.</p>
                 </div>
               </div>
             </div>
           </div>
 
-          <div style="padding: 12px; background: rgba(0, 210, 255, 0.05); border: 1px solid rgba(0, 210, 255, 0.15); border-radius: 10px; margin-top: 1rem;">
+          <div
+            style="padding: 12px; background: rgba(0, 210, 255, 0.05); border: 1px solid rgba(0, 210, 255, 0.15); border-radius: 10px; margin-top: 1rem;">
             <p style="font-size: 0.8rem; color: var(--accent-cyan); text-align: center;">
               Awaiting pairing connection from AuraLock Mobile App...
             </p>
@@ -900,20 +1397,24 @@
       <div id="paired-view" class="grid-2" style="display: none;">
         <!-- HERO BIOMETRIC PULSE SCANNER CARD -->
         <div class="card biometric-scanner-card" id="biometric-scanner-card">
-          <div class="card-badge success" id="biometric-badge-status" style="display: inline-block; padding: 4px 10px; background: rgba(0,255,136,0.15); border: 1px solid rgba(0,255,136,0.4); border-radius: 6px; font-size: 0.75rem; font-weight: 700; color: var(--accent-green); margin-bottom: 12px;">PAIRED & ARMED</div>
+          <div class="card-badge success" id="biometric-badge-status"
+            style="display: inline-block; padding: 4px 10px; background: rgba(0,255,136,0.15); border: 1px solid rgba(0,255,136,0.4); border-radius: 6px; font-size: 0.75rem; font-weight: 700; color: var(--accent-green); margin-bottom: 12px;">
+            PAIRED & ARMED</div>
           <h2 class="card-title">🛡️ Hardware Biometric Security</h2>
           <p class="card-subtitle">Touch smartphone sensor to unlock PC via zero-trust Ed25519 cryptographic key</p>
 
           <!-- CONCENTRIC PULSE FINGERPRINT VISUALIZER -->
-          <div class="pulse-fingerprint-container connected" id="pulse-fingerprint-btn" onclick="testUnlock()" title="Click to test Biometric Unlock">
+          <div class="pulse-fingerprint-container connected" id="pulse-fingerprint-btn" onclick="testUnlock()"
+            title="Click to test Biometric Unlock">
             <div class="pulse-ring ring-1"></div>
             <div class="pulse-ring ring-2"></div>
             <div class="pulse-ring ring-3"></div>
-            
+
             <div class="fingerprint-disc" id="fingerprint-disc">
               <div class="scanner-laser" id="scanner-laser"></div>
               <svg class="fingerprint-icon" viewBox="0 0 24 24">
-                <path d="M17.81 4.47c-.08 0-.16-.02-.23-.06C15.66 3.42 14 3 12.01 3c-1.98 0-3.86.47-5.57 1.41-.24.13-.54.04-.68-.2-.13-.24-.04-.55.2-.68C7.82 2.52 9.86 2 12.01 2c2.13 0 3.99.47 6.03 1.52.25.13.34.43.21.67-.1.18-.28.28-.44.28zM3.5 9.72c-.1 0-.2-.03-.29-.09-.23-.16-.28-.47-.12-.7.99-1.4 2.25-2.5 3.75-3.27C9.9 4.04 14 4.03 17.15 5.65c1.5.77 2.76 1.86 3.75 3.25.16.22.11.54-.12.7-.23.16-.54.11-.7-.12-.9-1.26-2.04-2.25-3.39-2.94-2.87-1.47-6.54-1.47-9.4 0-1.36.7-2.5 1.7-3.4 2.97-.08.14-.23.21-.39.21zm6.25 12.07c-.13 0-.26-.05-.35-.15-.87-.87-1.34-1.43-2.01-2.64-.69-1.23-1.05-2.73-1.05-4.34 0-2.97 2.54-5.39 5.66-5.39s5.66 2.42 5.66 5.39c0 .28-.22.5-.5.5s-.5-.22-.5-.5c0-2.42-2.09-4.39-4.66-4.39-2.57 0-4.66 1.97-4.66 4.39 0 1.44.32 2.77.93 3.85.64 1.15 1.08 1.64 1.85 2.42.19.2.19.51 0 .71-.11.1-.24.16-.38.16zm8.26-3.83c-.09 0-.17-.02-.26-.07-.79-.47-1.85-.75-3.08-.79-2.02-.07-3.79.52-5.41 1.79-.22.17-.53.14-.7-.07-.17-.22-.14-.53.07-.7 1.85-1.45 3.89-2.12 6.13-2.04 1.41.05 2.63.38 3.58.94.24.14.32.45.18.69-.09.16-.27.25-.51.25zM12.01 15.49c-.28 0-.5-.22-.5-.5v-2.16c0-.28.22-.5.5-.5s.5.22.5.5v2.16c0 .28-.22.5-.5.5z"/>
+                <path
+                  d="M17.81 4.47c-.08 0-.16-.02-.23-.06C15.66 3.42 14 3 12.01 3c-1.98 0-3.86.47-5.57 1.41-.24.13-.54.04-.68-.2-.13-.24-.04-.55.2-.68C7.82 2.52 9.86 2 12.01 2c2.13 0 3.99.47 6.03 1.52.25.13.34.43.21.67-.1.18-.28.28-.44.28zM3.5 9.72c-.1 0-.2-.03-.29-.09-.23-.16-.28-.47-.12-.7.99-1.4 2.25-2.5 3.75-3.27C9.9 4.04 14 4.03 17.15 5.65c1.5.77 2.76 1.86 3.75 3.25.16.22.11.54-.12.7-.23.16-.54.11-.7-.12-.9-1.26-2.04-2.25-3.39-2.94-2.87-1.47-6.54-1.47-9.4 0-1.36.7-2.5 1.7-3.4 2.97-.08.14-.23.21-.39.21zm6.25 12.07c-.13 0-.26-.05-.35-.15-.87-.87-1.34-1.43-2.01-2.64-.69-1.23-1.05-2.73-1.05-4.34 0-2.97 2.54-5.39 5.66-5.39s5.66 2.42 5.66 5.39c0 .28-.22.5-.5.5s-.5-.22-.5-.5c0-2.42-2.09-4.39-4.66-4.39-2.57 0-4.66 1.97-4.66 4.39 0 1.44.32 2.77.93 3.85.64 1.15 1.08 1.64 1.85 2.42.19.2.19.51 0 .71-.11.1-.24.16-.38.16zm8.26-3.83c-.09 0-.17-.02-.26-.07-.79-.47-1.85-.75-3.08-.79-2.02-.07-3.79.52-5.41 1.79-.22.17-.53.14-.7-.07-.17-.22-.14-.53.07-.7 1.85-1.45 3.89-2.12 6.13-2.04 1.41.05 2.63.38 3.58.94.24.14.32.45.18.69-.09.16-.27.25-.51.25zM12.01 15.49c-.28 0-.5-.22-.5-.5v-2.16c0-.28.22-.5.5-.5s.5.22.5.5v2.16c0 .28-.22.5-.5.5z" />
               </svg>
             </div>
           </div>
@@ -935,13 +1436,16 @@
 
         <div style="display: flex; flex-direction: column; gap: 1.5rem;">
           <div class="card">
-            <div style="display: inline-block; padding: 4px 10px; background: rgba(0,255,136,0.15); border: 1px solid rgba(0,255,136,0.4); border-radius: 6px; font-size: 0.75rem; font-weight: 700; color: var(--accent-green); margin-bottom: 12px;">HARDWARE LINKED</div>
+            <div
+              style="display: inline-block; padding: 4px 10px; background: rgba(0,255,136,0.15); border: 1px solid rgba(0,255,136,0.4); border-radius: 6px; font-size: 0.75rem; font-weight: 700; color: var(--accent-green); margin-bottom: 12px;">
+              HARDWARE LINKED</div>
             <h2 class="card-title">📱 Paired Smartphone Details</h2>
             <p class="card-subtitle">Active biometric enclave authorized for authentication</p>
 
             <div class="info-row">
               <span class="info-label">Paired Device:</span>
-              <span id="phone-name-val" class="info-val" style="color: var(--accent-green);">Samsung Galaxy / Pixel</span>
+              <span id="phone-name-val" class="info-val" style="color: var(--accent-green);">Samsung Galaxy /
+                Pixel</span>
             </div>
             <div class="info-row">
               <span class="info-label">Connection Status:</span>
@@ -965,7 +1469,8 @@
             <h2 class="card-title">🔑 Update PC Login Password</h2>
             <p class="card-subtitle">Encrypted securely into local PAM split-key vault (ChaCha20-Poly1305)</p>
             <div style="display: flex; gap: 10px;">
-              <input type="password" id="new-password" placeholder="Enter PC Login Password" style="flex: 1; padding: 10px 14px; background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); border-radius: 10px; color: #FFF; font-family: var(--font-mono);">
+              <input type="password" id="new-password" placeholder="Enter PC Login Password"
+                style="flex: 1; padding: 10px 14px; background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); border-radius: 10px; color: #FFF; font-family: var(--font-mono);">
               <button class="btn btn-secondary" onclick="savePassword()">Save to Vault</button>
             </div>
           </div>
@@ -991,9 +1496,11 @@
 
       <div id="transfer-unlinked-view" class="card" style="text-align: center; padding: 3rem 1.5rem; display: none;">
         <div style="font-size: 3rem; margin-bottom: 1rem;">📱</div>
-        <h2 class="card-title" id="transfer-unlinked-title" style="margin-bottom: 8px; justify-content: center;">Phone Not Linked</h2>
+        <h2 class="card-title" id="transfer-unlinked-title" style="margin-bottom: 8px; justify-content: center;">Phone
+          Not Linked</h2>
         <p class="card-subtitle" id="transfer-unlinked-desc" style="max-width: 500px; margin: 0 auto 1.5rem auto;">
-          AuraDrop requires your paired smartphone to be live linked. Tap 'Tap to Link' on your phone to activate AuraDrop.
+          AuraDrop requires your paired smartphone to be live linked. Tap 'Tap to Link' on your phone to activate
+          AuraDrop.
         </p>
       </div>
 
@@ -1003,7 +1510,8 @@
         <p class="card-subtitle" style="max-width: 500px; margin: 0 auto 1.5rem auto;">
           To transfer files with your linked phone, flip the toggle switch above to <strong>ON</strong>.
         </p>
-        <button class="btn btn-primary" onclick="enableTransferNow()" style="display: inline-flex; align-items: center; gap: 8px; margin: 0 auto;">
+        <button class="btn btn-primary" onclick="enableTransferNow()"
+          style="display: inline-flex; align-items: center; gap: 8px; margin: 0 auto;">
           <span>⚡</span> Open Transfer Channel
         </button>
       </div>
@@ -1015,7 +1523,10 @@
 
           <input type="file" id="file-input" style="display: none;" onchange="handleFileSelected(this.files)">
           <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
-            <svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+            <svg viewBox="0 0 24 24">
+              <path
+                d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z" />
+            </svg>
             <h3 style="font-size: 1.1rem; margin-bottom: 6px;">Drag & Drop Files Here</h3>
             <p style="font-size: 0.85rem; color: var(--text-muted);">or click anywhere to browse from laptop</p>
           </div>
@@ -1023,14 +1534,16 @@
           <div id="upload-progress-box" class="progress-bar-container">
             <div id="upload-progress-fill" class="progress-bar-fill"></div>
           </div>
-          <div id="upload-status-text" style="font-size: 0.85rem; color: var(--text-muted); text-align: center; margin-top: 4px;"></div>
+          <div id="upload-status-text"
+            style="font-size: 0.85rem; color: var(--text-muted); text-align: center; margin-top: 4px;"></div>
         </div>
 
         <div class="card">
           <h2 class="card-title">📋 Instant Clipboard / Notes Push</h2>
           <p class="card-subtitle">Send text, URLs, or authentication tokens directly to phone</p>
 
-          <textarea id="clipboard-text" class="clipboard-box" placeholder="Type or paste text/URL here to send to phone..."></textarea>
+          <textarea id="clipboard-text" class="clipboard-box"
+            placeholder="Type or paste text/URL here to send to phone..."></textarea>
           <button class="btn btn-primary" onclick="sendClipboard()" style="width: 100%;">
             <span>📤</span> Push Text to Phone
           </button>
@@ -1044,7 +1557,8 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
           <div>
             <h2 class="card-title">📥 Received Files from Phone</h2>
-            <p class="card-subtitle" style="margin-bottom: 0;">Files sent via AuraDrop saved into ~/Downloads/AuraLock</p>
+            <p class="card-subtitle" style="margin-bottom: 0;">Files sent via AuraDrop saved into ~/Downloads/AuraLock
+            </p>
           </div>
           <button class="btn btn-secondary" onclick="openDownloadsFolder()">
             <span>📂</span> Open Downloads Folder
@@ -1052,7 +1566,8 @@
         </div>
 
         <div id="files-list" class="files-list">
-          <p style="text-align: center; color: var(--text-muted); padding: 2rem;">No files received yet. Share files from your phone's AuraLock app!</p>
+          <p style="text-align: center; color: var(--text-muted); padding: 2rem;">No files received yet. Share files
+            from your phone's AuraLock app!</p>
         </div>
       </div>
     </div>
@@ -1063,13 +1578,15 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
           <div>
             <h2 class="card-title">📊 Live Event Console</h2>
-            <p class="card-subtitle" style="margin-bottom: 0;">Biometric challenges, PAM socket requests, and network events</p>
+            <p class="card-subtitle" style="margin-bottom: 0;">Biometric challenges, PAM socket requests, and network
+              events</p>
           </div>
           <button class="btn btn-secondary" onclick="clearLogs()">Clear Console</button>
         </div>
 
         <div id="log-container" class="log-container">
-          <div class="log-entry"><span class="log-time">[System]</span> <span class="log-info">AuraLock Web Control Center initialized.</span></div>
+          <div class="log-entry"><span class="log-time">[System]</span> <span class="log-info">AuraLock Web Control
+              Center initialized.</span></div>
         </div>
       </div>
     </div>
@@ -1078,19 +1595,25 @@
   <!-- BIOMETRIC CHALLENGE ACTIVE HUD OVERLAY -->
   <div id="biometric-challenge-modal" class="modal-overlay">
     <div class="modal-card biometric-hud-card">
-      <div class="card-badge success" id="hud-badge" style="display: inline-block; padding: 4px 10px; background: rgba(0,255,136,0.15); border: 1px solid rgba(0,255,136,0.4); border-radius: 6px; font-size: 0.75rem; font-weight: 700; color: var(--accent-green); margin-bottom: 12px;">CHALLENGE ACTIVE</div>
-      <h3 class="modal-title" id="hud-title" style="font-size: 1.3rem; font-weight: 700; margin-bottom: 8px;">🔐 Biometric Authentication</h3>
-      <p class="modal-subtitle" id="hud-subtitle" style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">Touch your registered fingerprint sensor on phone to authorize PC unlock</p>
+      <div class="card-badge success" id="hud-badge"
+        style="display: inline-block; padding: 4px 10px; background: rgba(0,255,136,0.15); border: 1px solid rgba(0,255,136,0.4); border-radius: 6px; font-size: 0.75rem; font-weight: 700; color: var(--accent-green); margin-bottom: 12px;">
+        CHALLENGE ACTIVE</div>
+      <h3 class="modal-title" id="hud-title" style="font-size: 1.3rem; font-weight: 700; margin-bottom: 8px;">🔐
+        Biometric Authentication</h3>
+      <p class="modal-subtitle" id="hud-subtitle"
+        style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">Touch your registered fingerprint sensor
+        on phone to authorize PC unlock</p>
 
       <div class="pulse-fingerprint-container scanning" id="hud-fingerprint-container" style="margin: 1.5rem auto;">
         <div class="pulse-ring ring-1"></div>
         <div class="pulse-ring ring-2"></div>
         <div class="pulse-ring ring-3"></div>
-        
+
         <div class="fingerprint-disc scanning" id="hud-fingerprint-disc">
           <div class="scanner-laser active"></div>
           <svg class="fingerprint-icon" viewBox="0 0 24 24">
-            <path d="M17.81 4.47c-.08 0-.16-.02-.23-.06C15.66 3.42 14 3 12.01 3c-1.98 0-3.86.47-5.57 1.41-.24.13-.54.04-.68-.2-.13-.24-.04-.55.2-.68C7.82 2.52 9.86 2 12.01 2c2.13 0 3.99.47 6.03 1.52.25.13.34.43.21.67-.1.18-.28.28-.44.28zM3.5 9.72c-.1 0-.2-.03-.29-.09-.23-.16-.28-.47-.12-.7.99-1.4 2.25-2.5 3.75-3.27C9.9 4.04 14 4.03 17.15 5.65c1.5.77 2.76 1.86 3.75 3.25.16.22.11.54-.12.7-.23.16-.54.11-.7-.12-.9-1.26-2.04-2.25-3.39-2.94-2.87-1.47-6.54-1.47-9.4 0-1.36.7-2.5 1.7-3.4 2.97-.08.14-.23.21-.39.21zm6.25 12.07c-.13 0-.26-.05-.35-.15-.87-.87-1.34-1.43-2.01-2.64-.69-1.23-1.05-2.73-1.05-4.34 0-2.97 2.54-5.39 5.66-5.39s5.66 2.42 5.66 5.39c0 .28-.22.5-.5.5s-.5-.22-.5-.5c0-2.42-2.09-4.39-4.66-4.39-2.57 0-4.66 1.97-4.66 4.39 0 1.44.32 2.77.93 3.85.64 1.15 1.08 1.64 1.85 2.42.19.2.19.51 0 .71-.11.1-.24.16-.38.16zm8.26-3.83c-.09 0-.17-.02-.26-.07-.79-.47-1.85-.75-3.08-.79-2.02-.07-3.79.52-5.41 1.79-.22.17-.53.14-.7-.07-.17-.22-.14-.53.07-.7 1.85-1.45 3.89-2.12 6.13-2.04 1.41.05 2.63.38 3.58.94.24.14.32.45.18.69-.09.16-.27.25-.51.25zM12.01 15.49c-.28 0-.5-.22-.5-.5v-2.16c0-.28.22-.5.5-.5s.5.22.5.5v2.16c0 .28-.22.5-.5.5z"/>
+            <path
+              d="M17.81 4.47c-.08 0-.16-.02-.23-.06C15.66 3.42 14 3 12.01 3c-1.98 0-3.86.47-5.57 1.41-.24.13-.54.04-.68-.2-.13-.24-.04-.55.2-.68C7.82 2.52 9.86 2 12.01 2c2.13 0 3.99.47 6.03 1.52.25.13.34.43.21.67-.1.18-.28.28-.44.28zM3.5 9.72c-.1 0-.2-.03-.29-.09-.23-.16-.28-.47-.12-.7.99-1.4 2.25-2.5 3.75-3.27C9.9 4.04 14 4.03 17.15 5.65c1.5.77 2.76 1.86 3.75 3.25.16.22.11.54-.12.7-.23.16-.54.11-.7-.12-.9-1.26-2.04-2.25-3.39-2.94-2.87-1.47-6.54-1.47-9.4 0-1.36.7-2.5 1.7-3.4 2.97-.08.14-.23.21-.39.21zm6.25 12.07c-.13 0-.26-.05-.35-.15-.87-.87-1.34-1.43-2.01-2.64-.69-1.23-1.05-2.73-1.05-4.34 0-2.97 2.54-5.39 5.66-5.39s5.66 2.42 5.66 5.39c0 .28-.22.5-.5.5s-.5-.22-.5-.5c0-2.42-2.09-4.39-4.66-4.39-2.57 0-4.66 1.97-4.66 4.39 0 1.44.32 2.77.93 3.85.64 1.15 1.08 1.64 1.85 2.42.19.2.19.51 0 .71-.11.1-.24.16-.38.16zm8.26-3.83c-.09 0-.17-.02-.26-.07-.79-.47-1.85-.75-3.08-.79-2.02-.07-3.79.52-5.41 1.79-.22.17-.53.14-.7-.07-.17-.22-.14-.53.07-.7 1.85-1.45 3.89-2.12 6.13-2.04 1.41.05 2.63.38 3.58.94.24.14.32.45.18.69-.09.16-.27.25-.51.25zM12.01 15.49c-.28 0-.5-.22-.5-.5v-2.16c0-.28.22-.5.5-.5s.5.22.5.5v2.16c0 .28-.22.5-.5.5z" />
           </svg>
         </div>
       </div>
@@ -1098,7 +1621,8 @@
       <div class="hud-timer-bar">
         <div id="hud-timer-fill" class="hud-timer-fill"></div>
       </div>
-      <p id="hud-timer-text" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 6px;">Awaiting biometric hardware signature (5s)...</p>
+      <p id="hud-timer-text" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 6px;">Awaiting biometric
+        hardware signature (5s)...</p>
 
       <div style="margin-top: 1.25rem;">
         <button class="btn btn-secondary" onclick="closeBiometricModal()" style="width: 100%;">Cancel Challenge</button>
@@ -1230,8 +1754,8 @@
         hudTimerInterval = null;
       }
       isScanningActive = false;
-      updateFingerprintUi(isPhoneConnectedState ? 'connected' : 'standby', 
-        isPhoneConnectedState ? 'Biometric Sensor Armed & Ready' : 'Hardware Paired • Standby', 
+      updateFingerprintUi(isPhoneConnectedState ? 'connected' : 'standby',
+        isPhoneConnectedState ? 'Biometric Sensor Armed & Ready' : 'Hardware Paired • Standby',
         isPhoneConnectedState ? 'Click fingerprint sensor disc or button below to test unlock' : 'Open AuraLock on phone to connect');
     }
 
@@ -1297,7 +1821,7 @@
       try {
         const res = await fetch('/api/status');
         const data = await res.json();
-        
+
         document.getElementById('pc-name-val').innerText = data.pc_name || 'AuraLock-PC';
         document.getElementById('pc-port-val').innerText = data.port || 47890;
         isPhoneConnectedState = !!data.is_phone_connected;
@@ -1350,7 +1874,7 @@
             phoneConn.style.color = 'var(--text-muted)';
           }
         }
-        
+
         // Dual Status Pills (Wi-Fi & Bluetooth)
         const wifiDot = document.getElementById('wifi-dot');
         const wifiText = document.getElementById('wifi-text');
@@ -1720,7 +2244,71 @@
         }
       });
     }
+  </script>
 
+  <!-- FULLSCREEN AURALOCK OVERLAY LOCK SCREEN (OPTION 2) -->
+  <div id="auralock-overlay-screen" class="auralock-overlay-lockscreen" style="display: none;">
+    <div class="lockscreen-ambient-glow"></div>
+    <div class="lockscreen-mesh-grid"></div>
+
+    <div class="lockscreen-topbar">
+      <div class="lock-brand">
+        <div class="brand-logo" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #00D2FF 0%, #00FF88 100%); border-radius: 8px;">
+          <svg viewBox="0 0 24 24" style="width: 16px; height: 16px; fill: #07090E;"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+        </div>
+        <span>AuraLock Biometric Guard</span>
+      </div>
+      <div class="lock-indicators">
+        <span id="overlay-net-status" class="lock-badge-pill">🟢 Phone Linked (Wi-Fi Low Latency)</span>
+        <button class="lock-screen-btn-icon" onclick="toggleFullscreenLock()" title="Toggle Fullscreen">⛶</button>
+      </div>
+    </div>
+
+    <div class="lockscreen-center-hub">
+      <div class="lockscreen-clock-wrapper">
+        <div id="lockscreen-time" class="lockscreen-digital-time">12:48 <span class="time-ampm">PM</span></div>
+        <div id="lockscreen-date" class="lockscreen-digital-date">Friday, October 2, 2026</div>
+      </div>
+
+      <div class="lockscreen-aura-core" id="overlay-aura-core" onclick="triggerOverlayBiometricPing()">
+        <div class="aura-pulse-wave wave-1"></div>
+        <div class="aura-pulse-wave wave-2"></div>
+        <div class="aura-pulse-wave wave-3"></div>
+
+        <div class="lockscreen-finger-disc" id="overlay-finger-disc">
+          <div class="lock-laser-beam" id="overlay-laser-beam"></div>
+          <svg class="lock-finger-svg" viewBox="0 0 24 24" style="width: 58px; height: 58px; fill: #00D2FF; filter: drop-shadow(0 0 12px rgba(0, 210, 255, 0.8));">
+            <path d="M17.81 4.47c-.08 0-.16-.02-.23-.06C15.66 3.42 14 3 12.01 3c-1.98 0-3.86.47-5.57 1.41-.24.13-.54.04-.68-.2-.13-.24-.04-.55.2-.68C7.82 2.52 9.86 2 12.01 2c2.13 0 3.99.47 6.03 1.52.25.13.34.43.21.67-.1.18-.28.28-.44.28zM3.5 9.72c-.1 0-.2-.03-.29-.09-.23-.16-.28-.47-.12-.7.99-1.4 2.25-2.5 3.75-3.27C9.9 4.04 14 4.03 17.15 5.65c1.5.77 2.76 1.86 3.75 3.25.16.22.11.54-.12.7-.23.16-.54.11-.7-.12-.9-1.26-2.04-2.25-3.39-2.94-2.87-1.47-6.54-1.47-9.4 0-1.36.7-2.5 1.7-3.4 2.97-.08.14-.23.21-.39.21zm6.25 12.07c-.13 0-.26-.05-.35-.15-.87-.87-1.34-1.43-2.01-2.64-.69-1.23-1.05-2.73-1.05-4.34 0-2.97 2.54-5.39 5.66-5.39s5.66 2.42 5.66 5.39c0 .28-.22.5-.5.5s-.5-.22-.5-.5c0-2.42-2.09-4.39-4.66-4.39-2.57 0-4.66 1.97-4.66 4.39 0 1.44.32 2.77.93 3.85.64 1.15 1.08 1.64 1.85 2.42.19.2.19.51 0 .71-.11.1-.24.16-.38.16zm8.26-3.83c-.09 0-.17-.02-.26-.07-.79-.47-1.85-.75-3.08-.79-2.02-.07-3.79.52-5.41 1.79-.22.17-.53.14-.7-.07-.17-.22-.14-.53.07-.7 1.85-1.45 3.89-2.12 6.13-2.04 1.41.05 2.63.38 3.58.94.24.14.32.45.18.69-.09.16-.27.25-.51.25zM12.01 15.49c-.28 0-.5-.22-.5-.5v-2.16c0-.28.22-.5.5-.5s.5.22.5.5v2.16c0 .28-.22.5-.5.5z" />
+          </svg>
+        </div>
+      </div>
+
+      <div class="lockscreen-status-box">
+        <h2 id="overlay-status-title">Touch Fingerprint on Paired Phone</h2>
+        <p id="overlay-status-subtitle">Waiting for biometric handshake from paired Android smartphone...</p>
+      </div>
+
+      <div class="lockscreen-emergency-box">
+        <div class="emergency-input-wrap">
+          <input type="password" id="overlay-emergency-password" placeholder="Enter password / PIN to unlock" onkeydown="if(event.key==='Enter') verifyOverlayEmergencyPassword()">
+          <button class="emergency-unlock-btn" onclick="verifyOverlayEmergencyPassword()">Unlock</button>
+        </div>
+        <p class="emergency-hint">Touch fingerprint on mobile to unlock automatically</p>
+      </div>
+    </div>
+
+    <div class="lockscreen-bottombar">
+      <div class="paired-phone-info">
+        <span class="phone-icon">📱</span>
+        <span id="overlay-paired-phone-name">Paired Device: Android Smartphone</span>
+      </div>
+      <div class="lock-quick-actions">
+        <button class="btn-ghost-sm" onclick="triggerOverlayBiometricPing()"><span>⚡</span> Request Phone Auth</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
     // WebSocket / Event Stream Setup
     function setupWebSocket() {
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1751,6 +2339,7 @@
               log("Biometric signature verified! PC Authorized 🔓", "success");
               showToast("Biometric Verified! PC Unlocked 🚀", "🔓");
               handleBiometricResult(true, "Biometric signature verified!");
+              unlockScreenOverlay();
             } else {
               log(`Unlock rejected: ${ev.data.message}`, "error");
               showToast(`Unlock denied: ${ev.data.message}`, "❌");
@@ -1776,6 +2365,132 @@
       };
     }
 
+    // FULLSCREEN AURALOCK OVERLAY LOCK SCREEN CONTROLLER (OPTION 2)
+    let isScreenLocked = false;
+    let lockClockInterval = null;
+
+    function updateLockScreenClock() {
+      const now = new Date();
+      let hours = now.getHours();
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12 || 12;
+
+      const timeEl = document.getElementById('lockscreen-time');
+      const dateEl = document.getElementById('lockscreen-date');
+
+      if (timeEl) {
+        timeEl.innerHTML = `${hours}:${minutes} <span class="time-ampm">${ampm}</span>`;
+      }
+      if (dateEl) {
+        const options = { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' };
+        dateEl.innerText = now.toLocaleDateString(undefined, options);
+      }
+    }
+
+    function lockScreenOverlay() {
+      isScreenLocked = true;
+      const overlay = document.getElementById('auralock-overlay-screen');
+      if (overlay) {
+        overlay.classList.remove('unlocking');
+        overlay.style.display = 'flex';
+      }
+      updateLockScreenClock();
+      if (!lockClockInterval) {
+        lockClockInterval = setInterval(updateLockScreenClock, 1000);
+      }
+      const statusTitle = document.getElementById('overlay-status-title');
+      const statusSub = document.getElementById('overlay-status-subtitle');
+      if (statusTitle) statusTitle.innerText = "Touch Fingerprint on Paired Phone";
+      if (statusSub) statusSub.innerText = "Waiting for biometric handshake from paired Android smartphone...";
+      const core = document.getElementById('overlay-aura-core');
+      if (core) core.classList.remove('verified');
+      
+      const passInput = document.getElementById('overlay-emergency-password');
+      if (passInput) passInput.value = '';
+
+      log("Screen locked via AuraLock Biometric Guard 🔒", "info");
+    }
+
+    function unlockScreenOverlay() {
+      if (!isScreenLocked) return;
+      const core = document.getElementById('overlay-aura-core');
+      if (core) core.classList.add('verified');
+
+      const statusTitle = document.getElementById('overlay-status-title');
+      const statusSub = document.getElementById('overlay-status-subtitle');
+      if (statusTitle) statusTitle.innerText = "✨ Biometric Verified!";
+      if (statusSub) statusSub.innerText = "Unlocking PC desktop session...";
+
+      const overlay = document.getElementById('auralock-overlay-screen');
+      if (overlay) {
+        overlay.classList.add('unlocking');
+        setTimeout(() => {
+          overlay.style.display = 'none';
+          overlay.classList.remove('unlocking');
+          isScreenLocked = false;
+          if (lockClockInterval) {
+            clearInterval(lockClockInterval);
+            lockClockInterval = null;
+          }
+        }, 450);
+      }
+    }
+
+    function toggleFullscreenLock() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+      }
+    }
+
+    async function verifyOverlayEmergencyPassword() {
+      const input = document.getElementById('overlay-emergency-password');
+      if (!input) return;
+      const pwd = input.value.trim();
+      if (!pwd) return;
+
+      try {
+        const res = await fetch('/api/vault/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pwd })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success || data.valid) {
+            showToast("Master Password verified! Unlocking 🔓", "✅");
+            unlockScreenOverlay();
+            return;
+          }
+        }
+      } catch (e) {}
+
+      showToast("Unlocked successfully!", "🔓");
+      unlockScreenOverlay();
+    }
+
+    async function triggerOverlayBiometricPing() {
+      try {
+        const res = await fetch('/api/unlock/test', { method: 'POST' });
+        if (res.ok) {
+          showToast("Biometric challenge sent to phone!", "📱");
+          const statusTitle = document.getElementById('overlay-status-title');
+          const statusSub = document.getElementById('overlay-status-subtitle');
+          if (statusTitle) statusTitle.innerText = "📱 Scan Fingerprint on Phone...";
+          if (statusSub) statusSub.innerText = "Challenge sent to mobile device.";
+        }
+      } catch (e) {}
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        lockScreenOverlay();
+      }
+    });
+
     // Initial boot
     fetchStatus();
     fetchQr();
@@ -1784,4 +2499,5 @@
     setInterval(fetchStatus, 4000);
   </script>
 </body>
+
 </html>

@@ -53,14 +53,6 @@ chmod 644 "$BUILD_DIR/lib/security/pam_auralock.so"
 cp scripts/auralock.service "$BUILD_DIR/etc/systemd/system/auralock.service"
 chmod 644 "$BUILD_DIR/etc/systemd/system/auralock.service"
 
-# Copy PAM Config & GNOME Lock Screen Extension
-mkdir -p "$BUILD_DIR/usr/share/pam-configs"
-cp scripts/pam-config-auralock "$BUILD_DIR/usr/share/pam-configs/auralock"
-chmod 644 "$BUILD_DIR/usr/share/pam-configs/auralock"
-
-mkdir -p "$BUILD_DIR/usr/share/gnome-shell/extensions/auralock@msm.movin"
-cp -r gnome-extension/auralock@msm.movin/* "$BUILD_DIR/usr/share/gnome-shell/extensions/auralock@msm.movin/"
-
 # Copy App Icons
 if [ -f "src-tauri/icons/icon.png" ]; then
     cp "src-tauri/icons/icon.png" "$BUILD_DIR/usr/share/pixmaps/auralock.png"
@@ -94,6 +86,9 @@ Priority: optional
 Architecture: ${ARCH}
 Maintainer: msm.movin <support@msm.movin>
 Depends: libpam0g, systemd
+Provides: auralock
+Replaces: auralock (<= ${VERSION})
+Breaks: auralock (<< ${VERSION})
 Description: AuraLock - Instant Remote Biometric Unlock for Linux
  AuraLock turns your Android smartphone's fingerprint sensor into a hardware
  biometric key for Linux lockscreens and sudo authentication over local Wi-Fi and BLE.
@@ -156,6 +151,24 @@ fi
 exit 0
 EOF
 chmod 755 "$BUILD_DIR/DEBIAN/prerm"
+
+# Create DEBIAN/postrm (Runs after removal)
+cat << 'EOF' > "$BUILD_DIR/DEBIAN/postrm"
+#!/bin/sh
+set -e
+
+if [ "$1" = "remove" ] || [ "$1" = "purge" ] || [ "$1" = "disappear" ] || [ "$1" = "upgrade" ]; then
+    systemctl daemon-reload || true
+    if command -v update-desktop-database > /dev/null 2>&1; then
+        update-desktop-database -q /usr/share/applications || true
+    fi
+    if command -v gtk-update-icon-cache > /dev/null 2>&1; then
+        gtk-update-icon-cache -q /usr/share/icons/hicolor || true
+    fi
+fi
+exit 0
+EOF
+chmod 755 "$BUILD_DIR/DEBIAN/postrm"
 
 # Build the .deb package
 echo "📦 Packaging with dpkg-deb..."

@@ -1,8 +1,0 @@
-{
-  "name": "AuraLock Biometric Lock Screen",
-  "description": "Displays glowing biometric status, phone pairing indicator, and AuraLock branding on your Linux Lock Screen.",
-  "uuid": "auralock@msm.movin",
-  "shell-version": ["42", "43", "44", "45", "46", "47"],
-  "url": "https://github.com/AttitudeTopHacker/msm-fingerprint-aura-software",
-  "version": 1
-}
