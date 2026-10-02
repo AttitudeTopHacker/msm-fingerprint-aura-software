@@ -56,6 +56,11 @@ class BiometricAuthPrompt(private val activity: FragmentActivity) {
             .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
             .build()
 
-        prompt.authenticate(promptInfo, BiometricPrompt.CryptoObject(signature))
+        try {
+            prompt.authenticate(promptInfo, BiometricPrompt.CryptoObject(signature))
+        } catch (e: Exception) {
+            e.printStackTrace()
+            onError(e.localizedMessage ?: "Biometric prompt failed to start")
+        }
     }
 }

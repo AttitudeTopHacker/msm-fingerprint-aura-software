@@ -73,7 +73,29 @@ class CryptoManager {
             }
         }
 
-        val entry = keyStore.getEntry(KEY_ALIAS, null) as KeyStore.PrivateKeyEntry
+        val entry = try {
+            keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.PrivateKeyEntry
+        } catch (e: Exception) {
+            null
+        }
+
+        if (entry == null) {
+            try { keyStore.deleteEntry(KEY_ALIAS) } catch (_: Exception) {}
+            val kpg = KeyPairGenerator.getInstance(
+                KeyProperties.KEY_ALGORITHM_EC,
+                ANDROID_KEYSTORE
+            )
+            val fallbackBuilder = KeyGenParameterSpec.Builder(
+                KEY_ALIAS,
+                KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
+            )
+                .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
+                .setDigests(KeyProperties.DIGEST_SHA256)
+                .setUserAuthenticationRequired(false)
+            kpg.initialize(fallbackBuilder.build())
+            return kpg.generateKeyPair()
+        }
+
         return KeyPair(entry.certificate.publicKey, entry.privateKey)
     }
 
@@ -81,8 +103,18 @@ class CryptoManager {
      * Initializes the signature object to be passed to BiometricPrompt.CryptoObject
      */
     fun getInitializedSignature(): Signature {
-        val entry = keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.PrivateKeyEntry
-            ?: throw IllegalStateException("Biometric key not found. Please register first.")
+        val entry = try {
+            keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.PrivateKeyEntry
+        } catch (e: Exception) {
+            null
+        } ?: run {
+            getOrCreateBiometricKeyPair()
+            try {
+                keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.PrivateKeyEntry
+            } catch (e: Exception) {
+                null
+            } ?: throw IllegalStateException("Biometric key not found and could not be generated.")
+        }
 
         val signature = Signature.getInstance(SIGNATURE_ALGORITHM)
         signature.initSign(entry.privateKey)

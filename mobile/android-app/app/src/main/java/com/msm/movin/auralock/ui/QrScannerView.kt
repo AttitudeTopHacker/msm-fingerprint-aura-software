@@ -81,8 +81,17 @@ fun QrScannerView(
     )
 
     LaunchedEffect(Unit) {
-        if (!hasCameraPermission) {
-            launcher.launch(Manifest.permission.CAMERA)
+        val isGranted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        hasCameraPermission = isGranted
+        if (!isGranted) {
+            try {
+                launcher.launch(Manifest.permission.CAMERA)
+            } catch (e: Throwable) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -128,7 +137,11 @@ fun QrScannerView(
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(
-                    onClick = { launcher.launch(Manifest.permission.CAMERA) },
+                    onClick = {
+                        try {
+                            launcher.launch(Manifest.permission.CAMERA)
+                        } catch (_: Throwable) {}
+                    },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF06B6D4)),
                     shape = RoundedCornerShape(12.dp)
                 ) {
@@ -161,9 +174,20 @@ private fun CameraPreviewWithScanner(
             .build()
     }
     
-    // Manage executor and scanner per lifecycle
-    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
-    val barcodeScanner = remember { BarcodeScanning.getClient(barcodeOptions) }
+    // Manage executor and scanner per composition session to avoid dead executor reuse
+    val sessionKey = remember { Any() }
+    val cameraExecutor = remember(sessionKey) { Executors.newSingleThreadExecutor() }
+    val barcodeScanner = remember(sessionKey) {
+        try {
+            BarcodeScanning.getClient(barcodeOptions)
+        } catch (_: Throwable) {
+            try {
+                BarcodeScanning.getClient()
+            } catch (_: Throwable) {
+                null
+            }
+        }
+    }
 
     var isTorchOn by remember { mutableStateOf(false) }
     var camera by remember { mutableStateOf<Camera?>(null) }
@@ -183,16 +207,18 @@ private fun CameraPreviewWithScanner(
         label = "LaserOffset"
     )
 
-    DisposableEffect(Unit) {
+    DisposableEffect(sessionKey) {
         onDispose {
             try {
                 cameraProviderInstance?.unbindAll()
             } catch (_: Throwable) {}
             try {
-                cameraExecutor.shutdown()
+                if (!cameraExecutor.isShutdown) {
+                    cameraExecutor.shutdown()
+                }
             } catch (_: Throwable) {}
             try {
-                barcodeScanner.close()
+                barcodeScanner?.close()
             } catch (_: Throwable) {}
         }
     }
@@ -248,20 +274,28 @@ private fun CameraPreviewWithScanner(
 
                                 cameraProvider.unbindAll()
 
-                                val cameraSelector = if (cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) {
-                                    CameraSelector.DEFAULT_BACK_CAMERA
-                                } else if (cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
-                                    CameraSelector.DEFAULT_FRONT_CAMERA
-                                } else {
-                                    CameraSelector.DEFAULT_BACK_CAMERA
+                                val backAvailable = try {
+                                    cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)
+                                } catch (_: Throwable) { false }
+
+                                val frontAvailable = try {
+                                    cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)
+                                } catch (_: Throwable) { false }
+
+                                val cameraSelector = when {
+                                    backAvailable -> CameraSelector.DEFAULT_BACK_CAMERA
+                                    frontAvailable -> CameraSelector.DEFAULT_FRONT_CAMERA
+                                    else -> CameraSelector.DEFAULT_BACK_CAMERA
                                 }
 
-                                camera = cameraProvider.bindToLifecycle(
-                                    lifecycleOwner,
-                                    cameraSelector,
-                                    preview,
-                                    imageAnalysis
-                                )
+                                if (lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.INITIALIZED)) {
+                                    camera = cameraProvider.bindToLifecycle(
+                                        lifecycleOwner,
+                                        cameraSelector,
+                                        preview,
+                                        imageAnalysis
+                                    )
+                                }
                             } catch (e: Throwable) {
                                 e.printStackTrace()
                                 try {
@@ -529,21 +563,30 @@ private fun CameraPreviewWithScanner(
 @OptIn(ExperimentalGetImage::class)
 private fun processImageProxy(
     imageProxy: ImageProxy,
-    barcodeScanner: com.google.mlkit.vision.barcode.BarcodeScanner,
+    barcodeScanner: com.google.mlkit.vision.barcode.BarcodeScanner?,
     onResult: (String) -> Unit
 ) {
+    if (barcodeScanner == null) {
+        try { imageProxy.close() } catch (_: Throwable) {}
+        return
+    }
     try {
         val mediaImage = imageProxy.image
         if (mediaImage != null) {
-            val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+            val rotation = try { imageProxy.imageInfo.rotationDegrees } catch (_: Throwable) { 0 }
+            val image = InputImage.fromMediaImage(mediaImage, rotation)
             barcodeScanner.process(image)
                 .addOnSuccessListener { barcodes ->
-                    for (barcode in barcodes) {
-                        val rawValue = barcode.rawValue
-                        if (!rawValue.isNullOrBlank()) {
-                            onResult(rawValue)
-                            break
+                    try {
+                        for (barcode in barcodes) {
+                            val rawValue = barcode.rawValue
+                            if (!rawValue.isNullOrBlank()) {
+                                onResult(rawValue)
+                                break
+                            }
                         }
+                    } catch (e: Throwable) {
+                        e.printStackTrace()
                     }
                 }
                 .addOnFailureListener {
@@ -565,3 +608,4 @@ private fun processImageProxy(
         } catch (_: Throwable) {}
     }
 }
+
