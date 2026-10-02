@@ -92,9 +92,6 @@ Priority: optional
 Architecture: ${ARCH}
 Maintainer: msm.movin <support@msm.movin>
 Depends: libpam0g, systemd
-Provides: auralock
-Replaces: auralock (<= ${VERSION})
-Breaks: auralock (<< ${VERSION})
 Description: AuraLock - Instant Remote Biometric Unlock for Linux
  AuraLock turns your Android smartphone's fingerprint sensor into a hardware
  biometric key for Linux lockscreens and sudo authentication over local Wi-Fi and BLE.
@@ -106,31 +103,29 @@ cat << 'EOF' > "$BUILD_DIR/DEBIAN/postinst"
 #!/bin/sh
 set -e
 
-if [ "$1" = "configure" ]; then
-    echo "⚙️ Reloading systemd daemon..."
-    systemctl daemon-reload || true
-    echo "🚀 Enabling and starting auralock background service..."
-    systemctl enable auralock.service || true
-    systemctl restart auralock.service || true
+echo "⚙️ Reloading systemd daemon..."
+systemctl daemon-reload >/dev/null 2>&1 || true
+echo "🚀 Enabling and starting auralock background service..."
+systemctl enable auralock.service >/dev/null 2>&1 || true
+systemctl restart auralock.service >/dev/null 2>&1 || true
 
-    if command -v pam-auth-update > /dev/null 2>&1; then
-        echo "🔐 Activating AuraLock PAM Authentication..."
-        pam-auth-update --package || true
-    fi
-
-    if command -v update-desktop-database > /dev/null 2>&1; then
-        update-desktop-database -q /usr/share/applications || true
-    fi
-    if command -v gtk-update-icon-cache > /dev/null 2>&1; then
-        gtk-update-icon-cache -q /usr/share/icons/hicolor || true
-    fi
-
-    echo ""
-    echo "=================================================="
-    echo "  🎉 AuraLock installed successfully!"
-    echo "  Open 'AuraLock' from your Application Menu or run 'auralock gui'."
-    echo "=================================================="
+if command -v pam-auth-update > /dev/null 2>&1; then
+    echo "🔐 Activating AuraLock PAM Authentication..."
+    pam-auth-update --package >/dev/null 2>&1 || true
 fi
+
+if command -v update-desktop-database > /dev/null 2>&1; then
+    update-desktop-database -q /usr/share/applications >/dev/null 2>&1 || true
+fi
+if command -v gtk-update-icon-cache > /dev/null 2>&1; then
+    gtk-update-icon-cache -q /usr/share/icons/hicolor >/dev/null 2>&1 || true
+fi
+
+echo ""
+echo "=================================================="
+echo "  🎉 AuraLock installed successfully!"
+echo "  Open 'AuraLock' from your Application Menu or run 'auralock gui'."
+echo "=================================================="
 exit 0
 EOF
 chmod 755 "$BUILD_DIR/DEBIAN/postinst"
@@ -142,16 +137,16 @@ set -e
 
 if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
     echo "🛑 Stopping and disabling auralock service..."
-    systemctl stop auralock.service || true
-    systemctl disable auralock.service || true
+    systemctl stop auralock.service >/dev/null 2>&1 || true
+    systemctl disable auralock.service >/dev/null 2>&1 || true
 
     rm -f /usr/share/pam-configs/auralock
     if command -v pam-auth-update > /dev/null 2>&1; then
-        pam-auth-update --package || true
+        pam-auth-update --package >/dev/null 2>&1 || true
     fi
 
     if command -v update-desktop-database > /dev/null 2>&1; then
-        update-desktop-database -q /usr/share/applications || true
+        update-desktop-database -q /usr/share/applications >/dev/null 2>&1 || true
     fi
 fi
 exit 0
@@ -163,14 +158,12 @@ cat << 'EOF' > "$BUILD_DIR/DEBIAN/postrm"
 #!/bin/sh
 set -e
 
-if [ "$1" = "remove" ] || [ "$1" = "purge" ] || [ "$1" = "disappear" ] || [ "$1" = "upgrade" ]; then
-    systemctl daemon-reload || true
-    if command -v update-desktop-database > /dev/null 2>&1; then
-        update-desktop-database -q /usr/share/applications || true
-    fi
-    if command -v gtk-update-icon-cache > /dev/null 2>&1; then
-        gtk-update-icon-cache -q /usr/share/icons/hicolor || true
-    fi
+systemctl daemon-reload >/dev/null 2>&1 || true
+if command -v update-desktop-database > /dev/null 2>&1; then
+    update-desktop-database -q /usr/share/applications >/dev/null 2>&1 || true
+fi
+if command -v gtk-update-icon-cache > /dev/null 2>&1; then
+    gtk-update-icon-cache -q /usr/share/icons/hicolor >/dev/null 2>&1 || true
 fi
 exit 0
 EOF
