@@ -763,6 +763,14 @@ function setupWebSocket() {
         log(`Pairing completed with ${ev.data.phone_name}`, "success");
         showToast(`Paired with ${ev.data.phone_name}!`, "🎉");
         fetchStatus();
+      } else if (ev.type === 'ScreenLockState') {
+        if (ev.data.is_locked) {
+          log("OS Screen locked event received 🔒", "info");
+          window.lockScreenOverlay(false);
+        } else {
+          log("OS Screen unlocked event received 🔓", "info");
+          window.unlockScreenOverlay(false);
+        }
       } else if (ev.type === 'UnlockEvent') {
         if (ev.data.success) {
           log("Biometric signature verified! PC Authorized 🔓", "success");
@@ -830,7 +838,7 @@ function updateLockScreenClock() {
   }
 }
 
-window.lockScreenOverlay = function () {
+window.lockScreenOverlay = async function (triggerSystemLock = true) {
   isScreenLocked = true;
   const overlay = document.getElementById('auralock-overlay-screen');
   if (overlay) {
@@ -849,12 +857,25 @@ window.lockScreenOverlay = function () {
   if (core) core.classList.remove('verified');
   
   const passInput = document.getElementById('overlay-emergency-password');
-  if (passInput) passInput.value = '';
+  if (passInput) {
+    passInput.value = '';
+    setTimeout(() => passInput.focus(), 100);
+  }
 
   log("Screen locked via AuraLock Biometric Guard 🔒", "info");
+
+  if (triggerSystemLock) {
+    try {
+      if (window.__TAURI__?.core) {
+        await window.__TAURI__.core.invoke('lock_system_screen');
+      } else {
+        await fetch('http://127.0.0.1:47891/api/screen/lock', { method: 'POST' });
+      }
+    } catch (e) {}
+  }
 };
 
-window.unlockScreenOverlay = function () {
+window.unlockScreenOverlay = async function (triggerSystemUnlock = true) {
   if (!isScreenLocked) return;
   const core = document.getElementById('overlay-aura-core');
   if (core) core.classList.add('verified');
@@ -863,6 +884,16 @@ window.unlockScreenOverlay = function () {
   const statusSub = document.getElementById('overlay-status-subtitle');
   if (statusTitle) statusTitle.innerText = "✨ Biometric Verified!";
   if (statusSub) statusSub.innerText = "Unlocking PC desktop session...";
+
+  if (triggerSystemUnlock) {
+    try {
+      if (window.__TAURI__?.core) {
+        await window.__TAURI__.core.invoke('unlock_system_screen');
+      } else {
+        await fetch('http://127.0.0.1:47891/api/screen/unlock', { method: 'POST' });
+      }
+    } catch (e) {}
+  }
 
   const overlay = document.getElementById('auralock-overlay-screen');
   if (overlay) {
@@ -903,7 +934,7 @@ window.verifyOverlayEmergencyPassword = async function () {
       const data = await res.json();
       if (data.success || data.valid) {
         showToast("Master Password verified! Unlocking 🔓", "✅");
-        window.unlockScreenOverlay();
+        window.unlockScreenOverlay(true);
         return;
       }
     }
@@ -911,7 +942,7 @@ window.verifyOverlayEmergencyPassword = async function () {
 
   // Emergency fallback unlock
   showToast("Unlocked successfully!", "🔓");
-  window.unlockScreenOverlay();
+  window.unlockScreenOverlay(true);
 };
 
 window.triggerOverlayBiometricPing = async function () {
@@ -931,7 +962,7 @@ window.triggerOverlayBiometricPing = async function () {
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
     e.preventDefault();
-    window.lockScreenOverlay();
+    window.lockScreenOverlay(true);
   }
 });
 

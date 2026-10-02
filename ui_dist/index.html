@@ -4,19 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AuraLock • Biometric Security & AuraDrop</title>
-  <link rel="icon" type="image/png" href="./icon.png">
+  <link rel="icon" type="image/png" href="/icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./style.css">
-  <script src="./qrcode.min.js"></script>
+  <link rel="stylesheet" href="/src/style.css">
+  <script src="/src/qrcode.min.js"></script>
 </head>
 <body>
 
   <!-- HEADER -->
   <header>
     <div class="brand">
-      <img src="./icon.png" alt="AuraLock Logo" class="app-icon">
+      <img src="/icon.png" alt="AuraLock Logo" class="app-icon">
       <div class="brand-text">
         <h1>AuraLock Desktop</h1>
         <span>TAURI DESKTOP EDITION • MSM.MOVIN</span>
@@ -32,6 +32,9 @@
         <div id="ble-dot" class="status-dot" style="background: var(--accent-purple); box-shadow: 0 0 10px var(--accent-purple);"></div>
         <span id="ble-text">🔵 BLE: Radar Ready</span>
       </div>
+      <button class="btn btn-secondary lock-btn-header" onclick="lockScreenOverlay()" title="Lock Screen (Ctrl+L)" style="padding: 6px 14px; border-radius: 999px; font-weight: 600; display: flex; align-items: center; gap: 6px; background: rgba(0, 255, 136, 0.1); border-color: rgba(0, 255, 136, 0.3); color: #00FF88;">
+        <span>🔒</span> Lock PC
+      </button>
     </div>
   </header>
 
@@ -342,11 +345,89 @@
     </div>
   </div>
 
+  <!-- FULLSCREEN AURALOCK OVERLAY LOCK SCREEN (OPTION 2) -->
+  <div id="auralock-overlay-screen" class="auralock-overlay-lockscreen" style="display: none;">
+    <div class="lockscreen-ambient-glow"></div>
+    <div class="lockscreen-mesh-grid"></div>
+
+    <!-- Top Bar -->
+    <div class="lockscreen-topbar">
+      <div class="lock-brand">
+        <img src="/icon.png" alt="AuraLock Logo" class="lock-logo-mini">
+        <span>AuraLock Biometric Guard</span>
+      </div>
+      <div class="lock-indicators">
+        <span id="overlay-net-status" class="lock-badge-pill">🟢 Phone Linked (Wi-Fi Low Latency)</span>
+        <button class="lock-screen-btn-icon" onclick="toggleFullscreenLock()" title="Toggle Fullscreen">⛶</button>
+      </div>
+    </div>
+
+    <!-- Center Hub: Clock, Biometric Aura Ring & Emergency Box -->
+    <div class="lockscreen-center-hub">
+      <!-- Live Glowing Digital Clock -->
+      <div class="lockscreen-clock-wrapper">
+        <div id="lockscreen-time" class="lockscreen-digital-time">12:48 <span class="time-ampm">PM</span></div>
+        <div id="lockscreen-date" class="lockscreen-digital-date">Friday, October 2, 2026</div>
+      </div>
+
+      <!-- Center Biometric Pulse Fingerprint Core -->
+      <div class="lockscreen-aura-core" id="overlay-aura-core" onclick="triggerOverlayBiometricPing()">
+        <div class="aura-pulse-wave wave-1"></div>
+        <div class="aura-pulse-wave wave-2"></div>
+        <div class="aura-pulse-wave wave-3"></div>
+
+        <div class="lockscreen-finger-disc" id="overlay-finger-disc">
+          <div class="lock-laser-beam" id="overlay-laser-beam"></div>
+          <svg class="lock-finger-svg" viewBox="0 0 64 64">
+            <defs>
+              <linearGradient id="overlayAuraGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#00D2FF" />
+                <stop offset="100%" stop-color="#00FF88" />
+              </linearGradient>
+            </defs>
+            <circle cx="32" cy="32" r="28" fill="none" stroke="url(#overlayAuraGrad)" stroke-width="2" stroke-dasharray="4 2" opacity="0.85"/>
+            <path d="M32 14 C22 14 15 21 15 31 C15 38 18 45 22 50" fill="none" stroke="url(#overlayAuraGrad)" stroke-width="2.5" stroke-linecap="round"/>
+            <path d="M49 31 C49 21 42 14 32 14" fill="none" stroke="url(#overlayAuraGrad)" stroke-width="2.5" stroke-linecap="round"/>
+            <path d="M32 20 C25 20 20 25 20 32 C20 38 23 44 26 48" fill="none" stroke="url(#overlayAuraGrad)" stroke-width="2.5" stroke-linecap="round"/>
+            <path d="M44 32 C44 25 39 20 32 20" fill="none" stroke="url(#overlayAuraGrad)" stroke-width="2.5" stroke-linecap="round"/>
+            <path d="M32 26 C28 26 25 29 25 33 C25 38 28 42 32 45 C36 42 39 38 39 33 C39 29 36 26 32 26 Z" fill="none" stroke="url(#overlayAuraGrad)" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Status Subtext & Challenge HUD -->
+      <div class="lockscreen-status-box">
+        <h2 id="overlay-status-title">Touch Fingerprint on Paired Phone</h2>
+        <p id="overlay-status-subtitle">Waiting for biometric handshake from paired Android smartphone...</p>
+      </div>
+
+      <!-- Emergency Password Fallback Box -->
+      <div class="lockscreen-emergency-box">
+        <div class="emergency-input-wrap">
+          <input type="password" id="overlay-emergency-password" placeholder="Enter password / PIN to unlock" onkeydown="if(event.key==='Enter') verifyOverlayEmergencyPassword()">
+          <button class="emergency-unlock-btn" onclick="verifyOverlayEmergencyPassword()">Unlock</button>
+        </div>
+        <p class="emergency-hint">Touch fingerprint on mobile to unlock automatically</p>
+      </div>
+    </div>
+
+    <!-- Bottom Bar: Paired Phone Name & Actions -->
+    <div class="lockscreen-bottombar">
+      <div class="paired-phone-info">
+        <span class="phone-icon">📱</span>
+        <span id="overlay-paired-phone-name">Paired Device: Android Smartphone</span>
+      </div>
+      <div class="lock-quick-actions">
+        <button class="btn-ghost-sm" onclick="triggerOverlayBiometricPing()"><span>⚡</span> Request Phone Auth</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast">
     <span id="toast-icon">✅</span>
     <span id="toast-message">Action completed successfully!</span>
   </div>
 
-  <script type="module" src="./main.js"></script>
+  <script type="module" src="/src/main.js"></script>
 </body>
 </html>

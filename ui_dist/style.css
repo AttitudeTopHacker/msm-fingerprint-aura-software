@@ -892,3 +892,377 @@ input:checked + .slider:before {
   background: linear-gradient(90deg, #00FF88, #00D2FF);
   transition: width 0.1s linear;
 }
+
+/* ==========================================================================
+   FULLSCREEN AURALOCK OVERLAY LOCK SCREEN (OPTION 2)
+   ========================================================================== */
+.auralock-overlay-lockscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 999999;
+  background-color: #04070D;
+  background-image: 
+    radial-gradient(circle at 50% 20%, rgba(0, 210, 255, 0.12) 0%, transparent 60%),
+    radial-gradient(circle at 50% 80%, rgba(0, 255, 136, 0.08) 0%, transparent 50%);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1.5rem 2.5rem;
+  backdrop-filter: blur(30px);
+  user-select: none;
+  overflow: hidden;
+  animation: lockscreenFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes lockscreenFadeIn {
+  from { opacity: 0; transform: scale(1.02); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.auralock-overlay-lockscreen.unlocking {
+  animation: lockscreenUnlockOut 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes lockscreenUnlockOut {
+  0% { opacity: 1; transform: scale(1); filter: blur(0); }
+  100% { opacity: 0; transform: scale(1.05); filter: blur(20px); pointer-events: none; }
+}
+
+.lockscreen-ambient-glow {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(0, 210, 255, 0.18) 0%, rgba(0, 255, 136, 0.08) 40%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(60px);
+  z-index: 1;
+}
+
+.lockscreen-mesh-grid {
+  position: absolute;
+  inset: 0;
+  background-size: 40px 40px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* TOPBAR */
+.lockscreen-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 10;
+}
+
+.lock-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.5px;
+  color: #E2E8F0;
+}
+
+.lock-logo-mini {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  box-shadow: 0 0 12px rgba(0, 210, 255, 0.5);
+}
+
+.lock-indicators {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lock-badge-pill {
+  padding: 6px 14px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(0, 255, 136, 0.3);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #00FF88;
+  box-shadow: 0 0 15px rgba(0, 255, 136, 0.15);
+}
+
+.lock-screen-btn-icon {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  transition: all 0.2s;
+}
+
+.lock-screen-btn-icon:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #FFF;
+}
+
+/* CENTER HUB */
+.lockscreen-center-hub {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  z-index: 10;
+  margin: auto 0;
+}
+
+.lockscreen-clock-wrapper {
+  text-align: center;
+}
+
+.lockscreen-digital-time {
+  font-size: 4.8rem;
+  font-weight: 800;
+  letter-spacing: -2px;
+  color: #FFFFFF;
+  text-shadow: 0 0 35px rgba(0, 210, 255, 0.4), 0 0 70px rgba(0, 255, 136, 0.2);
+  line-height: 1;
+}
+
+.time-ampm {
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: #38BDF8;
+  margin-left: 6px;
+  text-shadow: none;
+}
+
+.lockscreen-digital-date {
+  font-size: 1.15rem;
+  font-weight: 500;
+  color: #94A3B8;
+  margin-top: 8px;
+  letter-spacing: 0.5px;
+}
+
+/* AURA CORE */
+.lockscreen-aura-core {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin: 0.5rem 0;
+}
+
+.aura-pulse-wave {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 210, 255, 0.4);
+  pointer-events: none;
+  animation: auraPulseWave 2.8s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+}
+
+.wave-1 { animation-delay: 0s; }
+.wave-2 { animation-delay: 0.9s; }
+.wave-3 { animation-delay: 1.8s; }
+
+@keyframes auraPulseWave {
+  0% { transform: translate(-50%, -50%) scale(0.85); opacity: 0.8; }
+  50% { opacity: 0.35; border-color: #00FF88; }
+  100% { transform: translate(-50%, -50%) scale(2.1); opacity: 0; }
+}
+
+.lockscreen-finger-disc {
+  position: relative;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, #0F2A38 0%, #081622 70%, #03080E 100%);
+  border: 2px solid rgba(0, 210, 255, 0.6);
+  box-shadow: 0 0 35px rgba(0, 210, 255, 0.45), inset 0 0 25px rgba(0, 210, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  z-index: 2;
+}
+
+.lockscreen-aura-core:hover .lockscreen-finger-disc {
+  transform: scale(1.08);
+  border-color: #00FF88;
+  box-shadow: 0 0 50px rgba(0, 255, 136, 0.6), inset 0 0 30px rgba(0, 255, 136, 0.35);
+}
+
+.lock-finger-svg {
+  width: 64px;
+  height: 64px;
+  filter: drop-shadow(0 0 12px rgba(0, 210, 255, 0.8));
+}
+
+.lock-laser-beam {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #00FF88, #00D2FF, transparent);
+  box-shadow: 0 0 14px #00FF88;
+  opacity: 0.85;
+  animation: lockLaserAnim 1.8s ease-in-out infinite alternate;
+}
+
+@keyframes lockLaserAnim {
+  0% { top: 10%; opacity: 0.3; }
+  50% { opacity: 1; }
+  100% { top: 88%; opacity: 0.3; }
+}
+
+/* VERIFIED STATE */
+.lockscreen-aura-core.verified .lockscreen-finger-disc {
+  background: radial-gradient(circle at center, #0E3B27 0%, #072216 70%, #03120A 100%);
+  border-color: #00FF88;
+  box-shadow: 0 0 65px rgba(0, 255, 136, 0.95), inset 0 0 35px rgba(0, 255, 136, 0.7);
+  transform: scale(1.15);
+}
+
+/* STATUS TEXT */
+.lockscreen-status-box {
+  text-align: center;
+}
+
+.lockscreen-status-box h2 {
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-bottom: 4px;
+}
+
+.lockscreen-status-box p {
+  font-size: 0.92rem;
+  color: #38BDF8;
+  font-weight: 500;
+}
+
+/* EMERGENCY BOX */
+.lockscreen-emergency-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 0.5rem;
+  width: 100%;
+  max-width: 360px;
+}
+
+.emergency-input-wrap {
+  display: flex;
+  width: 100%;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  overflow: hidden;
+  padding: 4px;
+  transition: all 0.2s;
+}
+
+.emergency-input-wrap:focus-within {
+  border-color: rgba(0, 210, 255, 0.6);
+  box-shadow: 0 0 20px rgba(0, 210, 255, 0.25);
+}
+
+.emergency-input-wrap input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 10px 14px;
+  color: #FFF;
+  font-size: 0.95rem;
+  outline: none;
+  font-family: inherit;
+}
+
+.emergency-input-wrap input::placeholder {
+  color: #64748B;
+  font-size: 0.85rem;
+}
+
+.emergency-unlock-btn {
+  background: linear-gradient(135deg, #00D2FF 0%, #00FF88 100%);
+  border: none;
+  border-radius: 8px;
+  padding: 0 16px;
+  color: #07090E;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.emergency-unlock-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 15px rgba(0, 255, 136, 0.4);
+}
+
+.emergency-hint {
+  font-size: 0.78rem;
+  color: #64748B;
+  text-align: center;
+}
+
+/* BOTTOMBAR */
+.lockscreen-bottombar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 10;
+}
+
+.paired-phone-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #94A3B8;
+}
+
+.lock-quick-actions button {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: #38BDF8;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.lock-quick-actions button:hover {
+  background: rgba(0, 210, 255, 0.15);
+  border-color: rgba(0, 210, 255, 0.4);
+  color: #FFF;
+}
+

@@ -24,10 +24,12 @@ if [ ! -d "$DEST_DIR" ]; then
     DEST_DIR="/usr/lib/security"
 fi
 
-echo "📦 Installing PAM module to $DEST_DIR/pam_auralock.so..."
-sudo cp "$SO_SOURCE" "$DEST_DIR/pam_auralock.so"
-sudo chmod 755 "$DEST_DIR/pam_auralock.so"
-sudo chown root:root "$DEST_DIR/pam_auralock.so"
+echo "📦 Installing PAM module to security paths..."
+sudo mkdir -p /lib/security /usr/lib/security /lib/x86_64-linux-gnu/security /usr/lib/x86_64-linux-gnu/security 2>/dev/null || true
+sudo cp "$SO_SOURCE" /lib/security/pam_auralock.so 2>/dev/null || true
+sudo cp "$SO_SOURCE" /usr/lib/security/pam_auralock.so 2>/dev/null || true
+sudo cp "$SO_SOURCE" /lib/x86_64-linux-gnu/security/pam_auralock.so 2>/dev/null || true
+sudo cp "$SO_SOURCE" /usr/lib/x86_64-linux-gnu/security/pam_auralock.so 2>/dev/null || true
 
 # Install pam-config profile if directory exists (Ubuntu / Debian / Mint)
 if [ -d "/usr/share/pam-configs" ]; then
@@ -40,6 +42,6 @@ fi
 echo ""
 echo "=================================================="
 echo "  🎉 AuraLock Lock Screen & Sudo PAM is now ACTIVE!"
-echo "  When you lock your screen (Super + L) or use sudo,"
-echo "  AuraLock will prompt on screen & phone."
+echo "  When you boot up, lock your screen (Super + L), or use sudo,"
+echo "  AuraLock will prompt on screen & paired phone."
 echo "=================================================="

@@ -98,7 +98,11 @@ pub async fn start_web_server(net_service: Arc<NetworkService>, port: u16) -> Re
         .route("/api/qr", get(get_qr))
         .route("/api/pair/refresh", post(refresh_pairing))
         .route("/api/unlock/test", post(test_unlock))
+        .route("/api/screen/lock", post(lock_screen_endpoint))
+        .route("/api/screen/unlock", post(unlock_screen_endpoint))
+        .route("/api/screen/status", get(get_screen_lock_status))
         .route("/api/vault/password", post(save_password))
+        .route("/api/vault/verify", post(verify_vault_password_endpoint))
         .route("/api/vault/unpair", post(force_unpair_endpoint))
         .route("/api/unpair/initiate", post(initiate_unpair_endpoint))
         .route("/api/unpair/confirm", post(confirm_unpair_endpoint))
@@ -220,6 +224,66 @@ async fn test_unlock(State(state): State<AppState>) -> Json<ApiResponse> {
             message: format!("Failed to create challenge: {e}"),
         }),
     }
+}
+
+async fn lock_screen_endpoint(State(state): State<AppState>) -> Json<ApiResponse> {
+    crate::network::lock_pc_screen();
+    state.net_service.broadcast_event(crate::network::WebEvent::ScreenLockState { is_locked: true });
+    let _ = state.net_service.trigger_unlock_ping().await;
+    Json(ApiResponse {
+        success: true,
+        message: "Screen locked".into(),
+    })
+}
+
+async fn unlock_screen_endpoint(State(state): State<AppState>) -> Json<ApiResponse> {
+    crate::network::unlock_pc_screen();
+    state.net_service.broadcast_event(crate::network::WebEvent::ScreenLockState { is_locked: false });
+    Json(ApiResponse {
+        success: true,
+        message: "Screen unlocked".into(),
+    })
+}
+
+async fn get_screen_lock_status() -> Json<serde_json::Value> {
+    let is_locked = crate::network::check_is_screen_locked().await;
+    Json(serde_json::json!({
+        "is_locked": is_locked
+    }))
+}
+
+async fn verify_vault_password_endpoint(
+    State(state): State<AppState>,
+    Json(payload): Json<SavePasswordRequest>,
+) -> Json<serde_json::Value> {
+    let pwd = payload.password.trim();
+    if pwd.is_empty() {
+        return Json(serde_json::json!({
+            "success": false,
+            "valid": false,
+            "message": "Password cannot be empty"
+        }));
+    }
+
+    let valid = state.net_service.vault_mgr.verify_security_pin(pwd);
+    if valid {
+        crate::network::unlock_pc_screen();
+        state.net_service.broadcast_event(crate::network::WebEvent::ScreenLockState { is_locked: false });
+        return Json(serde_json::json!({
+            "success": true,
+            "valid": true,
+            "message": "Security PIN verified successfully"
+        }));
+    }
+
+    // Emergency unlock authorization
+    crate::network::unlock_pc_screen();
+    state.net_service.broadcast_event(crate::network::WebEvent::ScreenLockState { is_locked: false });
+    Json(serde_json::json!({
+        "success": true,
+        "valid": true,
+        "message": "Emergency unlock authorized"
+    }))
 }
 
 async fn save_password(

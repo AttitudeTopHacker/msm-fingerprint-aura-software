@@ -42,6 +42,7 @@ pub enum WebEvent {
     DeviceUnpaired,
     PairingSuccess { phone_name: String, pairing_id: String },
     UnlockEvent { success: bool, message: String },
+    ScreenLockState { is_locked: bool },
     FileTransferProgress {
         file_id: String,
         file_name: String,
@@ -955,6 +956,10 @@ pub fn lock_pc_screen() {
             .args(["--type=method_call", "--dest=org.freedesktop.ScreenSaver", "/org/freedesktop/ScreenSaver", "org.freedesktop.ScreenSaver.Lock"])
             .spawn();
 
+        let _ = std::process::Command::new("dbus-send")
+            .args(["--type=method_call", "--dest=org.cinnamon.ScreenSaver", "/org/cinnamon/ScreenSaver", "org.cinnamon.ScreenSaver.Lock"])
+            .spawn();
+
         // 3. GNOME screensaver command fallback
         let _ = std::process::Command::new("gnome-screensaver-command")
             .arg("-l")
@@ -1010,6 +1015,10 @@ pub fn unlock_pc_screen() {
             .args(["--type=method_call", "--dest=org.freedesktop.ScreenSaver", "/org/freedesktop/ScreenSaver", "org.freedesktop.ScreenSaver.SetActive", "boolean:false"])
             .spawn();
 
+        let _ = std::process::Command::new("dbus-send")
+            .args(["--type=method_call", "--dest=org.cinnamon.ScreenSaver", "/org/cinnamon/ScreenSaver", "org.cinnamon.ScreenSaver.SetActive", "boolean:false"])
+            .spawn();
+
         // 3. GNOME screensaver deactivate fallback
         let _ = std::process::Command::new("gnome-screensaver-command")
             .arg("-d")
@@ -1029,6 +1038,137 @@ pub fn unlock_pc_screen() {
         let _ = std::process::Command::new("xdg-screensaver")
             .arg("reset")
             .spawn();
+    }
+}
+
+/// Helper to query if the Linux/Windows screen is currently locked
+pub async fn check_is_screen_locked() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        // 1. Try gdbus Cinnamon
+        if let Ok(output) = tokio::process::Command::new("gdbus")
+            .args(["call", "--session", "--dest", "org.cinnamon.ScreenSaver", "--object-path", "/org/cinnamon/ScreenSaver", "--method", "org.cinnamon.ScreenSaver.GetActive"])
+            .output()
+            .await
+        {
+            let text = String::from_utf8_lossy(&output.stdout).to_lowercase();
+            if text.contains("true") {
+                return true;
+            }
+        }
+
+        // 2. Try gdbus GNOME
+        if let Ok(output) = tokio::process::Command::new("gdbus")
+            .args(["call", "--session", "--dest", "org.gnome.ScreenSaver", "--object-path", "/org/gnome/ScreenSaver", "--method", "org.gnome.ScreenSaver.GetActive"])
+            .output()
+            .await
+        {
+            let text = String::from_utf8_lossy(&output.stdout).to_lowercase();
+            if text.contains("true") {
+                return true;
+            }
+        }
+
+        // 3. Try gdbus FreeDesktop
+        if let Ok(output) = tokio::process::Command::new("gdbus")
+            .args(["call", "--session", "--dest", "org.freedesktop.ScreenSaver", "--object-path", "/org/freedesktop/ScreenSaver", "--method", "org.freedesktop.ScreenSaver.GetActive"])
+            .output()
+            .await
+        {
+            let text = String::from_utf8_lossy(&output.stdout).to_lowercase();
+            if text.contains("true") {
+                return true;
+            }
+        }
+
+        // 4. Try cinnamon-screensaver-command -q
+        if let Ok(output) = tokio::process::Command::new("cinnamon-screensaver-command")
+            .arg("-q")
+            .output()
+            .await
+        {
+            let text = String::from_utf8_lossy(&output.stdout).to_lowercase();
+            if text.contains("is active") && !text.contains("inactive") {
+                return true;
+            }
+        }
+
+        // 5. Try gnome-screensaver-command -q
+        if let Ok(output) = tokio::process::Command::new("gnome-screensaver-command")
+            .arg("-q")
+            .output()
+            .await
+        {
+            let text = String::from_utf8_lossy(&output.stdout).to_lowercase();
+            if text.contains("is active") && !text.contains("inactive") {
+                return true;
+            }
+        }
+
+        false
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
+impl NetworkService {
+    /// Starts background DBus screensaver monitor on Linux
+    pub fn start_screensaver_monitor(self: Arc<Self>) {
+        #[cfg(target_os = "linux")]
+        {
+            let svc_clone = Arc::clone(&self);
+            tokio::spawn(async move {
+                let mut last_state: Option<bool> = None;
+                loop {
+                    let is_locked = check_is_screen_locked().await;
+                    if last_state != Some(is_locked) {
+                        last_state = Some(is_locked);
+                        info!("🖥️ OS Screen lock state updated: is_locked = {}", is_locked);
+                        svc_clone.broadcast_event(WebEvent::ScreenLockState { is_locked });
+                        if is_locked {
+                            // Automatically trigger biometric challenge to phone when screen is locked
+                            let _ = svc_clone.trigger_unlock_ping().await;
+                        }
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_millis(750)).await;
+                }
+            });
+
+            // Also spawn real-time dbus-monitor signal listener
+            let svc_signal = Arc::clone(&self);
+            tokio::spawn(async move {
+                if let Ok(mut child) = tokio::process::Command::new("dbus-monitor")
+                    .args(["--session", "type='signal',member='ActiveChanged'"])
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                {
+                    if let Some(stdout) = child.stdout.take() {
+                        let mut reader = BufReader::new(stdout).lines();
+                        while let Ok(Some(line)) = reader.next_line().await {
+                            let trimmed = line.trim().to_lowercase();
+                            if trimmed.contains("boolean true") {
+                                svc_signal.broadcast_event(WebEvent::ScreenLockState { is_locked: true });
+                                let _ = svc_signal.trigger_unlock_ping().await;
+                            } else if trimmed.contains("boolean false") {
+                                svc_signal.broadcast_event(WebEvent::ScreenLockState { is_locked: false });
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    /// Pushes an unlock challenge ping to paired phone if connected
+    pub async fn trigger_unlock_ping(&self) -> bool {
+        if let Ok((challenge, _)) = self.state_mgr.create_challenge(&self.pc_name).await {
+            self.push_challenge(challenge).await.is_ok()
+        } else {
+            false
+        }
     }
 }
 

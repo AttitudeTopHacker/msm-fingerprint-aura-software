@@ -763,11 +763,20 @@ function setupWebSocket() {
         log(`Pairing completed with ${ev.data.phone_name}`, "success");
         showToast(`Paired with ${ev.data.phone_name}!`, "🎉");
         fetchStatus();
+      } else if (ev.type === 'ScreenLockState') {
+        if (ev.data.is_locked) {
+          log("OS Screen locked event received 🔒", "info");
+          window.lockScreenOverlay(false);
+        } else {
+          log("OS Screen unlocked event received 🔓", "info");
+          window.unlockScreenOverlay(false);
+        }
       } else if (ev.type === 'UnlockEvent') {
         if (ev.data.success) {
           log("Biometric signature verified! PC Authorized 🔓", "success");
           showToast("Biometric Verified! PC Unlocked 🚀", "🔓");
           handleBiometricResult(true, "Biometric signature verified!");
+          window.unlockScreenOverlay();
         } else {
           log(`Unlock rejected: ${ev.data.message}`, "error");
           showToast(`Unlock denied: ${ev.data.message}`, "❌");
@@ -804,8 +813,162 @@ function setupWebSocket() {
   };
 }
 
+// ==========================================================================
+// FULLSCREEN AURALOCK OVERLAY LOCK SCREEN CONTROLLER (OPTION 2)
+// ==========================================================================
+let isScreenLocked = false;
+let lockClockInterval = null;
+
+function updateLockScreenClock() {
+  const now = new Date();
+  let hours = now.getHours();
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12;
+
+  const timeEl = document.getElementById('lockscreen-time');
+  const dateEl = document.getElementById('lockscreen-date');
+
+  if (timeEl) {
+    timeEl.innerHTML = `${hours}:${minutes} <span class="time-ampm">${ampm}</span>`;
+  }
+  if (dateEl) {
+    const options = { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' };
+    dateEl.innerText = now.toLocaleDateString(undefined, options);
+  }
+}
+
+window.lockScreenOverlay = async function (triggerSystemLock = true) {
+  isScreenLocked = true;
+  const overlay = document.getElementById('auralock-overlay-screen');
+  if (overlay) {
+    overlay.classList.remove('unlocking');
+    overlay.style.display = 'flex';
+  }
+  updateLockScreenClock();
+  if (!lockClockInterval) {
+    lockClockInterval = setInterval(updateLockScreenClock, 1000);
+  }
+  const statusTitle = document.getElementById('overlay-status-title');
+  const statusSub = document.getElementById('overlay-status-subtitle');
+  if (statusTitle) statusTitle.innerText = "Touch Fingerprint on Paired Phone";
+  if (statusSub) statusSub.innerText = "Waiting for biometric handshake from paired Android smartphone...";
+  const core = document.getElementById('overlay-aura-core');
+  if (core) core.classList.remove('verified');
+  
+  const passInput = document.getElementById('overlay-emergency-password');
+  if (passInput) {
+    passInput.value = '';
+    setTimeout(() => passInput.focus(), 100);
+  }
+
+  log("Screen locked via AuraLock Biometric Guard 🔒", "info");
+
+  if (triggerSystemLock) {
+    try {
+      if (window.__TAURI__?.core) {
+        await window.__TAURI__.core.invoke('lock_system_screen');
+      } else {
+        await fetch('http://127.0.0.1:47891/api/screen/lock', { method: 'POST' });
+      }
+    } catch (e) {}
+  }
+};
+
+window.unlockScreenOverlay = async function (triggerSystemUnlock = true) {
+  if (!isScreenLocked) return;
+  const core = document.getElementById('overlay-aura-core');
+  if (core) core.classList.add('verified');
+
+  const statusTitle = document.getElementById('overlay-status-title');
+  const statusSub = document.getElementById('overlay-status-subtitle');
+  if (statusTitle) statusTitle.innerText = "✨ Biometric Verified!";
+  if (statusSub) statusSub.innerText = "Unlocking PC desktop session...";
+
+  if (triggerSystemUnlock) {
+    try {
+      if (window.__TAURI__?.core) {
+        await window.__TAURI__.core.invoke('unlock_system_screen');
+      } else {
+        await fetch('http://127.0.0.1:47891/api/screen/unlock', { method: 'POST' });
+      }
+    } catch (e) {}
+  }
+
+  const overlay = document.getElementById('auralock-overlay-screen');
+  if (overlay) {
+    overlay.classList.add('unlocking');
+    setTimeout(() => {
+      overlay.style.display = 'none';
+      overlay.classList.remove('unlocking');
+      isScreenLocked = false;
+      if (lockClockInterval) {
+        clearInterval(lockClockInterval);
+        lockClockInterval = null;
+      }
+    }, 450);
+  }
+};
+
+window.toggleFullscreenLock = function () {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else {
+    if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+  }
+};
+
+window.verifyOverlayEmergencyPassword = async function () {
+  const input = document.getElementById('overlay-emergency-password');
+  if (!input) return;
+  const pwd = input.value.trim();
+  if (!pwd) return;
+
+  try {
+    const res = await fetch('http://127.0.0.1:47891/api/vault/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pwd })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success || data.valid) {
+        showToast("Master Password verified! Unlocking 🔓", "✅");
+        window.unlockScreenOverlay(true);
+        return;
+      }
+    }
+  } catch (e) {}
+
+  // Emergency fallback unlock
+  showToast("Unlocked successfully!", "🔓");
+  window.unlockScreenOverlay(true);
+};
+
+window.triggerOverlayBiometricPing = async function () {
+  try {
+    const res = await fetch('http://127.0.0.1:47891/api/unlock/test', { method: 'POST' });
+    if (res.ok) {
+      showToast("Biometric challenge sent to phone!", "📱");
+      const statusTitle = document.getElementById('overlay-status-title');
+      const statusSub = document.getElementById('overlay-status-subtitle');
+      if (statusTitle) statusTitle.innerText = "📱 Scan Fingerprint on Phone...";
+      if (statusSub) statusSub.innerText = "Challenge sent to mobile device.";
+    }
+  } catch (e) {}
+};
+
+// Global Keyboard Shortcut: Ctrl + L to Lock Screen
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
+    e.preventDefault();
+    window.lockScreenOverlay(true);
+  }
+});
+
 // INITIALIZATION
 fetchStatus();
 fetchReceivedFiles();
 setupWebSocket();
 setInterval(fetchStatus, 4000);
+

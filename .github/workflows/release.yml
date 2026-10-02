@@ -61,6 +61,9 @@ jobs:
             cp target/release/libpam_auralock.so auralock-linux-bundle/
           fi
           cp scripts/install-pam.sh auralock-linux-bundle/
+          if [ -f scripts/pam-config-auralock ]; then
+            cp scripts/pam-config-auralock auralock-linux-bundle/
+          fi
           cp scripts/auralock.service auralock-linux-bundle/
           cp README.md auralock-linux-bundle/
           
@@ -204,6 +207,7 @@ jobs:
           files: |
             release-assets/*
             scripts/install-pam.sh
+            scripts/pam-config-auralock
             scripts/auralock.service
             scripts/uninstall.sh
 

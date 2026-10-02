@@ -275,6 +275,27 @@ async fn open_downloads_folder() -> Result<CommandResult, String> {
     })
 }
 
+#[tauri::command]
+async fn lock_system_screen(state: State<'_, AppStateWrapper>) -> Result<CommandResult, String> {
+    auralock_core::network::lock_pc_screen();
+    state.net_service.broadcast_event(auralock_core::network::WebEvent::ScreenLockState { is_locked: true });
+    let _ = state.net_service.trigger_unlock_ping().await;
+    Ok(CommandResult {
+        success: true,
+        message: "Screen locked".into(),
+    })
+}
+
+#[tauri::command]
+async fn unlock_system_screen(state: State<'_, AppStateWrapper>) -> Result<CommandResult, String> {
+    auralock_core::network::unlock_pc_screen();
+    state.net_service.broadcast_event(auralock_core::network::WebEvent::ScreenLockState { is_locked: false });
+    Ok(CommandResult {
+        success: true,
+        message: "Screen unlocked".into(),
+    })
+}
+
 fn main() {
     let vault_path = get_default_vault_path();
     let vault_mgr = Arc::new(VaultManager::new(&vault_path));
@@ -292,6 +313,10 @@ fn main() {
         state_mgr.clone(),
         vault_mgr.clone(),
     ));
+
+    // Start OS ScreenSaver Monitor (Cinnamon, GNOME, FreeDesktop, MATE)
+    let screensaver_svc = Arc::clone(&net_service);
+    screensaver_svc.start_screensaver_monitor();
 
     let is_daemon_already_running = std::net::TcpStream::connect(("127.0.0.1", DEFAULT_AURALOCK_WEB_PORT)).is_ok();
 
@@ -324,11 +349,37 @@ fn main() {
         });
     }
 
+    let setup_svc = Arc::clone(&net_service);
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(AppStateWrapper {
             net_service: Arc::clone(&net_service),
             vault_mgr: Arc::clone(&vault_mgr),
+        })
+        .setup(move |app| {
+            use tauri::Manager;
+            let app_handle = app.handle().clone();
+            let mut rx = setup_svc.subscribe_events();
+            tauri::async_runtime::spawn(async move {
+                while let Ok(event) = rx.recv().await {
+                    if let auralock_core::network::WebEvent::ScreenLockState { is_locked } = event {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            if is_locked {
+                                let _ = window.unminimize();
+                                let _ = window.show();
+                                let _ = window.set_always_on_top(true);
+                                let _ = window.set_fullscreen(true);
+                                let _ = window.set_focus();
+                            } else {
+                                let _ = window.set_fullscreen(false);
+                                let _ = window.set_always_on_top(false);
+                            }
+                        }
+                    }
+                }
+            });
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_daemon_status,
@@ -343,7 +394,9 @@ fn main() {
             authorize_transfer_pin,
             send_auradrop_text,
             get_received_files,
-            open_downloads_folder
+            open_downloads_folder,
+            lock_system_screen,
+            unlock_system_screen
         ])
         .run(tauri::generate_context!())
         .expect("error while running AuraLock Tauri application");

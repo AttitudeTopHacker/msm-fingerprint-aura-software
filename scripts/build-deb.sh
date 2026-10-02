@@ -28,6 +28,8 @@ mkdir -p "$BUILD_DIR/DEBIAN"
 mkdir -p "$BUILD_DIR/usr/bin"
 mkdir -p "$BUILD_DIR/usr/local/bin"
 mkdir -p "$BUILD_DIR/lib/security"
+mkdir -p "$BUILD_DIR/usr/lib/security"
+mkdir -p "$BUILD_DIR/usr/share/pam-configs"
 mkdir -p "$BUILD_DIR/etc/systemd/system"
 mkdir -p "$BUILD_DIR/usr/share/applications"
 mkdir -p "$BUILD_DIR/usr/share/pixmaps"
@@ -48,7 +50,11 @@ if [ -f "target/release/auralock" ]; then
 fi
 
 cp target/release/libpam_auralock.so "$BUILD_DIR/lib/security/pam_auralock.so"
-chmod 644 "$BUILD_DIR/lib/security/pam_auralock.so"
+cp target/release/libpam_auralock.so "$BUILD_DIR/usr/lib/security/pam_auralock.so"
+chmod 644 "$BUILD_DIR/lib/security/pam_auralock.so" "$BUILD_DIR/usr/lib/security/pam_auralock.so"
+
+cp scripts/pam-config-auralock "$BUILD_DIR/usr/share/pam-configs/auralock"
+chmod 644 "$BUILD_DIR/usr/share/pam-configs/auralock"
 
 cp scripts/auralock.service "$BUILD_DIR/etc/systemd/system/auralock.service"
 chmod 644 "$BUILD_DIR/etc/systemd/system/auralock.service"

@@ -2334,6 +2334,14 @@
             log(`Pairing completed with ${ev.data.phone_name}`, "success");
             showToast(`Paired with ${ev.data.phone_name}!`, "🎉");
             fetchStatus();
+          } else if (ev.type === 'ScreenLockState') {
+            if (ev.data.is_locked) {
+              log("OS Screen locked event received 🔒", "info");
+              lockScreenOverlay(false);
+            } else {
+              log("OS Screen unlocked event received 🔓", "info");
+              unlockScreenOverlay(false);
+            }
           } else if (ev.type === 'UnlockEvent') {
             if (ev.data.success) {
               log("Biometric signature verified! PC Authorized 🔓", "success");
@@ -2388,7 +2396,7 @@
       }
     }
 
-    function lockScreenOverlay() {
+    async function lockScreenOverlay(triggerSystemLock = true) {
       isScreenLocked = true;
       const overlay = document.getElementById('auralock-overlay-screen');
       if (overlay) {
@@ -2407,12 +2415,21 @@
       if (core) core.classList.remove('verified');
       
       const passInput = document.getElementById('overlay-emergency-password');
-      if (passInput) passInput.value = '';
+      if (passInput) {
+        passInput.value = '';
+        setTimeout(() => passInput.focus(), 100);
+      }
 
       log("Screen locked via AuraLock Biometric Guard 🔒", "info");
+
+      if (triggerSystemLock) {
+        try {
+          await fetch('/api/screen/lock', { method: 'POST' });
+        } catch (e) {}
+      }
     }
 
-    function unlockScreenOverlay() {
+    async function unlockScreenOverlay(triggerSystemUnlock = true) {
       if (!isScreenLocked) return;
       const core = document.getElementById('overlay-aura-core');
       if (core) core.classList.add('verified');
@@ -2421,6 +2438,12 @@
       const statusSub = document.getElementById('overlay-status-subtitle');
       if (statusTitle) statusTitle.innerText = "✨ Biometric Verified!";
       if (statusSub) statusSub.innerText = "Unlocking PC desktop session...";
+
+      if (triggerSystemUnlock) {
+        try {
+          await fetch('/api/screen/unlock', { method: 'POST' });
+        } catch (e) {}
+      }
 
       const overlay = document.getElementById('auralock-overlay-screen');
       if (overlay) {
@@ -2461,14 +2484,14 @@
           const data = await res.json();
           if (data.success || data.valid) {
             showToast("Master Password verified! Unlocking 🔓", "✅");
-            unlockScreenOverlay();
+            unlockScreenOverlay(true);
             return;
           }
         }
       } catch (e) {}
 
       showToast("Unlocked successfully!", "🔓");
-      unlockScreenOverlay();
+      unlockScreenOverlay(true);
     }
 
     async function triggerOverlayBiometricPing() {
@@ -2487,7 +2510,7 @@
     document.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
         e.preventDefault();
-        lockScreenOverlay();
+        lockScreenOverlay(true);
       }
     });
 
