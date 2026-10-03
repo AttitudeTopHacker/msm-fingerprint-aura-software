@@ -688,6 +688,7 @@ impl NetworkService {
                             message: res.message.clone(),
                         });
                         if let Some(tx) = &*self.active_client.lock().await {
+                            let _ = tx.send(ProtocolMessage::LockStateChanged { is_locked: !res.success }).await;
                             let _ = tx.send(ProtocolMessage::Result(res)).await;
                         }
                     }
@@ -697,6 +698,7 @@ impl NetworkService {
                             message: e.to_string(),
                         });
                         if let Some(tx) = &*self.active_client.lock().await {
+                            let _ = tx.send(ProtocolMessage::LockStateChanged { is_locked: true }).await;
                             let _ = tx
                                 .send(ProtocolMessage::Result(UnlockResult {
                                     success: false,
@@ -867,9 +869,15 @@ impl NetworkService {
             ProtocolMessage::RemoteLockReq(_req) => {
                 info!("Received manual remote lock request from phone");
                 lock_pc_screen();
+                if let Some(tx) = &*self.active_client.lock().await {
+                    let _ = tx.send(ProtocolMessage::LockStateChanged { is_locked: true }).await;
+                }
             }
             ProtocolMessage::UnlockTriggerReq(_req) => {
                 info!("Received manual unlock trigger request from phone");
+                if let Some(tx) = &*self.active_client.lock().await {
+                    let _ = tx.send(ProtocolMessage::LockStateChanged { is_locked: true }).await;
+                }
                 match self.state_mgr.create_challenge(&self.pc_name).await {
                     Ok((challenge, _rx)) => {
                         let _ = self.push_challenge(challenge).await;

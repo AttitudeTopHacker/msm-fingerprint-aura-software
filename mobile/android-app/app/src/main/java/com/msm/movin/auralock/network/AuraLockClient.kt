@@ -235,6 +235,7 @@ class AuraLockClient(
         onFileReceived: (fileId: String, fileName: String, file: File) -> Unit,
         onClipboardReceived: (text: String, senderName: String) -> Unit,
         onPcBluetoothStatus: (Boolean) -> Unit = {},
+        onLockStateChanged: (Boolean) -> Unit = {},
         onUnpaired: () -> Unit = {},
         onDisconnect: () -> Unit
     ) = withContext(Dispatchers.IO) {
@@ -257,6 +258,22 @@ class AuraLockClient(
                             onPcBluetoothStatus(isActive)
                         }
                     }
+                    "LockStateChanged" -> {
+                        val payload = json.optJSONObject("payload")
+                        val isLocked = payload?.optBoolean("is_locked", true) ?: true
+                        withContext(Dispatchers.Main) {
+                            onLockStateChanged(isLocked)
+                        }
+                    }
+                    "Result" -> {
+                        val payload = json.optJSONObject("payload")
+                        val success = payload?.optBoolean("success", false) ?: false
+                        if (success) {
+                            withContext(Dispatchers.Main) {
+                                onLockStateChanged(false)
+                            }
+                        }
+                    }
                     "Challenge" -> {
                         val payload = json.getJSONObject("payload")
                         val event = ChallengeEvent(
@@ -266,6 +283,7 @@ class AuraLockClient(
                             pcName = payload.getString("pc_name")
                         )
                         withContext(Dispatchers.Main) {
+                            onLockStateChanged(true)
                             onChallenge(event)
                         }
                     }

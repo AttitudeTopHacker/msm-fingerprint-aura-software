@@ -30,6 +30,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -93,6 +94,8 @@ class MainActivity : FragmentActivity() {
     private var latestReceivedClipboard by mutableStateOf<String?>(null)
     private var isConnectedState by mutableStateOf(false)
     private var isPairedState by mutableStateOf(false)
+    private var isPcLockedState by mutableStateOf(false)
+    private var isRefreshingStatusState by mutableStateOf(false)
     private var pcNameState by mutableStateOf("")
     private var pcIpState by mutableStateOf("")
     private var pcPortState by mutableIntStateOf(47890)
@@ -174,6 +177,8 @@ class MainActivity : FragmentActivity() {
         client = null
         isConnectedState = false
         isPairedState = false
+        isPcLockedState = false
+        isRefreshingStatusState = false
         pcNameState = ""
         pcIpState = ""
         pcPortState = 47890
@@ -183,6 +188,7 @@ class MainActivity : FragmentActivity() {
 
         prefs.edit()
             .putBoolean("is_paired", false)
+            .putBoolean("is_pc_locked", false)
             .remove("pc_name")
             .remove("pc_ip")
             .remove("pc_port")
@@ -286,6 +292,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         try {
             isPairedState = prefs.getBoolean("is_paired", false)
+            isPcLockedState = prefs.getBoolean("is_pc_locked", false)
             pcNameState = prefs.getString("pc_name", "") ?: ""
             pcIpState = prefs.getString("pc_ip", "") ?: ""
             pcPortState = prefs.getInt("pc_port", 47890)
@@ -526,9 +533,122 @@ class MainActivity : FragmentActivity() {
             }
 
             ScreenState.DASHBOARD -> {
+                val performLockPc: () -> Unit = {
+                    lifecycleScope.launch {
+                        if (!isPairedState || pcIpState.isBlank()) {
+                            Toast.makeText(this@MainActivity, "No PC is paired yet", Toast.LENGTH_SHORT).show()
+                            return@launch
+                        }
+                        var activeClient = client
+                        if (activeClient == null || !isConnectedState) {
+                            Toast.makeText(this@MainActivity, "Connecting to lock PC...", Toast.LENGTH_SHORT).show()
+                            val newClient = AuraLockClient(pcIpState, pcPortState)
+                            if (newClient.connect()) {
+                                client = newClient
+                                isConnectedState = true
+                                activeClient = newClient
+                                AuraLockService.start(this@MainActivity, pcNameState)
+                                listenToClientEvents(newClient, pcIpState, pcPortState, pcNameState)
+                            }
+                        }
+                        val targetClient = activeClient
+                        if (targetClient != null) {
+                            val sent = targetClient.sendRemoteLock()
+                            if (sent) {
+                                isPcLockedState = true
+                                prefs.edit().putBoolean("is_pc_locked", true).apply()
+                                triggerHapticFeedback()
+                                Toast.makeText(this@MainActivity, "🔒 PC Screen Locked", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(this@MainActivity, "Failed to send lock signal to PC", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            Toast.makeText(this@MainActivity, "Cannot reach PC to lock", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+
+                val performUnlockPc: () -> Unit = {
+                    checkBluetoothAndExecute {
+                        lifecycleScope.launch {
+                            var activeClient = client
+                            if (activeClient == null || !isConnectedState) {
+                                if (isPairedState && pcIpState.isNotBlank()) {
+                                    val newClient = AuraLockClient(pcIpState, pcPortState)
+                                    if (newClient.connect()) {
+                                        client = newClient
+                                        isConnectedState = true
+                                        activeClient = newClient
+                                        AuraLockService.start(this@MainActivity, pcNameState)
+                                        listenToClientEvents(newClient, pcIpState, pcPortState, pcNameState)
+                                    }
+                                }
+                            }
+                            val targetClient = activeClient
+                            if (targetClient != null && isConnectedState) {
+                                val sent = targetClient.sendUnlockTrigger()
+                                if (!sent) {
+                                    testBiometricsPrompt()
+                                }
+                            } else {
+                                testBiometricsPrompt()
+                            }
+                        }
+                    }
+                }
+
+                val performRefreshStatus: () -> Unit = {
+                    lifecycleScope.launch {
+                        triggerHapticFeedback()
+                        isRefreshingStatusState = true
+                        if (!isBluetoothEnabledState.value) {
+                            requestEnableBluetooth()
+                            Toast.makeText(this@MainActivity, "Please enable Bluetooth to connect", Toast.LENGTH_SHORT).show()
+                            isRefreshingStatusState = false
+                            return@launch
+                        }
+                        if (!isPairedState || pcIpState.isBlank()) {
+                            Toast.makeText(this@MainActivity, "No PC paired yet. Tap 'Scan QR' to link.", Toast.LENGTH_SHORT).show()
+                            isRefreshingStatusState = false
+                            return@launch
+                        }
+
+                        isUserManuallyDisconnected = false
+                        val targetName = if (pcNameState.isNotBlank()) pcNameState else "PC"
+
+                        val activeClient = client
+                        if (activeClient == null || !isConnectedState) {
+                            statusMessageState = "🔄 Reconnecting to $targetName..."
+                            Toast.makeText(this@MainActivity, "🔄 Reconnecting to $targetName...", Toast.LENGTH_SHORT).show()
+                            connectToDaemon(pcIpState, pcPortState, pcNameState) { success, msg ->
+                                isConnectedState = success
+                                statusMessageState = msg
+                                isRefreshingStatusState = false
+                                if (success) {
+                                    triggerHapticFeedback()
+                                    Toast.makeText(this@MainActivity, "⚡ Connected to $targetName!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(this@MainActivity, "⚠️ Could not reach $targetName. Retrying...", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } else {
+                            val start = System.currentTimeMillis()
+                            activeClient.sendPing()
+                            delay(40)
+                            val latency = System.currentTimeMillis() - start
+                            isRefreshingStatusState = false
+                            statusMessageState = "🟢 Linked & Synchronized (${latency}ms)"
+                            triggerHapticFeedback()
+                            Toast.makeText(this@MainActivity, "⚡ Link Active with $targetName (${latency}ms)", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+
                 DashboardView(
                     isConnected = isConnectedState,
                     isPaired = isPairedState,
+                    isPcLocked = isPcLockedState,
+                    isRefreshingStatus = isRefreshingStatusState,
                     statusMessage = statusMessageState,
                     pcName = pcNameState,
                     pcIp = pcIpState,
@@ -567,66 +687,24 @@ class MainActivity : FragmentActivity() {
                         Toast.makeText(this@MainActivity, "Disconnected from PC", Toast.LENGTH_SHORT).show()
                     },
                     onUnpairClicked = performUnpair,
-                    onLockPcClicked = {
-                        lifecycleScope.launch {
-                            if (!isPairedState || pcIpState.isBlank()) {
-                                Toast.makeText(this@MainActivity, "No PC is paired yet", Toast.LENGTH_SHORT).show()
-                                return@launch
-                            }
-                            var activeClient = client
-                            if (activeClient == null || !isConnectedState) {
-                                Toast.makeText(this@MainActivity, "Connecting to lock PC...", Toast.LENGTH_SHORT).show()
-                                val newClient = AuraLockClient(pcIpState, pcPortState)
-                                if (newClient.connect()) {
-                                    client = newClient
-                                    isConnectedState = true
-                                    activeClient = newClient
-                                    AuraLockService.start(this@MainActivity, pcNameState)
-                                    listenToClientEvents(newClient, pcIpState, pcPortState, pcNameState)
-                                }
-                            }
-                            val targetClient = activeClient
-                            if (targetClient != null) {
-                                val sent = targetClient.sendRemoteLock()
-                                if (sent) {
-                                    triggerHapticFeedback()
-                                    Toast.makeText(this@MainActivity, "🔒 PC Screen Locked", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    Toast.makeText(this@MainActivity, "Failed to send lock signal to PC", Toast.LENGTH_SHORT).show()
-                                }
-                            } else {
-                                Toast.makeText(this@MainActivity, "Cannot reach PC to lock", Toast.LENGTH_SHORT).show()
-                            }
+                    onToggleLockAction = {
+                        if (isPcLockedState) {
+                            performUnlockPc()
+                        } else {
+                            performLockPc()
                         }
                     },
-                    onUnlockPcClicked = {
-                        checkBluetoothAndExecute {
-                            lifecycleScope.launch {
-                                var activeClient = client
-                                if (activeClient == null || !isConnectedState) {
-                                    if (isPairedState && pcIpState.isNotBlank()) {
-                                        val newClient = AuraLockClient(pcIpState, pcPortState)
-                                        if (newClient.connect()) {
-                                            client = newClient
-                                            isConnectedState = true
-                                            activeClient = newClient
-                                            AuraLockService.start(this@MainActivity, pcNameState)
-                                            listenToClientEvents(newClient, pcIpState, pcPortState, pcNameState)
-                                        }
-                                    }
-                                }
-                                val targetClient = activeClient
-                                if (targetClient != null && isConnectedState) {
-                                    val sent = targetClient.sendUnlockTrigger()
-                                    if (!sent) {
-                                        testBiometricsPrompt()
-                                    }
-                                } else {
-                                    testBiometricsPrompt()
-                                }
-                            }
-                        }
+                    onManualToggleLockState = {
+                        isPcLockedState = !isPcLockedState
+                        prefs.edit().putBoolean("is_pc_locked", isPcLockedState).apply()
+                        triggerHapticFeedback()
+                        Toast.makeText(
+                            this@MainActivity,
+                            if (isPcLockedState) "Switched state to LOCKED (Unlock Ready)" else "Switched state to UNLOCKED (Lock Ready)",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     },
+                    onRefreshStatus = performRefreshStatus,
                     onTestBiometrics = {
                         checkBluetoothAndExecute {
                             testBiometricsPrompt()
@@ -816,6 +894,8 @@ class MainActivity : FragmentActivity() {
     private fun DashboardView(
         isConnected: Boolean,
         isPaired: Boolean,
+        isPcLocked: Boolean,
+        isRefreshingStatus: Boolean,
         statusMessage: String,
         pcName: String,
         pcIp: String,
@@ -835,8 +915,9 @@ class MainActivity : FragmentActivity() {
         onOpenSettings: () -> Unit,
         onDisconnectClicked: () -> Unit,
         onUnpairClicked: () -> Unit,
-        onLockPcClicked: () -> Unit,
-        onUnlockPcClicked: () -> Unit,
+        onToggleLockAction: () -> Unit,
+        onManualToggleLockState: () -> Unit,
+        onRefreshStatus: () -> Unit,
         onTestBiometrics: () -> Unit
     ) {
         val pagerState = rememberPagerState(pageCount = { 2 })
@@ -987,6 +1068,8 @@ class MainActivity : FragmentActivity() {
                         0 -> BiometricDashboardPage(
                             isConnected = isConnected,
                             isPaired = isPaired,
+                            isPcLocked = isPcLocked,
+                            isRefreshingStatus = isRefreshingStatus,
                             statusMessage = statusMessage,
                             pcName = pcName,
                             pcIp = pcIp,
@@ -999,9 +1082,9 @@ class MainActivity : FragmentActivity() {
                             onRequestEnableBluetooth = onRequestEnableBluetooth,
                             onDisconnectClicked = onDisconnectClicked,
                             onUnpairClicked = onUnpairClicked,
-                            onLockPcClicked = onLockPcClicked,
-                            onUnlockPcClicked = onUnlockPcClicked,
-                            onTestBiometrics = onTestBiometrics,
+                            onToggleLockAction = onToggleLockAction,
+                            onManualToggleLockState = onManualToggleLockState,
+                            onRefreshStatus = onRefreshStatus,
                             onSwipeToAuraDrop = {
                                 coroutineScope.launch { pagerState.animateScrollToPage(1) }
                             }
@@ -1028,6 +1111,8 @@ class MainActivity : FragmentActivity() {
     private fun BiometricDashboardPage(
         isConnected: Boolean,
         isPaired: Boolean,
+        isPcLocked: Boolean,
+        isRefreshingStatus: Boolean,
         statusMessage: String,
         pcName: String,
         pcIp: String,
@@ -1040,9 +1125,9 @@ class MainActivity : FragmentActivity() {
         onRequestEnableBluetooth: () -> Unit,
         onDisconnectClicked: () -> Unit,
         onUnpairClicked: () -> Unit,
-        onLockPcClicked: () -> Unit,
-        onUnlockPcClicked: () -> Unit,
-        onTestBiometrics: () -> Unit,
+        onToggleLockAction: () -> Unit,
+        onManualToggleLockState: () -> Unit,
+        onRefreshStatus: () -> Unit,
         onSwipeToAuraDrop: () -> Unit
     ) {
         var showUnpairConfirmDialog by remember { mutableStateOf(false) }
@@ -1151,7 +1236,7 @@ class MainActivity : FragmentActivity() {
                 }
             }
 
-            // Section 2: Concentric Glowing Fingerprint Area
+            // Section 2: Concentric Glowing Fingerprint Hologram Area (Tap to Refresh & Reconnect)
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
@@ -1161,7 +1246,8 @@ class MainActivity : FragmentActivity() {
             ) {
                 PulseFingerprintView(
                     isConnected = isConnected,
-                    onTestClick = onTestBiometrics
+                    isRefreshing = isRefreshingStatus,
+                    onRefreshClick = onRefreshStatus
                 )
 
                 Spacer(modifier = Modifier.height(14.dp))
@@ -1181,9 +1267,9 @@ class MainActivity : FragmentActivity() {
 
                 Text(
                     text = if (isConnected)
-                        "Touch sensor anytime PC lockscreen, sleep or boot activates"
+                        "Tap fingerprint anytime to refresh link & sync ⚡"
                     else if (isPaired)
-                        "Tap top card to link with $pcName • Standby"
+                        "Tap fingerprint to reconnect with $pcName ⚡"
                     else
                         "Tap 'Scan QR to Pair' to link with your PC",
                     color = Color(0xFF94A3B8),
@@ -1221,7 +1307,7 @@ class MainActivity : FragmentActivity() {
                 }
             }
 
-            // Section 3: Bottom Action Buttons (Cleanly positioned at the bottom of the screen)
+            // Section 3: Bottom Action Button (⚡ Single Smart Dynamic Lock / Unlock Action Button)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1229,65 +1315,12 @@ class MainActivity : FragmentActivity() {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 if (isPaired) {
-                    // Manual PC Lock and Unlock Action Controls
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        // 🔒 Lock PC Button
-                        Button(
-                            onClick = onLockPcClicked,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(50.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFDC2626)
-                            ),
-                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Lock,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = Color.White
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Lock PC",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = Color.White
-                            )
-                        }
-
-                        // 🔓 Unlock PC Button
-                        Button(
-                            onClick = onUnlockPcClicked,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(50.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF059669)
-                            ),
-                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.LockOpen,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = Color.White
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Unlock PC",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = Color.White
-                            )
-                        }
-                    }
+                    DynamicLockActionButton(
+                        isPcLocked = isPcLocked,
+                        isConnected = isConnected,
+                        onExecuteAction = onToggleLockAction,
+                        onManualToggleState = onManualToggleLockState
+                    )
                 } else {
                     Button(
                         onClick = onScanQrClicked,
@@ -1393,6 +1426,159 @@ class MainActivity : FragmentActivity() {
                     }
                 }
             )
+        }
+    }
+
+    @Composable
+    private fun DynamicLockActionButton(
+        isPcLocked: Boolean,
+        isConnected: Boolean,
+        onExecuteAction: () -> Unit,
+        onManualToggleState: () -> Unit
+    ) {
+        val bgGradient = if (isPcLocked) {
+            // PC is Locked -> Action is Unlock PC (Emerald / Teal / Cyan glowing gradient)
+            Brush.horizontalGradient(
+                listOf(
+                    Color(0xFF059669),
+                    Color(0xFF0D9488),
+                    Color(0xFF0284C7)
+                )
+            )
+        } else {
+            // PC is Unlocked -> Action is Lock PC (Crimson / Ruby glowing gradient)
+            Brush.horizontalGradient(
+                listOf(
+                    Color(0xFFE11D48),
+                    Color(0xFFBE123C),
+                    Color(0xFF9F1239)
+                )
+            )
+        }
+
+        val borderColor = if (isPcLocked) Color(0xFF34D399).copy(alpha = 0.55f) else Color(0xFFFB7185).copy(alpha = 0.55f)
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(58.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .border(1.5.dp, borderColor, RoundedCornerShape(16.dp))
+                .clickable(onClick = onExecuteAction),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(bgGradient)
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.25f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            AnimatedContent(
+                                targetState = isPcLocked,
+                                transitionSpec = {
+                                    (fadeIn(animationSpec = tween(220)) + scaleIn(initialScale = 0.8f))
+                                        .togetherWith(fadeOut(animationSpec = tween(220)) + scaleOut(targetScale = 0.8f))
+                                },
+                                label = "LockIconAnim"
+                            ) { locked ->
+                                Icon(
+                                    imageVector = if (locked) Icons.Default.LockOpen else Icons.Default.Lock,
+                                    contentDescription = if (locked) "Unlock PC" else "Lock PC",
+                                    modifier = Modifier.size(22.dp),
+                                    tint = Color.White
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column {
+                            AnimatedContent(
+                                targetState = isPcLocked,
+                                transitionSpec = {
+                                    (slideInVertically { height -> height } + fadeIn())
+                                        .togetherWith(slideOutVertically { height -> -height } + fadeOut())
+                                },
+                                label = "LockTitleAnim"
+                            ) { locked ->
+                                Text(
+                                    text = if (locked) "Unlock PC" else "Lock PC",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = Color.White
+                                )
+                            }
+                            AnimatedContent(
+                                targetState = isPcLocked,
+                                transitionSpec = {
+                                    (fadeIn(animationSpec = tween(250)))
+                                        .togetherWith(fadeOut(animationSpec = tween(200)))
+                                },
+                                label = "LockSubAnim"
+                            ) { locked ->
+                                Text(
+                                    text = if (locked) "Screen Locked • Tap to Unlock" else "Screen Active • Tap to Lock",
+                                    fontSize = 11.sp,
+                                    color = Color.White.copy(alpha = 0.85f),
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
+                    // Right manual state toggle pill
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color.Black.copy(alpha = 0.28f))
+                            .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
+                            .clickable(onClick = onManualToggleState)
+                            .padding(horizontal = 9.dp, vertical = 6.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isPcLocked) Color(0xFF34D399) else Color(0xFFFB7185))
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = if (isPcLocked) "LOCKED" else "UNLOCKED",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Default.SwapHoriz,
+                                contentDescription = "Toggle status",
+                                tint = Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -2384,6 +2570,10 @@ class MainActivity : FragmentActivity() {
                 onPcBluetoothStatus = { isActive ->
                     isPcBluetoothEnabledState.value = isActive
                 },
+                onLockStateChanged = { isLocked ->
+                    isPcLockedState = isLocked
+                    prefs.edit().putBoolean("is_pc_locked", isLocked).apply()
+                },
                 onUnpaired = {
                     performLocalUnpairCleanUp()
                     Toast.makeText(this@MainActivity, "Device Unpaired by PC", Toast.LENGTH_LONG).show()
@@ -2587,6 +2777,8 @@ class MainActivity : FragmentActivity() {
 
     private fun handleChallenge(challenge: ChallengeEvent) {
         try {
+            isPcLockedState = true
+            prefs.edit().putBoolean("is_pc_locked", true).apply()
             val signature = cryptoManager.getInitializedSignature()
             biometricPrompt.promptForUnlock(
                 signature = signature,
@@ -2603,6 +2795,8 @@ class MainActivity : FragmentActivity() {
                             sigHex,
                             System.currentTimeMillis() / 1000
                         )
+                        isPcLockedState = false
+                        prefs.edit().putBoolean("is_pc_locked", false).apply()
                         triggerHapticFeedback()
                         Toast.makeText(this@MainActivity, "PC Unlock Approved! 🚀", Toast.LENGTH_SHORT).show()
                     }

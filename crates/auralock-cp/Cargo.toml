@@ -16,3 +16,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+winreg = { workspace = true }

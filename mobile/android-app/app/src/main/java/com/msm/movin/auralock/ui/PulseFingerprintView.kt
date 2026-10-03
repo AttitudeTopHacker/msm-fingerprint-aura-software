@@ -10,33 +10,43 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 @Composable
 fun PulseFingerprintView(
     isConnected: Boolean,
-    onTestClick: () -> Unit
+    isRefreshing: Boolean = false,
+    onRefreshClick: () -> Unit,
+    onTestClick: () -> Unit = onRefreshClick
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.92f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
+        label = "FingerprintScale"
+    )
+
     val infiniteTransition = rememberInfiniteTransition(label = "PulseTransition")
 
     val pulse1 by infiniteTransition.animateFloat(
@@ -69,26 +79,37 @@ fun PulseFingerprintView(
         label = "PulseRing3"
     )
 
-    val primaryColor = if (isConnected) Color(0xFF06B6D4) else Color(0xFF64748B)
-    val coreGlowColor = if (isConnected) Color(0xFF0284C7) else Color(0xFF334155)
+    val rotationAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = if (isRefreshing) 1200 else 6000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "AuraRotation"
+    )
+
+    val primaryColor = if (isConnected) Color(0xFF06B6D4) else if (isRefreshing) Color(0xFF38BDF8) else Color(0xFF64748B)
+    val coreGlowColor = if (isConnected) Color(0xFF0284C7) else if (isRefreshing) Color(0xFF0284C7) else Color(0xFF334155)
 
     Box(
         modifier = Modifier
             .size(220.dp)
+            .scale(scale)
             .clickable(
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = interactionSource,
                 indication = null,
-                onClick = onTestClick
+                onClick = onRefreshClick
             ),
         contentAlignment = Alignment.Center
     ) {
         // Multi-ring concentric expanding pulses
-        if (isConnected) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val center = Offset(size.width / 2f, size.height / 2f)
-                val maxRadius = size.width / 2f
-                val minRadius = 55.dp.toPx()
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val center = Offset(size.width / 2f, size.height / 2f)
+            val maxRadius = size.width / 2f
+            val minRadius = 55.dp.toPx()
 
+            if (isConnected || isRefreshing) {
                 listOf(pulse1, pulse2, pulse3).forEach { p ->
                     val radius = minRadius + (maxRadius - minRadius) * p
                     val alpha = ((1f - p) * 0.45f).coerceIn(0f, 1f)
@@ -99,7 +120,52 @@ fun PulseFingerprintView(
                         style = Stroke(width = (2.5f * (1f - p * 0.5f)).dp.toPx())
                     )
                 }
+            } else {
+                // Subtle standby pulse
+                val radius = minRadius + (maxRadius - minRadius) * pulse1
+                val alpha = ((1f - pulse1) * 0.18f).coerceIn(0f, 1f)
+                drawCircle(
+                    color = primaryColor.copy(alpha = alpha),
+                    radius = radius,
+                    center = center,
+                    style = Stroke(width = 1.5.dp.toPx())
+                )
             }
+        }
+
+        // Outer Rotating Dashed/Gradient Orbit ring for Refresh/Connected state
+        Box(
+            modifier = Modifier
+                .size(130.dp)
+                .rotate(rotationAngle)
+                .clip(CircleShape)
+                .background(
+                    Brush.sweepGradient(
+                        colors = if (isConnected) listOf(
+                            Color(0xFF00FF88).copy(alpha = 0.35f),
+                            Color(0xFF00D2FF).copy(alpha = 0.5f),
+                            Color.Transparent,
+                            Color(0xFF00FF88).copy(alpha = 0.35f)
+                        ) else if (isRefreshing) listOf(
+                            Color(0xFF38BDF8).copy(alpha = 0.6f),
+                            Color(0xFF818CF8).copy(alpha = 0.6f),
+                            Color.Transparent,
+                            Color(0xFF38BDF8).copy(alpha = 0.6f)
+                        ) else listOf(
+                            Color(0xFF475569).copy(alpha = 0.25f),
+                            Color.Transparent,
+                            Color(0xFF475569).copy(alpha = 0.25f)
+                        )
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(126.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF070A13))
+            )
         }
 
         // Inner glowing disc background
@@ -110,8 +176,8 @@ fun PulseFingerprintView(
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            coreGlowColor.copy(alpha = if (isConnected) 0.45f else 0.2f),
-                            coreGlowColor.copy(alpha = 0.08f),
+                            coreGlowColor.copy(alpha = if (isConnected) 0.55f else 0.25f),
+                            coreGlowColor.copy(alpha = 0.10f),
                             Color.Transparent
                         )
                     )
@@ -121,13 +187,16 @@ fun PulseFingerprintView(
             // Core Button Disc
             Box(
                 modifier = Modifier
-                    .size(80.dp)
+                    .size(82.dp)
                     .clip(CircleShape)
                     .background(
                         Brush.linearGradient(
                             colors = if (isConnected) listOf(
                                 Color(0xFF0E7490),
                                 Color(0xFF0369A1)
+                            ) else if (isRefreshing) listOf(
+                                Color(0xFF1E3A8A),
+                                Color(0xFF0284C7)
                             ) else listOf(
                                 Color(0xFF1E293B),
                                 Color(0xFF0F172A)
@@ -138,8 +207,8 @@ fun PulseFingerprintView(
             ) {
                 Icon(
                     imageVector = Icons.Default.Fingerprint,
-                    contentDescription = "Biometric Sensor",
-                    tint = if (isConnected) Color(0xFFE0F2FE) else Color(0xFF94A3B8),
+                    contentDescription = "Tap to Refresh Status & Reconnect",
+                    tint = if (isConnected) Color(0xFFE0F2FE) else if (isRefreshing) Color(0xFFBAE6FD) else Color(0xFF94A3B8),
                     modifier = Modifier.size(46.dp)
                 )
             }
