@@ -45,8 +45,11 @@ window.switchTab = function (tabId) {
 
 function showToast(msg, icon = "✅") {
   const toast = document.getElementById('toast');
-  document.getElementById('toast-icon').innerText = icon;
-  document.getElementById('toast-message').innerText = msg;
+  if (!toast) return;
+  const iconEl = document.getElementById('toast-icon');
+  const msgEl = document.getElementById('toast-message');
+  if (iconEl) iconEl.innerText = icon;
+  if (msgEl) msgEl.innerText = msg;
   toast.classList.add('show');
   setTimeout(() => toast.classList.remove('show'), 3500);
 }
@@ -63,10 +66,11 @@ function log(msg, type = "info") {
 }
 
 window.clearLogs = function () {
-  document.getElementById('log-container').innerHTML = '';
+  const c = document.getElementById('log-container');
+  if (c) c.innerHTML = '';
 };
 
-// UNPAIR MODAL
+// UNPAIR MODAL & ACTIONS
 window.openUnpairModal = function () {
   const modal = document.getElementById('unpair-modal');
   if (modal) modal.classList.add('show');
@@ -79,25 +83,38 @@ window.closeUnpairModal = function () {
 
 window.executeDirectUnpair = async function () {
   try {
+    window.closeUnpairModal();
     let res = null;
-    if (checkIsTauri()) {
-      res = await invokeCommand('unpair_device');
-    }
-    if (!res) {
+
+    // Send unpair command to background daemon REST API first
+    try {
       const resp = await fetch('http://127.0.0.1:47891/api/vault/unpair', { method: 'POST' });
       if (resp.ok) res = await resp.json();
+    } catch (_) {}
+
+    // Also notify Tauri local state if running in Tauri desktop wrapper
+    if (checkIsTauri()) {
+      try {
+        const tauriRes = await invokeCommand('unpair_device');
+        if (!res) res = tauriRes;
+      } catch (_) {}
     }
 
-    window.closeUnpairModal();
-    if (res && res.success) {
-      showToast("Device successfully unpaired!", "🗑️");
-      log("Device successfully unpaired from PC", "warn");
-      fetchStatus();
-      fetchQr();
-    } else {
-      showToast(res?.message || "Unpair failed", "❌");
-      log("Unpair failed: " + (res?.message || "Error"), "error");
-    }
+    // Instantly transition UI to unpaired state
+    isPairedState = false;
+    isPhoneConnectedState = false;
+    const unpairedView = document.getElementById('unpaired-view');
+    const pairedView = document.getElementById('paired-view');
+    if (unpairedView) unpairedView.style.display = 'grid';
+    if (pairedView) pairedView.style.display = 'none';
+    pairingQrObj = null;
+
+    showToast("Device successfully unpaired!", "🗑️");
+    log("Device successfully unpaired from PC", "warn");
+
+    // Immediately fetch updated status and generate fresh QR
+    await fetchStatus();
+    await fetchQr();
   } catch (e) {
     window.closeUnpairModal();
     showToast("Error unpairing device", "❌");
@@ -108,18 +125,21 @@ window.executeDirectUnpair = async function () {
 async function fetchStatus() {
   try {
     let data = null;
-    if (checkIsTauri()) {
-      data = await invokeCommand('get_daemon_status');
-    }
-    if (!data) {
+    try {
       const res = await fetch('http://127.0.0.1:47891/api/status');
       if (res.ok) data = await res.json();
+    } catch (_) {}
+
+    if (!data && checkIsTauri()) {
+      data = await invokeCommand('get_daemon_status');
     }
 
     if (!data) return;
 
-    document.getElementById('pc-name-val').innerText = data.pc_name || 'AuraLock-PC';
-    document.getElementById('pc-port-val').innerText = data.port || 47890;
+    const pcNameEl = document.getElementById('pc-name-val');
+    if (pcNameEl) pcNameEl.innerText = data.pc_name || 'AuraLock-PC';
+    const pcPortEl = document.getElementById('pc-port-val');
+    if (pcPortEl) pcPortEl.innerText = data.port || 47890;
     const setupPort = document.getElementById('setup-port');
     if (setupPort) setupPort.innerText = data.port || 47890;
 
@@ -130,15 +150,19 @@ async function fetchStatus() {
     const pairedView = document.getElementById('paired-view');
 
     if (isPairedState) {
-      unpairedView.style.display = 'none';
-      pairedView.style.display = 'grid';
-      document.getElementById('active-phone-name').innerText = data.paired_phone || 'Android Smartphone';
-      document.getElementById('active-phone-status').innerText = data.is_phone_connected
-        ? `🟢 Hardware Connected (${data.connected_phone || 'Active'})`
-        : '🟡 Hardware Paired • Listening for Connection';
+      if (unpairedView) unpairedView.style.display = 'none';
+      if (pairedView) pairedView.style.display = 'grid';
+      const phoneNameEl = document.getElementById('active-phone-name');
+      if (phoneNameEl) phoneNameEl.innerText = data.paired_phone || 'Android Smartphone';
+      const phoneStatusEl = document.getElementById('active-phone-status');
+      if (phoneStatusEl) {
+        phoneStatusEl.innerText = data.is_phone_connected
+          ? `🟢 Hardware Connected (${data.connected_phone || 'Active'})`
+          : '🟡 Hardware Paired • Listening for Connection';
+      }
     } else {
-      unpairedView.style.display = 'grid';
-      pairedView.style.display = 'none';
+      if (unpairedView) unpairedView.style.display = 'grid';
+      if (pairedView) pairedView.style.display = 'none';
       if (!pairingQrObj) {
         fetchQr();
       }
@@ -191,12 +215,15 @@ async function fetchStatus() {
       if (wifiText) wifiText.innerText = '📶 Wi-Fi: Unpaired';
     }
 
-    if (data.vault_exists) {
-      document.getElementById('vault-status-val').innerText = 'ChaCha20-Poly1305 (Armed)';
-      document.getElementById('vault-status-val').style.color = 'var(--accent-green)';
-    } else {
-      document.getElementById('vault-status-val').innerText = 'Unset (Password Required)';
-      document.getElementById('vault-status-val').style.color = 'var(--accent-yellow)';
+    const vaultStatusEl = document.getElementById('vault-status-val');
+    if (vaultStatusEl) {
+      if (data.vault_exists) {
+        vaultStatusEl.innerText = 'ChaCha20-Poly1305 (Armed)';
+        vaultStatusEl.style.color = 'var(--accent-green)';
+      } else {
+        vaultStatusEl.innerText = 'Unset (Password Required)';
+        vaultStatusEl.style.color = 'var(--accent-yellow)';
+      }
     }
 
     // Transfer State Management (Requires Paired AND Connected Phone)
@@ -279,28 +306,33 @@ async function fetchStatus() {
 // PAIRING QR CODE
 async function fetchQr() {
   try {
-    let data;
-    if (checkIsTauri()) {
-      data = await invokeCommand('get_pairing_qr');
-    } else {
+    let data = null;
+    try {
       const res = await fetch('http://127.0.0.1:47891/api/qr');
-      data = await res.json();
+      if (res.ok) data = await res.json();
+    } catch (_) {}
+
+    if (!data && checkIsTauri()) {
+      data = await invokeCommand('get_pairing_qr');
     }
 
     if (!data) return;
     currentPin = data.pin;
-    document.getElementById('pin-display').innerText = data.pin;
+    const pinDisplay = document.getElementById('pin-display');
+    if (pinDisplay) pinDisplay.innerText = data.pin;
 
     const qrContainer = document.getElementById('qrcode');
-    qrContainer.innerHTML = '';
-    pairingQrObj = new QRCode(qrContainer, {
-      text: JSON.stringify(data.qr_data),
-      width: 200,
-      height: 200,
-      colorDark: "#000000",
-      colorLight: "#ffffff",
-      correctLevel: QRCode.CorrectLevel.M
-    });
+    if (qrContainer) {
+      qrContainer.innerHTML = '';
+      pairingQrObj = new QRCode(qrContainer, {
+        text: JSON.stringify(data.qr_data),
+        width: 200,
+        height: 200,
+        colorDark: "#000000",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    }
   } catch (e) {
     console.error("QR fetch error", e);
   }
@@ -308,12 +340,11 @@ async function fetchQr() {
 
 window.refreshPairing = async function () {
   try {
-    if (checkIsTauri()) {
-      await fetchQr();
-    } else {
+    try {
       await fetch('http://127.0.0.1:47891/api/pair/refresh', { method: 'POST' });
-      await fetchQr();
-    }
+    } catch (_) {}
+    pairingQrObj = null;
+    await fetchQr();
     showToast("Generated new pairing session & PIN", "🔄");
     log("Generated fresh pairing QR & 6-digit PIN", "info");
   } catch (e) {
@@ -343,16 +374,21 @@ window.handleTransferToggle = async function (enabled) {
   }
 
   try {
-    if (checkIsTauri()) {
-      await invokeCommand('toggle_transfer_channel', { enabled });
-      log(enabled ? "AuraDrop transfer channel opened" : "AuraDrop transfer channel closed", "info");
-    } else {
-      await fetch('http://127.0.0.1:47891/api/auradrop/toggle', {
+    let sent = false;
+    try {
+      const res = await fetch('http://127.0.0.1:47891/api/auradrop/toggle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled })
       });
+      if (res.ok) sent = true;
+    } catch (_) {}
+
+    if (!sent && checkIsTauri()) {
+      await invokeCommand('toggle_transfer_channel', { enabled });
     }
+
+    log(enabled ? "AuraDrop transfer channel opened" : "AuraDrop transfer channel closed", "info");
     showToast(enabled ? "Transfer Channel Opened ⚡" : "Transfer Channel Closed 🔒", enabled ? "⚡" : "🔒");
     fetchStatus();
   } catch (e) {
@@ -375,12 +411,14 @@ window.testUnlock = async function () {
   showToast("Sending biometric challenge to phone...", "🧪");
   log("Triggering manual test biometric challenge...", "info");
   try {
-    let data;
-    if (checkIsTauri()) {
-      data = await invokeCommand('trigger_test_unlock');
-    } else {
+    let data = null;
+    try {
       const res = await fetch('http://127.0.0.1:47891/api/unlock/test', { method: 'POST' });
-      data = await res.json();
+      if (res.ok) data = await res.json();
+    } catch (_) {}
+
+    if (!data && checkIsTauri()) {
+      data = await invokeCommand('trigger_test_unlock');
     }
 
     if (data && data.success) {
@@ -402,16 +440,18 @@ window.savePassword = async function () {
     return;
   }
   try {
-    let data;
-    if (checkIsTauri()) {
-      data = await invokeCommand('save_vault_password', { password: pwd });
-    } else {
+    let data = null;
+    try {
       const res = await fetch('http://127.0.0.1:47891/api/vault/password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: pwd })
       });
-      data = await res.json();
+      if (res.ok) data = await res.json();
+    } catch (_) {}
+
+    if (!data && checkIsTauri()) {
+      data = await invokeCommand('save_vault_password', { password: pwd });
     }
 
     if (data && data.success) {
@@ -433,16 +473,18 @@ window.sendClipboard = async function () {
     return;
   }
   try {
-    let data;
-    if (checkIsTauri()) {
-      data = await invokeCommand('send_auradrop_text', { text });
-    } else {
+    let data = null;
+    try {
       const res = await fetch('http://127.0.0.1:47891/api/auradrop/send-text', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text })
       });
-      data = await res.json();
+      if (res.ok) data = await res.json();
+    } catch (_) {}
+
+    if (!data && checkIsTauri()) {
+      data = await invokeCommand('send_auradrop_text', { text });
     }
 
     if (data && data.success) {
@@ -466,9 +508,9 @@ window.handleFileSelected = async function (files) {
   const progressFill = document.getElementById('upload-progress-fill');
   const statusText = document.getElementById('upload-status-text');
 
-  progressBox.style.display = 'block';
-  progressFill.style.width = '15%';
-  statusText.innerText = `Streaming ${file.name} to Phone...`;
+  if (progressBox) progressBox.style.display = 'block';
+  if (progressFill) progressFill.style.width = '15%';
+  if (statusText) statusText.innerText = `Streaming ${file.name} to Phone...`;
   log(`Starting AuraDrop file transfer: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`, "info");
 
   const formData = new FormData();
@@ -481,18 +523,21 @@ window.handleFileSelected = async function (files) {
     });
     const data = await res.json();
     if (data.success) {
-      progressFill.style.width = '100%';
-      statusText.innerText = `✅ Sent ${file.name} successfully!`;
+      if (progressFill) progressFill.style.width = '100%';
+      if (statusText) statusText.innerText = `✅ Sent ${file.name} successfully!`;
       showToast(`Sent ${file.name} to Phone!`, "🚀");
       log(`File ${file.name} successfully transferred to phone`, "success");
-      setTimeout(() => { progressBox.style.display = 'none'; statusText.innerText = ''; }, 3000);
+      setTimeout(() => { 
+        if (progressBox) progressBox.style.display = 'none'; 
+        if (statusText) statusText.innerText = ''; 
+      }, 3000);
     } else {
-      statusText.innerText = `❌ ${data.message || 'Transfer failed'}`;
+      if (statusText) statusText.innerText = `❌ ${data.message || 'Transfer failed'}`;
       showToast(data.message || "Transfer failed", "❌");
       log(`File transfer failed: ${data.message}`, "error");
     }
   } catch (e) {
-    statusText.innerText = '❌ Failed to transfer file';
+    if (statusText) statusText.innerText = '❌ Failed to transfer file';
     showToast("Transfer error", "❌");
   }
 };
@@ -500,18 +545,22 @@ window.handleFileSelected = async function (files) {
 // RECEIVED FILES
 async function fetchReceivedFiles() {
   try {
-    let files;
-    if (checkIsTauri()) {
-      files = await invokeCommand('get_received_files');
-    } else {
+    let files = null;
+    try {
       const res = await fetch('http://127.0.0.1:47891/api/auradrop/files');
-      files = await res.json();
+      if (res.ok) files = await res.json();
+    } catch (_) {}
+
+    if (!files && checkIsTauri()) {
+      files = await invokeCommand('get_received_files');
     }
 
     if (!files) return;
     const list = document.getElementById('files-list');
-    document.getElementById('received-badge').innerText = files.length;
+    const badge = document.getElementById('received-badge');
+    if (badge) badge.innerText = files.length;
 
+    if (!list) return;
     if (files.length === 0) {
       list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 2rem;">No files received yet. Share files from your phone\'s AuraLock app!</p>';
       return;
@@ -538,10 +587,14 @@ async function fetchReceivedFiles() {
 
 window.openDownloadsFolder = async function () {
   try {
-    if (checkIsTauri()) {
+    let ok = false;
+    try {
+      const res = await fetch('http://127.0.0.1:47891/api/auradrop/open-folder', { method: 'POST' });
+      if (res.ok) ok = true;
+    } catch (_) {}
+
+    if (!ok && checkIsTauri()) {
       await invokeCommand('open_downloads_folder');
-    } else {
-      await fetch('http://127.0.0.1:47891/api/auradrop/open-folder', { method: 'POST' });
     }
     showToast("Opened Downloads/AuraLock in file manager", "📂");
   } catch (e) {
@@ -583,11 +636,23 @@ function setupWebSocket() {
       } else if (ev.type === 'DeviceUnpaired') {
         log("Device unpaired in real-time", "warn");
         showToast("Device unpaired", "🗑️");
+        isPairedState = false;
+        isPhoneConnectedState = false;
+        const unpairedView = document.getElementById('unpaired-view');
+        const pairedView = document.getElementById('paired-view');
+        if (unpairedView) unpairedView.style.display = 'grid';
+        if (pairedView) pairedView.style.display = 'none';
+        pairingQrObj = null;
         fetchStatus();
         fetchQr();
       } else if (ev.type === 'PairingSuccess') {
         log(`Pairing completed with ${ev.data.phone_name}`, "success");
         showToast(`Paired with ${ev.data.phone_name}!`, "🎉");
+        isPairedState = true;
+        const unpairedView = document.getElementById('unpaired-view');
+        const pairedView = document.getElementById('paired-view');
+        if (unpairedView) unpairedView.style.display = 'none';
+        if (pairedView) pairedView.style.display = 'grid';
         fetchStatus();
       } else if (ev.type === 'UnlockEvent') {
         if (ev.data.success) {
@@ -632,4 +697,4 @@ function setupWebSocket() {
 fetchStatus();
 fetchReceivedFiles();
 setupWebSocket();
-setInterval(fetchStatus, 4000);
+setInterval(fetchStatus, 2000);

@@ -18,7 +18,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[derive(Parser)]
 #[command(name = "auralock")]
 #[command(author = "msm.movin")]
-#[command(version = "1.3.1")]
+#[command(version = "1.4.0")]
 #[command(about = "Instant Remote Biometric Unlock & AuraDrop for Windows & Linux", long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -55,24 +55,7 @@ enum Commands {
 }
 
 fn get_default_vault_path() -> PathBuf {
-    let mut path = dirs_next::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    path.push("auralock");
-    path.push("vault.json");
-    path
-}
-
-mod dirs_next {
-    use std::path::PathBuf;
-    pub fn config_dir() -> Option<PathBuf> {
-        #[cfg(unix)]
-        {
-            std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config"))
-        }
-        #[cfg(windows)]
-        {
-            std::env::var_os("APPDATA").map(PathBuf::from)
-        }
-    }
+    auralock_core::vault::get_default_vault_path()
 }
 
 fn launch_desktop_window(url: &str) {
@@ -219,9 +202,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 vault_mgr.clone(),
             ));
 
-            let local_ip = local_ip_address::local_ip()
-                .map(|ip| ip.to_string())
-                .unwrap_or_else(|_| "127.0.0.1".to_string());
+            let local_ip = auralock_core::network::get_best_local_ip();
 
             let qr_data = net_service.generate_qr_payload(&local_ip, &ephem_pub_hex).await;
             let qr_json = serde_json::to_string(&qr_data)?;

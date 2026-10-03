@@ -160,8 +160,10 @@ private fun CameraPreviewWithScanner(
             .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
             .build()
     }
-    val barcodeScanner = remember { BarcodeScanning.getClient(barcodeOptions) }
+    
+    // Manage executor and scanner per lifecycle
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    val barcodeScanner = remember { BarcodeScanning.getClient(barcodeOptions) }
 
     var isTorchOn by remember { mutableStateOf(false) }
     var camera by remember { mutableStateOf<Camera?>(null) }
@@ -181,15 +183,17 @@ private fun CameraPreviewWithScanner(
         label = "LaserOffset"
     )
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(Unit) {
         onDispose {
             try {
                 cameraProviderInstance?.unbindAll()
-            } catch (_: Exception) {}
-            cameraExecutor.shutdown()
+            } catch (_: Throwable) {}
+            try {
+                cameraExecutor.shutdown()
+            } catch (_: Throwable) {}
             try {
                 barcodeScanner.close()
-            } catch (_: Exception) {}
+            } catch (_: Throwable) {}
         }
     }
 
@@ -202,52 +206,75 @@ private fun CameraPreviewWithScanner(
                         scaleType = PreviewView.ScaleType.FILL_CENTER
                     }
 
-                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                    cameraProviderFuture.addListener({
-                        try {
-                            val cameraProvider = cameraProviderFuture.get()
-                            cameraProviderInstance = cameraProvider
+                    try {
+                        val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                        cameraProviderFuture.addListener({
+                            try {
+                                if (cameraExecutor.isShutdown) return@addListener
+                                val cameraProvider = cameraProviderFuture.get()
+                                cameraProviderInstance = cameraProvider
 
-                            val preview = Preview.Builder().build().also {
-                                it.setSurfaceProvider(previewView.surfaceProvider)
-                            }
+                                val preview = Preview.Builder().build().also {
+                                    it.setSurfaceProvider(previewView.surfaceProvider)
+                                }
 
-                            val imageAnalysis = ImageAnalysis.Builder()
-                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                .build()
+                                val imageAnalysis = ImageAnalysis.Builder()
+                                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                    .build()
 
-                            imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy: ImageProxy ->
-                                processImageProxy(
-                                    imageProxy = imageProxy,
-                                    barcodeScanner = barcodeScanner,
-                                    onResult = { rawText ->
-                                        if (!hasScanned) {
-                                            val parsed = ParsedQrData.parse(rawText)
-                                            if (parsed != null && parsed.pin.isNotBlank()) {
-                                                hasScanned = true
-                                                ContextCompat.getMainExecutor(context).execute {
-                                                    onQrCodeDetected(parsed)
+                                imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy: ImageProxy ->
+                                    if (hasScanned || cameraExecutor.isShutdown) {
+                                        try { imageProxy.close() } catch (_: Throwable) {}
+                                        return@setAnalyzer
+                                    }
+                                    processImageProxy(
+                                        imageProxy = imageProxy,
+                                        barcodeScanner = barcodeScanner,
+                                        onResult = { rawText ->
+                                            if (!hasScanned) {
+                                                val parsed = ParsedQrData.parse(rawText)
+                                                if (parsed != null && parsed.pin.isNotBlank()) {
+                                                    hasScanned = true
+                                                    try {
+                                                        ContextCompat.getMainExecutor(context).execute {
+                                                            onQrCodeDetected(parsed)
+                                                        }
+                                                    } catch (_: Throwable) {}
                                                 }
                                             }
                                         }
-                                    }
-                                )
-                            }
+                                    )
+                                }
 
-                            cameraProvider.unbindAll()
-                            camera = cameraProvider.bindToLifecycle(
-                                lifecycleOwner,
-                                CameraSelector.DEFAULT_BACK_CAMERA,
-                                preview,
-                                imageAnalysis
-                            )
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                            ContextCompat.getMainExecutor(context).execute {
-                                cameraError = "Could not initialize camera: ${e.localizedMessage ?: "Unknown error"}"
+                                cameraProvider.unbindAll()
+
+                                val cameraSelector = if (cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) {
+                                    CameraSelector.DEFAULT_BACK_CAMERA
+                                } else if (cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
+                                    CameraSelector.DEFAULT_FRONT_CAMERA
+                                } else {
+                                    CameraSelector.DEFAULT_BACK_CAMERA
+                                }
+
+                                camera = cameraProvider.bindToLifecycle(
+                                    lifecycleOwner,
+                                    cameraSelector,
+                                    preview,
+                                    imageAnalysis
+                                )
+                            } catch (e: Throwable) {
+                                e.printStackTrace()
+                                try {
+                                    ContextCompat.getMainExecutor(context).execute {
+                                        cameraError = "Could not initialize camera: ${e.localizedMessage ?: "Hardware busy or unavailable"}"
+                                    }
+                                } catch (_: Throwable) {}
                             }
-                        }
-                    }, ContextCompat.getMainExecutor(ctx))
+                        }, ContextCompat.getMainExecutor(ctx))
+                    } catch (e: Throwable) {
+                        e.printStackTrace()
+                        cameraError = "Camera provider initialization failed: ${e.localizedMessage ?: "Unknown error"}"
+                    }
 
                     previewView
                 },
@@ -519,17 +546,22 @@ private fun processImageProxy(
                         }
                     }
                 }
+                .addOnFailureListener {
+                    // Gracefully ignore frame parse error
+                }
                 .addOnCompleteListener {
                     try {
                         imageProxy.close()
-                    } catch (_: Exception) {}
+                    } catch (_: Throwable) {}
                 }
         } else {
-            imageProxy.close()
+            try {
+                imageProxy.close()
+            } catch (_: Throwable) {}
         }
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
         try {
             imageProxy.close()
-        } catch (_: Exception) {}
+        } catch (_: Throwable) {}
     }
 }

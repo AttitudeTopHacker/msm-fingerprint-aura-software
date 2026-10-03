@@ -960,10 +960,18 @@
       if (!confirm("Are you sure you want to unpair your Android phone?")) return;
       try {
         await fetch('/api/vault/unpair', { method: 'POST' });
-        showToast("Device unpaired", "🗑️");
-        fetchStatus();
-        fetchQr();
+        isPairedState = false;
+        isPhoneConnectedState = false;
+        const unpairedView = document.getElementById('unpaired-view');
+        const pairedView = document.getElementById('paired-view');
+        if (unpairedView) unpairedView.style.display = 'grid';
+        if (pairedView) pairedView.style.display = 'none';
+        pairingQrObj = null;
+
+        showToast("Device successfully unpaired!", "🗑️");
         log("Device unpaired by user", "warn");
+        await fetchStatus();
+        await fetchQr();
       } catch (e) {
         showToast("Failed to unpair", "❌");
       }
@@ -1107,11 +1115,23 @@
           } else if (ev.type === 'DeviceUnpaired') {
             log("Device unpaired in real-time", "warn");
             showToast("Device unpaired", "🗑️");
+            isPairedState = false;
+            isPhoneConnectedState = false;
+            const unpairedView = document.getElementById('unpaired-view');
+            const pairedView = document.getElementById('paired-view');
+            if (unpairedView) unpairedView.style.display = 'grid';
+            if (pairedView) pairedView.style.display = 'none';
+            pairingQrObj = null;
             fetchStatus();
             fetchQr();
           } else if (ev.type === 'PairingSuccess') {
             log(`Pairing completed with ${ev.data.phone_name}`, "success");
             showToast(`Paired with ${ev.data.phone_name}!`, "🎉");
+            isPairedState = true;
+            const unpairedView = document.getElementById('unpaired-view');
+            const pairedView = document.getElementById('paired-view');
+            if (unpairedView) unpairedView.style.display = 'none';
+            if (pairedView) pairedView.style.display = 'grid';
             fetchStatus();
           } else if (ev.type === 'UnlockEvent') {
             if (ev.data.success) {

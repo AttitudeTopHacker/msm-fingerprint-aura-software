@@ -209,17 +209,26 @@ impl NetworkService {
             let mut phone_pin_guard = self.active_phone_unpair_pin.lock().await;
             *phone_pin_guard = None;
         }
-        self.broadcast_event(WebEvent::DeviceUnpaired);
-        self.broadcast_event(WebEvent::ClientDisconnected);
+        {
+            let mut qr_guard = self.latest_qr_data.lock().await;
+            *qr_guard = None;
+        }
 
-        // Notify phone if connected so it unpairs too
-        if let Some(tx) = &*self.active_client.lock().await {
+        // Notify phone if connected so it unpairs too, and disconnect active client
+        let client_opt = {
+            let mut client_guard = self.active_client.lock().await;
+            client_guard.take()
+        };
+        if let Some(tx) = client_opt {
             let resp = ProtocolMessage::UnpairResp(crate::protocol::RemoteUnpairResponse {
                 success: true,
                 message: "Device successfully unpaired".into(),
             });
             let _ = tx.send(resp).await;
         }
+
+        self.broadcast_event(WebEvent::DeviceUnpaired);
+        self.broadcast_event(WebEvent::ClientDisconnected);
         true
     }
 
@@ -935,6 +944,48 @@ pub fn is_pc_bluetooth_active() -> bool {
     {
         true
     }
+}
+
+/// Reliably resolves the best non-loopback local network IP (Wi-Fi / LAN),
+/// avoiding internal Docker, bridge, or virtual adapter interfaces.
+pub fn get_best_local_ip() -> String {
+    // 1. Ask OS routing table via UDP connect (no traffic sent, 100% accurate for active route)
+    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+        if socket.connect("8.8.8.8:80").is_ok() {
+            if let Ok(addr) = socket.local_addr() {
+                let ip = addr.ip();
+                if !ip.is_loopback() && !ip.is_unspecified() {
+                    return ip.to_string();
+                }
+            }
+        }
+    }
+
+    // 2. Iterate network interfaces excluding virtual/docker bridges
+    if let Ok(interfaces) = local_ip_address::list_afinet_netifas() {
+        for (name, ip) in interfaces {
+            let lower = name.to_lowercase();
+            if lower.starts_with("lo")
+                || lower.starts_with("docker")
+                || lower.starts_with("br-")
+                || lower.starts_with("veth")
+                || lower.starts_with("virbr")
+                || lower.starts_with("vmnet")
+            {
+                continue;
+            }
+            if let std::net::IpAddr::V4(ipv4) = ip {
+                if !ipv4.is_loopback() && !ipv4.is_link_local() {
+                    return ipv4.to_string();
+                }
+            }
+        }
+    }
+
+    // 3. Fallback
+    local_ip_address::local_ip()
+        .map(|ip| ip.to_string())
+        .unwrap_or_else(|_| "127.0.0.1".to_string())
 }
 
 /// Helper function to trigger Linux / Windows desktop lockscreen

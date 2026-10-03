@@ -8,6 +8,10 @@ plugins {
     alias(libs.plugins.kotlin.android)
 }
 
+val rootDir = rootProject.projectDir.parentFile?.parentFile
+val versionFile = rootDir?.resolve("VERSION")
+val appVersionName = if (versionFile?.exists() == true) versionFile.readText().trim() else "1.4.0"
+
 android {
     namespace = "com.msm.movin.auralock"
     compileSdk = 34
@@ -16,8 +20,8 @@ android {
         applicationId = "com.msm.movin.auralock"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.3.2"
+        versionCode = 9
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -44,6 +48,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.8"

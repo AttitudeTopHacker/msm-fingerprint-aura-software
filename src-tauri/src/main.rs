@@ -18,10 +18,7 @@ struct AppStateWrapper {
 }
 
 fn get_default_vault_path() -> PathBuf {
-    let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    path.push("auralock");
-    path.push("vault.json");
-    path
+    auralock_core::vault::get_default_vault_path()
 }
 
 #[derive(Serialize)]
@@ -86,9 +83,7 @@ async fn get_daemon_status(state: State<'_, AppStateWrapper>) -> Result<DaemonSt
 
 #[tauri::command]
 async fn get_pairing_qr(state: State<'_, AppStateWrapper>) -> Result<QrDataResponse, String> {
-    let local_ip = local_ip_address::local_ip()
-        .map(|ip| ip.to_string())
-        .unwrap_or_else(|_| "127.0.0.1".to_string());
+    let local_ip = auralock_core::network::get_best_local_ip();
 
     let (_, ephem_pub) = generate_x25519_keypair();
     let ephem_pub_hex = hex::encode(ephem_pub.as_bytes());
@@ -216,9 +211,7 @@ async fn unpair_device(state: State<'_, AppStateWrapper>) -> Result<CommandResul
 #[tauri::command]
 async fn toggle_transfer_channel(enabled: bool, state: State<'_, AppStateWrapper>) -> Result<TransferToggleResult, String> {
     let (en, pin) = state.net_service.toggle_transfer(enabled).await;
-    let local_ip = local_ip_address::local_ip()
-        .map(|ip| ip.to_string())
-        .unwrap_or_else(|_| "127.0.0.1".to_string());
+    let local_ip = auralock_core::network::get_best_local_ip();
 
     let qr_payload = serde_json::json!({
         "v": 1,

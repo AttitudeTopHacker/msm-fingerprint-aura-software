@@ -161,9 +161,7 @@ async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
 }
 
 async fn get_qr(State(state): State<AppState>) -> Json<QrResponse> {
-    let local_ip = local_ip_address::local_ip()
-        .map(|ip| ip.to_string())
-        .unwrap_or_else(|_| "127.0.0.1".to_string());
+    let local_ip = crate::network::get_best_local_ip();
 
     let (_, ephem_pub) = generate_x25519_keypair();
     let ephem_pub_hex = hex::encode(ephem_pub.as_bytes());
@@ -180,9 +178,7 @@ async fn get_qr(State(state): State<AppState>) -> Json<QrResponse> {
 }
 
 async fn refresh_pairing(State(state): State<AppState>) -> Json<ApiResponse> {
-    let local_ip = local_ip_address::local_ip()
-        .map(|ip| ip.to_string())
-        .unwrap_or_else(|_| "127.0.0.1".to_string());
+    let local_ip = crate::network::get_best_local_ip();
 
     let (_, ephem_pub) = generate_x25519_keypair();
     let ephem_pub_hex = hex::encode(ephem_pub.as_bytes());

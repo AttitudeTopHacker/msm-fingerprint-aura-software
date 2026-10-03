@@ -9,7 +9,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/auralock daemon
+ExecStart=/usr/bin/auralock-cli daemon --headless
 Restart=on-failure
 RestartSec=5
 

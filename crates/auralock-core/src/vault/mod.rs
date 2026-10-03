@@ -75,6 +75,39 @@ fn default_security_pin() -> String {
     "1234".to_string()
 }
 
+pub fn get_default_vault_path() -> PathBuf {
+    if let Ok(val) = std::env::var("AURALOCK_VAULT_PATH") {
+        return PathBuf::from(val);
+    }
+    #[cfg(unix)]
+    {
+        let sys_path = PathBuf::from("/etc/auralock/vault.json");
+        if sys_path.exists() {
+            return sys_path;
+        }
+        if let Some(home) = std::env::var_os("HOME") {
+            let p = PathBuf::from(home).join(".config").join("auralock").join("vault.json");
+            if p.exists() {
+                return p;
+            }
+        }
+        if std::env::var("USER").map(|u| u == "root").unwrap_or(false) || std::path::Path::new("/etc/auralock").exists() {
+            return sys_path;
+        }
+        if let Some(home) = std::env::var_os("HOME") {
+            return PathBuf::from(home).join(".config").join("auralock").join("vault.json");
+        }
+        sys_path
+    }
+    #[cfg(windows)]
+    {
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            return PathBuf::from(appdata).join("auralock").join("vault.json");
+        }
+        PathBuf::from("vault.json")
+    }
+}
+
 pub struct VaultManager {
     vault_file_path: PathBuf,
 }
@@ -125,7 +158,15 @@ impl VaultManager {
     /// Clears and removes the vault file from disk
     pub fn clear(&self) -> Result<()> {
         if self.exists() {
-            std::fs::remove_file(&self.vault_file_path)?;
+            let _ = std::fs::remove_file(&self.vault_file_path);
+            if self.exists() {
+                if let Ok(mut vault) = self.load() {
+                    vault.paired_phone = None;
+                    if let Ok(json_str) = serde_json::to_string_pretty(&vault) {
+                        let _ = std::fs::write(&self.vault_file_path, json_str);
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -158,9 +199,11 @@ impl VaultManager {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&self.vault_file_path)?.permissions();
-            perms.set_mode(0o600);
-            std::fs::set_permissions(&self.vault_file_path, perms)?;
+            if let Ok(meta) = std::fs::metadata(&self.vault_file_path) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o644);
+                let _ = std::fs::set_permissions(&self.vault_file_path, perms);
+            }
         }
 
         Ok(())
@@ -220,13 +263,15 @@ impl VaultManager {
         let json = serde_json::to_string_pretty(&vault_data)?;
         std::fs::write(&self.vault_file_path, json)?;
 
-        // Set strict file permissions (0600 on unix)
+        // Set readable permissions for PAM and user app
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&self.vault_file_path)?.permissions();
-            perms.set_mode(0o600);
-            std::fs::set_permissions(&self.vault_file_path, perms)?;
+            if let Ok(meta) = std::fs::metadata(&self.vault_file_path) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o644);
+                let _ = std::fs::set_permissions(&self.vault_file_path, perms);
+            }
         }
 
         Ok(())
