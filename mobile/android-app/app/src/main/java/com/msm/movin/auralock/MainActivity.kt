@@ -464,16 +464,12 @@ class MainActivity : FragmentActivity() {
         }
 
         val checkBluetoothAndExecute: (() -> Unit) -> Unit = { action ->
-            if (!isBluetoothEnabledState.value) {
-                showBluetoothRequiredDialog = true
-            } else {
-                action()
-            }
+            action()
         }
 
-        // Auto-connect on launch if enabled (only if Bluetooth is enabled and device is paired)
+        // Auto-connect on launch if enabled and device is paired
         LaunchedEffect(Unit) {
-            if (autoConnectEnabledState && isPairedState && !isConnectedState && isBluetoothEnabledState.value && pcIpState.isNotBlank()) {
+            if (autoConnectEnabledState && isPairedState && !isConnectedState && pcIpState.isNotBlank()) {
                 delay(300)
                 connectToDaemon(pcIpState, pcPortState, pcNameState) { success, msg ->
                     isConnectedState = success
@@ -592,35 +588,39 @@ class MainActivity : FragmentActivity() {
                 }
 
                 val performUnlockPc: () -> Unit = {
-                    checkBluetoothAndExecute {
-                        lifecycleScope.launch {
-                            if (isLockActionPendingState) return@launch
-                            isLockActionPendingState = true
-                            var activeClient = client
-                            if (activeClient == null || !isConnectedState) {
-                                if (isPairedState && pcIpState.isNotBlank()) {
-                                    val newClient = AuraLockClient(pcIpState, pcPortState)
-                                    if (newClient.connect()) {
-                                        client = newClient
-                                        isConnectedState = true
-                                        activeClient = newClient
-                                        AuraLockService.start(this@MainActivity, pcNameState)
-                                        listenToClientEvents(newClient, pcIpState, pcPortState, pcNameState)
-                                    }
-                                }
+                    lifecycleScope.launch {
+                        if (isLockActionPendingState) return@launch
+                        if (!isPairedState || pcIpState.isBlank()) {
+                            Toast.makeText(this@MainActivity, "No PC is paired yet", Toast.LENGTH_SHORT).show()
+                            return@launch
+                        }
+                        if (!isPcLockedState) {
+                            Toast.makeText(this@MainActivity, "💻 PC is already UNLOCKED", Toast.LENGTH_SHORT).show()
+                            return@launch
+                        }
+                        isLockActionPendingState = true
+                        var activeClient = client
+                        if (activeClient == null || !isConnectedState) {
+                            val newClient = AuraLockClient(pcIpState, pcPortState)
+                            if (newClient.connect()) {
+                                client = newClient
+                                isConnectedState = true
+                                activeClient = newClient
+                                AuraLockService.start(this@MainActivity, pcNameState)
+                                listenToClientEvents(newClient, pcIpState, pcPortState, pcNameState)
                             }
-                            val targetClient = activeClient
-                            if (targetClient != null && isConnectedState) {
-                                val sent = targetClient.sendUnlockTrigger()
-                                if (!sent) {
-                                    testBiometricsPrompt()
-                                }
-                            } else {
+                        }
+                        val targetClient = activeClient
+                        if (targetClient != null && isConnectedState) {
+                            val sent = targetClient.sendUnlockTrigger()
+                            if (!sent) {
                                 testBiometricsPrompt()
                             }
-                            delay(500)
-                            isLockActionPendingState = false
+                        } else {
+                            Toast.makeText(this@MainActivity, "Cannot reach PC to unlock", Toast.LENGTH_SHORT).show()
                         }
+                        delay(500)
+                        isLockActionPendingState = false
                     }
                 }
 
@@ -628,12 +628,6 @@ class MainActivity : FragmentActivity() {
                     lifecycleScope.launch {
                         triggerHapticFeedback()
                         isRefreshingStatusState = true
-                        if (!isBluetoothEnabledState.value) {
-                            requestEnableBluetooth()
-                            Toast.makeText(this@MainActivity, "Please enable Bluetooth to connect", Toast.LENGTH_SHORT).show()
-                            isRefreshingStatusState = false
-                            return@launch
-                        }
                         if (!isPairedState || pcIpState.isBlank()) {
                             Toast.makeText(this@MainActivity, "No PC paired yet. Tap 'Scan QR' to link.", Toast.LENGTH_SHORT).show()
                             isRefreshingStatusState = false
