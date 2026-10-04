@@ -9,7 +9,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "1.4.2"
+version = "1.4.3"
 authors = ["msm.movin <contact@msm.movin>"]
 edition = "2021"
 license = "Proprietary"
