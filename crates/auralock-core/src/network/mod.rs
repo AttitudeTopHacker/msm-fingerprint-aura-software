@@ -311,6 +311,19 @@ impl NetworkService {
         }
     }
 
+    /// Immediately cancels active biometric challenge and notifies connected phone
+    pub async fn cancel_challenge(&self) {
+        self.state_mgr.cancel_all_challenges().await;
+        let guard = self.active_client.lock().await;
+        if let Some(tx) = &*guard {
+            let msg = ProtocolMessage::Result(UnlockResult {
+                success: false,
+                message: "Biometric challenge cancelled by PC (Esc pressed)".into(),
+            });
+            let _ = tx.send(msg).await;
+        }
+    }
+
     /// Send a file from PC to connected Phone (AuraDrop PC -> Mobile)
     pub async fn send_file_to_phone(
         &self,
@@ -642,12 +655,17 @@ impl NetworkService {
                 let recent_pins = self.recent_pairing_pins.lock().await.clone();
                 let latest_qr_pin = self.latest_qr_data.lock().await.as_ref().map(|q| q.pin.clone());
 
-                let pin_matches = if let Some(ref p) = active_pin {
-                    p == &req.pin || recent_pins.contains(&req.pin) || latest_qr_pin.as_ref() == Some(&req.pin)
-                } else if !recent_pins.is_empty() {
-                    recent_pins.contains(&req.pin)
-                } else if let Some(ref qp) = latest_qr_pin {
-                    qp == &req.pin
+                let req_pin: String = req.pin.chars().filter(|c| c.is_ascii_digit()).collect();
+                let active_pin_clean: Option<String> = active_pin.as_ref().map(|p| p.chars().filter(|c| c.is_ascii_digit()).collect());
+                let recent_pins_clean: Vec<String> = recent_pins.iter().map(|p| p.chars().filter(|c| c.is_ascii_digit()).collect()).collect();
+                let qr_pin_clean: Option<String> = latest_qr_pin.as_ref().map(|q| q.chars().filter(|c| c.is_ascii_digit()).collect());
+
+                let pin_matches = if let Some(ref p) = active_pin_clean {
+                    p == &req_pin || recent_pins_clean.contains(&req_pin) || qr_pin_clean.as_ref() == Some(&req_pin) || req.pin.trim() == p
+                } else if !recent_pins_clean.is_empty() {
+                    recent_pins_clean.contains(&req_pin) || recent_pins.contains(&req.pin)
+                } else if let Some(ref qp) = qr_pin_clean {
+                    qp == &req_pin || latest_qr_pin.as_ref() == Some(&req.pin)
                 } else {
                     // No PIN was generated yet on PC
                     true

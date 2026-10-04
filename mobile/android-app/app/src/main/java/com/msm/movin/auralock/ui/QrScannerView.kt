@@ -6,6 +6,7 @@
 package com.msm.movin.auralock.ui
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -55,6 +57,7 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import com.msm.movin.auralock.model.ParsedQrData
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 @Composable
@@ -125,7 +128,7 @@ fun QrScannerView(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "AuraLock requires camera permission to scan your PC's pairing QR code from the terminal.",
+                    text = "AuraLock requires camera permission to scan your PC's pairing QR code from the terminal or desktop app.",
                     color = Color(0xFF94A3B8),
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center
@@ -186,21 +189,35 @@ private fun CameraPreviewWithScanner(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    val barcodeOptions = remember {
-        BarcodeScannerOptions.Builder()
-            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-            .build()
+    // Safely initialize MLKit Barcode Scanner
+    val barcodeScanner = remember {
+        try {
+            val barcodeOptions = BarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                .build()
+            BarcodeScanning.getClient(barcodeOptions)
+        } catch (e: Throwable) {
+            e.printStackTrace()
+            null
+        }
     }
-    
-    // Manage executor and scanner per lifecycle
-    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
-    val barcodeScanner = remember { BarcodeScanning.getClient(barcodeOptions) }
+
+    var cameraExecutor by remember {
+        mutableStateOf<ExecutorService?>(null)
+    }
+
+    LaunchedEffect(Unit) {
+        if (cameraExecutor == null || cameraExecutor?.isShutdown == true) {
+            cameraExecutor = Executors.newSingleThreadExecutor()
+        }
+    }
 
     var isTorchOn by remember { mutableStateOf(false) }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var cameraProviderInstance by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var hasScanned by remember { mutableStateOf(false) }
     var cameraError by remember { mutableStateOf<String?>(null) }
+    var reloadTrigger by remember { mutableIntStateOf(0) }
 
     // Animated vertical laser sweep
     val infiniteTransition = rememberInfiniteTransition(label = "LaserSweep")
@@ -220,97 +237,105 @@ private fun CameraPreviewWithScanner(
                 cameraProviderInstance?.unbindAll()
             } catch (_: Throwable) {}
             try {
-                cameraExecutor.shutdown()
+                cameraExecutor?.shutdown()
             } catch (_: Throwable) {}
             try {
-                barcodeScanner.close()
+                barcodeScanner?.close()
             } catch (_: Throwable) {}
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (cameraError == null) {
-            AndroidView(
-                factory = { ctx ->
-                    val previewView = PreviewView(ctx).apply {
-                        implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-                        scaleType = PreviewView.ScaleType.FILL_CENTER
-                    }
+            key(reloadTrigger) {
+                AndroidView(
+                    factory = { ctx ->
+                        val previewView = PreviewView(ctx).apply {
+                            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                            scaleType = PreviewView.ScaleType.FILL_CENTER
+                        }
 
-                    try {
-                        val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                        cameraProviderFuture.addListener({
-                            try {
-                                if (cameraExecutor.isShutdown) return@addListener
-                                val cameraProvider = cameraProviderFuture.get()
-                                cameraProviderInstance = cameraProvider
-
-                                val preview = Preview.Builder().build().also {
-                                    it.setSurfaceProvider(previewView.surfaceProvider)
-                                }
-
-                                val imageAnalysis = ImageAnalysis.Builder()
-                                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                    .build()
-
-                                imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy: ImageProxy ->
-                                    if (hasScanned || cameraExecutor.isShutdown) {
-                                        try { imageProxy.close() } catch (_: Throwable) {}
-                                        return@setAnalyzer
-                                    }
-                                    processImageProxy(
-                                        imageProxy = imageProxy,
-                                        barcodeScanner = barcodeScanner,
-                                        onResult = { rawText ->
-                                            if (!hasScanned) {
-                                                val parsed = ParsedQrData.parse(rawText)
-                                                if (parsed != null && parsed.pin.isNotBlank()) {
-                                                    hasScanned = true
-                                                    try {
-                                                        ContextCompat.getMainExecutor(context).execute {
-                                                            onQrCodeDetected(parsed)
-                                                        }
-                                                    } catch (_: Throwable) {}
-                                                }
-                                            }
-                                        }
-                                    )
-                                }
-
-                                cameraProvider.unbindAll()
-
-                                val cameraSelector = if (cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) {
-                                    CameraSelector.DEFAULT_BACK_CAMERA
-                                } else if (cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
-                                    CameraSelector.DEFAULT_FRONT_CAMERA
-                                } else {
-                                    CameraSelector.DEFAULT_BACK_CAMERA
-                                }
-
-                                camera = cameraProvider.bindToLifecycle(
-                                    lifecycleOwner,
-                                    cameraSelector,
-                                    preview,
-                                    imageAnalysis
-                                )
-                            } catch (e: Throwable) {
-                                e.printStackTrace()
+                        try {
+                            val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                            cameraProviderFuture.addListener({
                                 try {
-                                    ContextCompat.getMainExecutor(context).execute {
-                                        cameraError = "Could not initialize camera: ${e.localizedMessage ?: "Hardware busy or unavailable"}"
-                                    }
-                                } catch (_: Throwable) {}
-                            }
-                        }, ContextCompat.getMainExecutor(ctx))
-                    } catch (e: Throwable) {
-                        e.printStackTrace()
-                        cameraError = "Camera provider initialization failed: ${e.localizedMessage ?: "Unknown error"}"
-                    }
+                                    val currentExecutor = cameraExecutor ?: Executors.newSingleThreadExecutor().also { cameraExecutor = it }
+                                    if (currentExecutor.isShutdown) return@addListener
 
-                    previewView
-                },
-                modifier = Modifier.fillMaxSize()
-            )
+                                    val cameraProvider = cameraProviderFuture.get()
+                                    cameraProviderInstance = cameraProvider
+
+                                    val preview = Preview.Builder().build().also {
+                                        it.setSurfaceProvider(previewView.surfaceProvider)
+                                    }
+
+                                    val imageAnalysis = ImageAnalysis.Builder()
+                                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                        .build()
+
+                                    imageAnalysis.setAnalyzer(currentExecutor) { imageProxy: ImageProxy ->
+                                        if (hasScanned || currentExecutor.isShutdown) {
+                                            try { imageProxy.close() } catch (_: Throwable) {}
+                                            return@setAnalyzer
+                                        }
+                                        if (barcodeScanner != null) {
+                                            processImageProxy(
+                                                imageProxy = imageProxy,
+                                                barcodeScanner = barcodeScanner,
+                                                onResult = { rawText ->
+                                                    if (!hasScanned) {
+                                                        val parsed = ParsedQrData.parse(rawText)
+                                                        if (parsed != null && parsed.pin.isNotBlank()) {
+                                                            hasScanned = true
+                                                            try {
+                                                                ContextCompat.getMainExecutor(context).execute {
+                                                                    onQrCodeDetected(parsed)
+                                                                }
+                                                            } catch (_: Throwable) {}
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        } else {
+                                            try { imageProxy.close() } catch (_: Throwable) {}
+                                        }
+                                    }
+
+                                    cameraProvider.unbindAll()
+
+                                    val cameraSelector = if (cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) {
+                                        CameraSelector.DEFAULT_BACK_CAMERA
+                                    } else if (cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
+                                        CameraSelector.DEFAULT_FRONT_CAMERA
+                                    } else {
+                                        CameraSelector.DEFAULT_BACK_CAMERA
+                                    }
+
+                                    camera = cameraProvider.bindToLifecycle(
+                                        lifecycleOwner,
+                                        cameraSelector,
+                                        preview,
+                                        imageAnalysis
+                                    )
+                                } catch (e: Throwable) {
+                                    e.printStackTrace()
+                                    try {
+                                        ContextCompat.getMainExecutor(context).execute {
+                                            cameraError = "Could not initialize camera: ${e.localizedMessage ?: "Hardware busy or unavailable"}"
+                                        }
+                                    } catch (_: Throwable) {}
+                                }
+                            }, ContextCompat.getMainExecutor(ctx))
+                        } catch (e: Throwable) {
+                            e.printStackTrace()
+                            cameraError = "Camera provider initialization failed: ${e.localizedMessage ?: "Unknown error"}"
+                        }
+
+                        previewView
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
 
             // Viewfinder Overlay: 4-Rectangles Safe Cutout Mask & Cyberpunk Laser HUD
             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -430,12 +455,27 @@ private fun CameraPreviewWithScanner(
                     textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(20.dp))
-                Button(
-                    onClick = onManualInputClicked,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text("Enter IP & PIN Manually", fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = {
+                            cameraError = null
+                            reloadTrigger++
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F172A)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Retry Camera")
+                    }
+                    Button(
+                        onClick = onManualInputClicked,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Enter Manually", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -534,7 +574,7 @@ private fun CameraPreviewWithScanner(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Run 'auralock pair' in your PC terminal and align the QR inside the viewfinder frame.",
+                        text = "Run 'auralock pair' in your PC terminal or open AuraLock Desktop to align the QR inside the viewfinder.",
                         color = Color(0xFF94A3B8),
                         fontSize = 13.sp,
                         textAlign = TextAlign.Center

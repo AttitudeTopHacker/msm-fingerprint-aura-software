@@ -13,10 +13,19 @@ import java.security.Signature
 
 class BiometricAuthPrompt(private val activity: FragmentActivity) {
 
+    private var activePrompt: BiometricPrompt? = null
+
     fun isBiometricAvailable(): Boolean {
         val manager = BiometricManager.from(activity)
         return manager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) ==
                 BiometricManager.BIOMETRIC_SUCCESS
+    }
+
+    fun cancelAuthentication() {
+        try {
+            activePrompt?.cancelAuthentication()
+        } catch (_: Throwable) {}
+        activePrompt = null
     }
 
     fun promptForUnlock(
@@ -25,12 +34,14 @@ class BiometricAuthPrompt(private val activity: FragmentActivity) {
         onSuccess: (Signature) -> Unit,
         onError: (String) -> Unit
     ) {
+        cancelAuthentication()
         val executor = ContextCompat.getMainExecutor(activity)
         val prompt = BiometricPrompt(
             activity,
             executor,
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    activePrompt = null
                     val authedSig = result.cryptoObject?.signature
                     if (authedSig != null) {
                         onSuccess(authedSig)
@@ -40,6 +51,7 @@ class BiometricAuthPrompt(private val activity: FragmentActivity) {
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    activePrompt = null
                     onError(errString.toString())
                 }
 
@@ -49,6 +61,7 @@ class BiometricAuthPrompt(private val activity: FragmentActivity) {
             }
         )
 
+        activePrompt = prompt
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
             .setTitle("Unlock $pcName")
             .setSubtitle("Touch sensor to unlock (60s)")

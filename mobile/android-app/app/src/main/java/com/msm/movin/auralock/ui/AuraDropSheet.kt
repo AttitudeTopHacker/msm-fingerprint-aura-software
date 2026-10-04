@@ -7,15 +7,11 @@ package com.msm.movin.auralock.ui
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -23,6 +19,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -49,20 +48,13 @@ fun AuraDropSheet(
     transferState: AuraDropTransferState,
     receivedFiles: List<AuraDropFileItem>,
     latestReceivedClipboard: String?,
-    onSendFile: (Uri) -> Unit,
+    onRequestSendFile: () -> Unit,
+    onRequestSendMedia: () -> Unit,
     onSendClipboardText: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     var clipboardInput by remember { mutableStateOf("") }
-
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            onSendFile(uri)
-        }
-    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -195,13 +187,9 @@ fun AuraDropSheet(
                 Button(
                     onClick = {
                         if (isConnected) {
-                            try {
-                                filePickerLauncher.launch("*/*")
-                            } catch (e: Throwable) {
-                                Toast.makeText(context, "Could not open file picker: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
+                            onRequestSendFile()
                         } else {
-                            Toast.makeText(context, "Connect to PC first", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Connect to PC first to share files", Toast.LENGTH_SHORT).show()
                         }
                     },
                     modifier = Modifier
@@ -222,13 +210,9 @@ fun AuraDropSheet(
                 Button(
                     onClick = {
                         if (isConnected) {
-                            try {
-                                filePickerLauncher.launch("image/*")
-                            } catch (e: Throwable) {
-                                Toast.makeText(context, "Could not open gallery: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
+                            onRequestSendMedia()
                         } else {
-                            Toast.makeText(context, "Connect to PC first", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Connect to PC first to share photos", Toast.LENGTH_SHORT).show()
                         }
                     },
                     modifier = Modifier
@@ -292,7 +276,7 @@ fun AuraDropSheet(
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(Color(0xFF00FF88))
                         ) {
-                            Icon(Icons.Default.Send, contentDescription = "Send", tint = Color(0xFF07090E))
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color(0xFF07090E))
                         }
                     }
                 }
@@ -386,7 +370,7 @@ fun AuraDropSheet(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    Icons.Default.InsertDriveFile,
+                                    Icons.AutoMirrored.Filled.InsertDriveFile,
                                     contentDescription = null,
                                     tint = Color(0xFF00D2FF),
                                     modifier = Modifier.size(24.dp)
@@ -408,7 +392,7 @@ fun AuraDropSheet(
                                     )
                                 }
                                 Icon(
-                                    Icons.Default.OpenInNew,
+                                    Icons.AutoMirrored.Filled.OpenInNew,
                                     contentDescription = "Open",
                                     tint = Color(0xFF94A3B8),
                                     modifier = Modifier.size(18.dp)

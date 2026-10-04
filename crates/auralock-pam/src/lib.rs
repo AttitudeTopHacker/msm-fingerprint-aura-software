@@ -87,6 +87,35 @@ fn send_pam_info(pamh: *mut c_void, message: &str, is_error: bool) {
     }
 }
 
+#[cfg(unix)]
+async fn wait_for_user_escape_or_keypress() {
+    let mut poll_fds = [libc::pollfd {
+        fd: libc::STDIN_FILENO,
+        events: libc::POLLIN | libc::POLLPRI,
+        revents: 0,
+    }];
+
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        let ret = unsafe { libc::poll(poll_fds.as_mut_ptr(), 1, 0) };
+        if ret > 0 && (poll_fds[0].revents & (libc::POLLIN | libc::POLLPRI)) != 0 {
+            let mut buf = [0u8; 16];
+            let n = unsafe {
+                libc::read(
+                    libc::STDIN_FILENO,
+                    buf.as_mut_ptr() as *mut libc::c_void,
+                    buf.len(),
+                )
+            };
+            if n > 0 {
+                // Key pressed (Esc 0x1B, Enter '\n', or user keypress to enter PIN)
+                return;
+            }
+        }
+    }
+}
+
 /// Linux PAM Authentication Hook
 ///
 /// When the screen lock or login prompt is triggered on Linux (GNOME, KDE, GDM, SDDM, etc.),
@@ -115,8 +144,12 @@ pub extern "C" fn pam_sm_authenticate(
         return PAM_IGNORE;
     }
 
-    // Display native UI prompt on lockscreen
-    send_pam_info(pamh, "📱 [AuraLock] Touch fingerprint on paired phone to unlock (1 min)...", false);
+    // Display native UI prompt on lockscreen (with Esc shortcut)
+    send_pam_info(
+        pamh,
+        "📱 Tap finger on your phone (30s)",
+        false,
+    );
 
     // Run async IPC request synchronously inside the PAM thread
     let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -127,22 +160,36 @@ pub extern "C" fn pam_sm_authenticate(
         Err(_) => return PAM_AUTH_ERR,
     };
 
-    match runtime.block_on(IpcClient::request_unlock(DEFAULT_UNIX_SOCKET_PATH, &username)) {
-        Ok(true) => {
-            // Biometric verified by phone!
-            send_pam_info(pamh, "✨ [AuraLock] Biometric verified! Unlocking...", false);
-            PAM_SUCCESS
+    let auth_result = runtime.block_on(async {
+        tokio::select! {
+            res = IpcClient::request_unlock(DEFAULT_UNIX_SOCKET_PATH, &username) => {
+                match res {
+                    Ok(true) => {
+                        // Biometric verified by phone!
+                        send_pam_info(pamh, "✨ Biometric verified! Unlocking...", false);
+                        PAM_SUCCESS
+                    }
+                    Ok(false) => {
+                        // Phone rejected or timed out; allow fallback to standard password
+                        send_pam_info(pamh, "⚠️ Timed out. Enter password:", true);
+                        PAM_AUTH_ERR
+                    }
+                    Err(_) => {
+                        // Socket or IPC error; ignore so standard password auth takes over
+                        PAM_IGNORE
+                    }
+                }
+            }
+            _ = wait_for_user_escape_or_keypress() => {
+                // User pressed Esc or key on PC keyboard! Immediately cancel challenge on daemon & phone
+                let _ = IpcClient::cancel_unlock(DEFAULT_UNIX_SOCKET_PATH).await;
+                send_pam_info(pamh, "⌨️ Swapped to Password mode", false);
+                PAM_IGNORE
+            }
         }
-        Ok(false) => {
-            // Phone rejected or timed out; allow fallback to standard password
-            send_pam_info(pamh, "⚠️ [AuraLock] Biometric timed out (1 min) / rejected. Please enter password:", true);
-            PAM_AUTH_ERR
-        }
-        Err(_) => {
-            // Socket or IPC error; ignore so standard password auth takes over
-            PAM_IGNORE
-        }
-    }
+    });
+
+    auth_result
 }
 
 #[cfg(unix)]

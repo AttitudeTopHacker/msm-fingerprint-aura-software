@@ -21,6 +21,7 @@ pub const DEFAULT_NAMED_PIPE_PATH: &str = r"\\.\pipe\AuraLockService";
 #[serde(tag = "command", content = "payload")]
 pub enum IpcRequest {
     TriggerUnlockRequest { username: String },
+    CancelChallenge,
     SetLockState { is_locked: bool },
     GetDaemonStatus,
 }
@@ -125,27 +126,32 @@ impl IpcServer {
                             info!("Phone not immediately reachable ({e}); waiting up to 60s for phone to connect/refresh...");
                         }
 
-                        // Await biometric approval with a 60-second (1 minute) timeout
-                        match tokio::time::timeout(std::time::Duration::from_secs(60), rx).await {
+                        // Await biometric approval with a 30-second timeout
+                        match tokio::time::timeout(std::time::Duration::from_secs(30), rx).await {
                             Ok(Ok(true)) => {
                                 info!("Biometric approval received via IPC!");
                                 IpcResponse::UnlockApproved
                             }
                             Ok(Ok(false)) => {
-                                warn!("Biometric signature failed validation");
-                                IpcResponse::UnlockDenied { reason: "Biometric signature invalid".into() }
+                                warn!("Biometric signature failed validation / cancelled");
+                                IpcResponse::UnlockDenied { reason: "Biometric challenge cancelled or signature invalid".into() }
                             }
                             Ok(Err(_)) => {
                                 IpcResponse::UnlockDenied { reason: "Challenge cancelled".into() }
                             }
                             Err(_) => {
-                                warn!("Biometric prompt timed out (60s)");
-                                IpcResponse::UnlockDenied { reason: "Biometric prompt timed out (60s) on phone".into() }
+                                warn!("Biometric prompt timed out (30s)");
+                                IpcResponse::UnlockDenied { reason: "Biometric prompt timed out (30s) on phone".into() }
                             }
                         }
                     }
                     Err(e) => IpcResponse::UnlockDenied { reason: e.to_string() },
                 }
+            }
+            IpcRequest::CancelChallenge => {
+                info!("IPC received CancelChallenge command (Esc / user override)");
+                self.net_service.cancel_challenge().await;
+                IpcResponse::Success { message: "Biometric challenge cancelled".into() }
             }
             IpcRequest::SetLockState { is_locked } => {
                 let state = if is_locked {
@@ -197,5 +203,26 @@ impl IpcClient {
             IpcResponse::Error { error } => Err(AuraLockError::ProtocolError(error)),
             _ => Ok(false),
         }
+    }
+
+    #[cfg(unix)]
+    pub async fn cancel_unlock(socket_path: &str) -> Result<bool> {
+        use tokio::net::UnixStream;
+
+        let mut stream = match UnixStream::connect(socket_path).await {
+            Ok(s) => s,
+            Err(_) => return Ok(false),
+        };
+        let (reader, mut writer) = stream.split();
+        let mut buf_reader = BufReader::new(reader);
+
+        let req = IpcRequest::CancelChallenge;
+        if let Ok(json_req) = serde_json::to_string(&req) {
+            let _ = writer.write_all(format!("{}\n", json_req).as_bytes()).await;
+            let mut response_line = String::new();
+            let _ = buf_reader.read_line(&mut response_line).await;
+        }
+
+        Ok(true)
     }
 }

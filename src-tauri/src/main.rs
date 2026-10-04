@@ -120,6 +120,15 @@ async fn trigger_test_unlock(state: State<'_, AppStateWrapper>) -> Result<Comman
 }
 
 #[tauri::command]
+async fn cancel_challenge(state: State<'_, AppStateWrapper>) -> Result<CommandResult, String> {
+    state.net_service.cancel_challenge().await;
+    Ok(CommandResult {
+        success: true,
+        message: "Biometric challenge cancelled".into(),
+    })
+}
+
+#[tauri::command]
 async fn lock_pc(state: State<'_, AppStateWrapper>) -> Result<CommandResult, String> {
     state.net_service.state_mgr.set_lock_state(auralock_core::state::SessionLockState::Locked).await;
     auralock_core::network::lock_pc_screen();
@@ -353,6 +362,7 @@ fn main() {
             get_daemon_status,
             get_pairing_qr,
             trigger_test_unlock,
+            cancel_challenge,
             lock_pc,
             unlock_pc,
             save_vault_password,

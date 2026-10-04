@@ -1161,6 +1161,23 @@
       };
     }
 
+    async function cancelChallenge() {
+      try {
+        const res = await fetch('/api/unlock/cancel', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast("Biometric Challenge Cancelled (Swapped to PIN/Password)", "⌨️");
+          log("Biometric challenge cancelled via Esc / user override", "info");
+        }
+      } catch (e) {}
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        cancelChallenge();
+      }
+    });
+
     // Initial boot
     fetchStatus();
     fetchQr();

@@ -98,6 +98,7 @@ pub async fn start_web_server(net_service: Arc<NetworkService>, port: u16) -> Re
         .route("/api/qr", get(get_qr))
         .route("/api/pair/refresh", post(refresh_pairing))
         .route("/api/unlock/test", post(test_unlock))
+        .route("/api/unlock/cancel", post(cancel_unlock_endpoint))
         .route("/api/lock", post(lock_endpoint))
         .route("/api/unlock", post(unlock_endpoint))
         .route("/api/vault/password", post(save_password))
@@ -218,6 +219,14 @@ async fn test_unlock(State(state): State<AppState>) -> Json<ApiResponse> {
             message: format!("Failed to create challenge: {e}"),
         }),
     }
+}
+
+async fn cancel_unlock_endpoint(State(state): State<AppState>) -> Json<ApiResponse> {
+    state.net_service.cancel_challenge().await;
+    Json(ApiResponse {
+        success: true,
+        message: "Biometric challenge cancelled".into(),
+    })
 }
 
 async fn lock_endpoint(State(state): State<AppState>) -> Json<ApiResponse> {

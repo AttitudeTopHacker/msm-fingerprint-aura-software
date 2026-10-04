@@ -34,10 +34,20 @@ sudo cp target/release/libpam_auralock.so "$PAM_DEST/pam_auralock.so"
 sudo chmod 644 "$PAM_DEST/pam_auralock.so"
 sudo chown root:root "$PAM_DEST/pam_auralock.so"
 
-# Safely add PAM entry to sudo if not already present
+# Safely add PAM entry to common-auth and sudo if not already present
+if [ -f "/etc/pam.d/common-auth" ]; then
+    if ! grep -q "pam_auralock.so" /etc/pam.d/common-auth; then
+        echo "🔒 4/5. Configuring /etc/pam.d/common-auth for lockscreen biometric..."
+        sudo sed -i '1s/^/auth sufficient pam_auralock.so\n/' /etc/pam.d/common-auth
+        echo "   ✅ Lockscreen biometric enabled safely."
+    else
+        echo "   ℹ️ /etc/pam.d/common-auth already configured."
+    fi
+fi
+
 if [ -f "/etc/pam.d/sudo" ]; then
     if ! grep -q "pam_auralock.so" /etc/pam.d/sudo; then
-        echo "🔒 4/4. Configuring /etc/pam.d/sudo for instant biometric sudo..."
+        echo "🔒 5/5. Configuring /etc/pam.d/sudo for instant biometric sudo..."
         sudo sed -i '1s/^/auth sufficient pam_auralock.so\n/' /etc/pam.d/sudo
         echo "   ✅ Sudo biometric enabled safely."
     else

@@ -482,6 +482,69 @@ class MainActivity : FragmentActivity() {
             }
         }
 
+        val openDocumentLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument()
+        ) { uri: Uri? ->
+            if (uri != null) {
+                sendAuraDropFile(uri)
+            }
+        }
+
+        val getContentLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.GetContent()
+        ) { uri: Uri? ->
+            if (uri != null) {
+                sendAuraDropFile(uri)
+            }
+        }
+
+        val launchSafeFilePicker: () -> Unit = {
+            if (!isConnectedState) {
+                Toast.makeText(this@MainActivity, "Connect to PC first to share files", Toast.LENGTH_SHORT).show()
+            } else {
+                try {
+                    openDocumentLauncher.launch(arrayOf("*/*"))
+                } catch (e1: Throwable) {
+                    try {
+                        getContentLauncher.launch("*/*")
+                    } catch (e2: Throwable) {
+                        try {
+                            val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                                type = "*/*"
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                            }
+                            startActivity(Intent.createChooser(intent, "Select File to Send"))
+                        } catch (e3: Throwable) {
+                            Toast.makeText(this@MainActivity, "No file manager found", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+        }
+
+        val launchSafeMediaPicker: () -> Unit = {
+            if (!isConnectedState) {
+                Toast.makeText(this@MainActivity, "Connect to PC first to share media", Toast.LENGTH_SHORT).show()
+            } else {
+                try {
+                    openDocumentLauncher.launch(arrayOf("image/*", "video/*"))
+                } catch (e1: Throwable) {
+                    try {
+                        getContentLauncher.launch("image/*")
+                    } catch (e2: Throwable) {
+                        try {
+                            val intent = Intent(Intent.ACTION_PICK).apply {
+                                type = "image/*"
+                            }
+                            startActivity(Intent.createChooser(intent, "Select Media to Send"))
+                        } catch (e3: Throwable) {
+                            Toast.makeText(this@MainActivity, "No gallery app found", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+        }
+
         val checkBluetoothAndExecute: (() -> Unit) -> Unit = { action ->
             action()
         }
@@ -726,7 +789,8 @@ class MainActivity : FragmentActivity() {
                     onScanQrClicked = { checkBluetoothAndExecute { currentScreen = ScreenState.QR_SCANNER } },
                     onManualSetupClicked = { checkBluetoothAndExecute { showManualDialog = true } },
                     onRequestEnableBluetooth = requestEnableBluetooth,
-                    onSendFile = { uri -> sendAuraDropFile(uri) },
+                    onRequestSendFile = launchSafeFilePicker,
+                    onRequestSendMedia = launchSafeMediaPicker,
                     onSendClipboardText = { text -> sendAuraDropClipboard(text) },
                     onShowBluetoothInfo = { showBluetoothSheet = true },
                     onOpenSettings = { showSettingsDialog = true },
@@ -917,7 +981,8 @@ class MainActivity : FragmentActivity() {
                 transferState = transferState,
                 receivedFiles = receivedFiles,
                 latestReceivedClipboard = latestReceivedClipboard,
-                onSendFile = { uri -> sendAuraDropFile(uri) },
+                onRequestSendFile = launchSafeFilePicker,
+                onRequestSendMedia = launchSafeMediaPicker,
                 onSendClipboardText = { text -> sendAuraDropClipboard(text) },
                 onDismiss = { showAuraDropSheet = false }
             )
@@ -1005,7 +1070,8 @@ class MainActivity : FragmentActivity() {
         onScanQrClicked: () -> Unit,
         onManualSetupClicked: () -> Unit,
         onRequestEnableBluetooth: () -> Unit,
-        onSendFile: (Uri) -> Unit,
+        onRequestSendFile: () -> Unit,
+        onRequestSendMedia: () -> Unit,
         onSendClipboardText: (String) -> Unit,
         onShowBluetoothInfo: () -> Unit,
         onOpenSettings: () -> Unit,
@@ -1194,7 +1260,8 @@ class MainActivity : FragmentActivity() {
                             transferState = transferState,
                             receivedFiles = receivedFiles,
                             latestReceivedClipboard = latestReceivedClipboard,
-                            onSendFile = onSendFile,
+                            onRequestSendFile = onRequestSendFile,
+                            onRequestSendMedia = onRequestSendMedia,
                             onSendClipboardText = onSendClipboardText,
                             onShowBluetoothInfo = onShowBluetoothInfo,
                             onTestBiometrics = onTestBiometrics
@@ -1772,21 +1839,14 @@ class MainActivity : FragmentActivity() {
         transferState: AuraDropTransferState,
         receivedFiles: List<AuraDropFileItem>,
         latestReceivedClipboard: String?,
-        onSendFile: (Uri) -> Unit,
+        onRequestSendFile: () -> Unit,
+        onRequestSendMedia: () -> Unit,
         onSendClipboardText: (String) -> Unit,
         onShowBluetoothInfo: () -> Unit,
         onTestBiometrics: () -> Unit
     ) {
         val context = LocalContext.current
         var clipboardInput by remember { mutableStateOf("") }
-
-        val filePickerLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.GetContent()
-        ) { uri: Uri? ->
-            if (uri != null) {
-                onSendFile(uri)
-            }
-        }
 
         Column(
             modifier = Modifier
@@ -1917,17 +1977,7 @@ class MainActivity : FragmentActivity() {
             ) {
                 // Send File Button
                 Button(
-                    onClick = {
-                        if (isConnected) {
-                            try {
-                                filePickerLauncher.launch("*/*")
-                            } catch (e: Throwable) {
-                                Toast.makeText(context, "Could not open file picker: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
-                        } else {
-                            Toast.makeText(context, "Connect to PC first to share files", Toast.LENGTH_SHORT).show()
-                        }
-                    },
+                    onClick = onRequestSendFile,
                     modifier = Modifier
                         .weight(1f)
                         .height(50.dp),
@@ -1944,17 +1994,7 @@ class MainActivity : FragmentActivity() {
 
                 // Send Media Button
                 Button(
-                    onClick = {
-                        if (isConnected) {
-                            try {
-                                filePickerLauncher.launch("image/*")
-                            } catch (e: Throwable) {
-                                Toast.makeText(context, "Could not open gallery: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
-                        } else {
-                            Toast.makeText(context, "Connect to PC first to share photos", Toast.LENGTH_SHORT).show()
-                        }
-                    },
+                    onClick = onRequestSendMedia,
                     modifier = Modifier
                         .weight(1f)
                         .height(50.dp),
@@ -2807,6 +2847,9 @@ class MainActivity : FragmentActivity() {
                         statusMessageState = if (isLocked) "🟢 $targetPcName is Locked • Ready to Unlock" else "🟢 $targetPcName is Unlocked • System Active"
                     }
                 },
+                onChallengeCancelled = { reason ->
+                    handleChallengeCancelled(reason)
+                },
                 onUnpaired = {
                     performLocalUnpairCleanUp()
                     Toast.makeText(this@MainActivity, "Device Unpaired by PC", Toast.LENGTH_LONG).show()
@@ -3062,6 +3105,15 @@ class MainActivity : FragmentActivity() {
             challengeRemainingSecondsState = 0
             e.printStackTrace()
             Toast.makeText(this, "Biometric Error: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun handleChallengeCancelled(reason: String = "") {
+        challengeTimerJob?.cancel()
+        challengeRemainingSecondsState = 0
+        biometricPrompt.cancelAuthentication()
+        if (reason.contains("cancelled", ignoreCase = true) || reason.contains("Esc", ignoreCase = true)) {
+            Toast.makeText(this@MainActivity, "⌨️ PC Biometric Cancelled (Swapped to PIN)", Toast.LENGTH_SHORT).show()
         }
     }
 

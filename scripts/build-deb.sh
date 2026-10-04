@@ -102,6 +102,14 @@ if [ "$1" = "configure" ]; then
     systemctl enable auralock.service || true
     systemctl restart auralock.service || true
 
+    # Safely configure PAM for lock screen & sudo authentication
+    if [ -f "/etc/pam.d/common-auth" ] && ! grep -q "pam_auralock.so" /etc/pam.d/common-auth; then
+        sed -i '1s/^/auth sufficient pam_auralock.so\n/' /etc/pam.d/common-auth || true
+    fi
+    if [ -f "/etc/pam.d/sudo" ] && ! grep -q "pam_auralock.so" /etc/pam.d/sudo; then
+        sed -i '1s/^/auth sufficient pam_auralock.so\n/' /etc/pam.d/sudo || true
+    fi
+
     if command -v update-desktop-database > /dev/null 2>&1; then
         update-desktop-database -q /usr/share/applications || true
     fi
@@ -128,6 +136,14 @@ if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
     echo "🛑 Stopping and disabling auralock service..."
     systemctl stop auralock.service || true
     systemctl disable auralock.service || true
+
+    # Remove PAM entries safely
+    if [ -f "/etc/pam.d/common-auth" ]; then
+        sed -i '/pam_auralock.so/d' /etc/pam.d/common-auth || true
+    fi
+    if [ -f "/etc/pam.d/sudo" ]; then
+        sed -i '/pam_auralock.so/d' /etc/pam.d/sudo || true
+    fi
 
     if command -v update-desktop-database > /dev/null 2>&1; then
         update-desktop-database -q /usr/share/applications || true

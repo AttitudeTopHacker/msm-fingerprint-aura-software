@@ -13,7 +13,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{broadcast, oneshot, Mutex};
 use tracing::{error, info, warn};
 
-const MAX_CHALLENGE_AGE_SECS: i64 = 60;
+const MAX_CHALLENGE_AGE_SECS: i64 = 30;
 const MAX_FAILED_ATTEMPTS: u32 = 5;
 const LOCKOUT_DURATION_SECS: u64 = 60;
 
@@ -190,6 +190,17 @@ impl StateManager {
         state.active_challenges.clear();
         state.failed_attempts = 0;
         state.lockout_until = None;
+    }
+
+    /// Immediately cancels and clears all active biometric challenges (e.g. user pressed Esc on PC)
+    pub async fn cancel_all_challenges(&self) {
+        let mut state = self.inner.lock().await;
+        for (_, active) in state.active_challenges.drain() {
+            if let Some(sender) = active.completion_sender {
+                let _ = sender.send(false);
+            }
+        }
+        info!("All active biometric challenges cancelled (Esc / PC override)");
     }
 
     /// Gets the most recent active challenge if still within TTL

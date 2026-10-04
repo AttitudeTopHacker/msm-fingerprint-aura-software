@@ -693,6 +693,33 @@ function setupWebSocket() {
   };
 }
 
+// CANCEL BIOMETRIC CHALLENGE (ESC / Manual Stop)
+window.cancelChallenge = async function () {
+  try {
+    let data = null;
+    try {
+      const res = await fetch('http://127.0.0.1:47891/api/unlock/cancel', { method: 'POST' });
+      if (res.ok) data = await res.json();
+    } catch (_) {}
+
+    if (!data && checkIsTauri()) {
+      data = await invokeCommand('cancel_challenge');
+    }
+
+    if (data && data.success) {
+      showToast("Biometric Challenge Cancelled (Swapped to PIN/Password)", "⌨️");
+      log("Biometric challenge force-stopped via Esc / PC override", "info");
+    }
+  } catch (e) {}
+};
+
+// Global Escape Key listener to immediately dismiss/cancel biometric prompts on PC
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    window.cancelChallenge();
+  }
+});
+
 // INITIALIZATION
 fetchStatus();
 fetchReceivedFiles();
