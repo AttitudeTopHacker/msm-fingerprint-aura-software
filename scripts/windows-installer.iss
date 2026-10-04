@@ -2,7 +2,7 @@
 ; Builds: auralock_1.4.1_x64-setup.exe
 
 #define MyAppName "AuraLock"
-#define MyAppVersion "1.5.0"
+#define MyAppVersion "1.5.1"
 #define MyAppPublisher "msm.movin"
 #define MyAppURL "https://github.com/AttitudeTopHacker/msm-fingerprint-aura-software"
 #define MyAppExeName "auralock.exe"

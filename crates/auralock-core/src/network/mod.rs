@@ -105,6 +105,15 @@ pub struct NetworkService {
 pub fn get_default_downloads_dir() -> PathBuf {
     #[cfg(unix)]
     {
+        // 1. Check if an active logged-in desktop user session exists
+        let sessions = get_linux_user_sessions();
+        for s in &sessions {
+            if s.uid >= 1000 && !s.homedir.is_empty() {
+                let p = PathBuf::from(&s.homedir).join("Downloads").join("AuraLock");
+                let _ = std::fs::create_dir_all(&p);
+                return p;
+            }
+        }
         if let Some(home) = std::env::var_os("HOME") {
             let p = PathBuf::from(home).join("Downloads").join("AuraLock");
             let _ = std::fs::create_dir_all(&p);
@@ -517,10 +526,16 @@ impl NetworkService {
             device_name: Some(self.pc_name.clone()),
         })).await;
 
-        // If there is an active pending challenge (e.g. from PC lock screen / PAM / Windows CP), deliver immediately
-        if let Some(pending_ch) = self.state_mgr.get_latest_valid_challenge().await {
-            info!("Pushing active pending challenge {} to newly connected phone", pending_ch.challenge_id);
-            let _ = tx.send(ProtocolMessage::Challenge(pending_ch)).await;
+        // Send immediate Lock state on connection
+        let initial_lock = is_pc_screen_locked();
+        let _ = tx.send(ProtocolMessage::LockStateChanged { is_locked: initial_lock }).await;
+
+        // If there is an active pending challenge, deliver ONLY if screen is ACTUALLY locked
+        if initial_lock {
+            if let Some(pending_ch) = self.state_mgr.get_latest_valid_challenge().await {
+                info!("Pushing active pending challenge {} to newly connected phone", pending_ch.challenge_id);
+                let _ = tx.send(ProtocolMessage::Challenge(pending_ch)).await;
+            }
         }
 
         // Spawn real-time Lock state & Bluetooth status watcher (checks every 500ms and sends on state change)
@@ -546,7 +561,7 @@ impl NetworkService {
 
         let tx_lock = tx.clone();
         let lock_watcher_task = tokio::spawn(async move {
-            let mut last_lock = is_pc_screen_locked();
+            let mut last_lock = initial_lock;
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                 let current_lock = is_pc_screen_locked();
@@ -646,6 +661,8 @@ impl NetworkService {
                             let _ = tx.send(ProtocolMessage::Challenge(pending_ch)).await;
                         }
                     }
+                } else {
+                    self.state_mgr.cancel_all_challenges().await;
                 }
             }
             ProtocolMessage::PairingReq(req) => {
@@ -779,6 +796,8 @@ impl NetworkService {
                         if let Some(pending_ch) = self.state_mgr.get_latest_valid_challenge().await {
                             let _ = tx.send(ProtocolMessage::Challenge(pending_ch)).await;
                         }
+                    } else {
+                        self.state_mgr.cancel_all_challenges().await;
                     }
                 }
             }
@@ -879,6 +898,42 @@ impl NetworkService {
 
                     self.broadcast_event(WebEvent::FileTransferCompleted {
                         file_id: chunk.file_id.clone(),
+                        file_name: info.file_name.clone(),
+                        is_incoming: true,
+                        success: true,
+                        message: "Saved to Downloads/AuraLock".into(),
+                        local_path: Some(info.local_path),
+                    });
+                }
+            }
+            ProtocolMessage::FileComplete(comp) => {
+                info!("Received FileComplete for file_id: {}", comp.file_id);
+                let completed_info: Option<AuraDropReceivedFile> = {
+                    let mut transfers_guard = self.incoming_transfers.lock().await;
+                    if let Some(mut transfer) = transfers_guard.remove(&comp.file_id) {
+                        let _ = transfer.file_handle.flush().await;
+                        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+                        Some(AuraDropReceivedFile {
+                            file_id: comp.file_id.clone(),
+                            file_name: transfer.file_name.clone(),
+                            file_size: transfer.bytes_received,
+                            mime_type: transfer.mime_type.clone(),
+                            sender_name: transfer.sender_name.clone(),
+                            local_path: transfer.local_path.to_string_lossy().to_string(),
+                            timestamp_epoch: now,
+                        })
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some(info) = completed_info {
+                    {
+                        let mut files_guard = self.received_files.lock().await;
+                        files_guard.insert(0, info.clone());
+                    }
+                    self.broadcast_event(WebEvent::FileTransferCompleted {
+                        file_id: comp.file_id.clone(),
                         file_name: info.file_name.clone(),
                         is_incoming: true,
                         success: true,
@@ -1292,13 +1347,35 @@ pub fn is_pc_screen_locked() -> bool {
             }
         }
 
-        // 2. Check active user session screensavers (Cinnamon, GNOME, FreeDesktop)
+        // 2. Check active user session screensavers (Cinnamon, GNOME, MATE, FreeDesktop, KDE)
         let sessions = get_linux_user_sessions();
         for session in &sessions {
             // Cinnamon screensaver status query
             if let Some(out) = run_in_user_session(session, "cinnamon-screensaver-command", &["-q"]) {
                 let lower = out.to_lowercase();
-                if lower.contains("active") || lower.contains("locked") {
+                if lower.contains("inactive") {
+                    // explicitly inactive, do not match active
+                } else if lower.contains("is active") || (lower.contains("active") && !lower.contains("inactive")) || lower.contains("locked") {
+                    return true;
+                }
+            }
+
+            // GNOME screensaver status query
+            if let Some(out) = run_in_user_session(session, "gnome-screensaver-command", &["-q"]) {
+                let lower = out.to_lowercase();
+                if lower.contains("inactive") {
+                    // explicitly inactive
+                } else if lower.contains("is active") || (lower.contains("active") && !lower.contains("inactive")) || lower.contains("locked") {
+                    return true;
+                }
+            }
+
+            // MATE screensaver status query
+            if let Some(out) = run_in_user_session(session, "mate-screensaver-command", &["-q"]) {
+                let lower = out.to_lowercase();
+                if lower.contains("inactive") {
+                    // explicitly inactive
+                } else if lower.contains("is active") || (lower.contains("active") && !lower.contains("inactive")) || lower.contains("locked") {
                     return true;
                 }
             }
@@ -1338,6 +1415,20 @@ pub fn is_pc_screen_locked() -> bool {
                 "--type=method_call",
                 "--print-reply",
                 "/org/freedesktop/ScreenSaver",
+                "org.freedesktop.ScreenSaver.GetActive",
+            ]) {
+                if out.contains("boolean true") {
+                    return true;
+                }
+            }
+
+            // KDE Plasma ScreenSaver DBus query
+            if let Some(out) = run_in_user_session(session, "dbus-send", &[
+                "--session",
+                "--dest=org.kde.screensaver",
+                "--type=method_call",
+                "--print-reply",
+                "/ScreenSaver",
                 "org.freedesktop.ScreenSaver.GetActive",
             ]) {
                 if out.contains("boolean true") {

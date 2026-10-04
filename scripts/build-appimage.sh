@@ -5,7 +5,7 @@
 
 set -e
 
-VERSION=$(cat VERSION 2>/dev/null || echo "1.5.0")
+VERSION=$(cat VERSION 2>/dev/null || echo "1.5.1")
 PACKAGE_NAME="auralock"
 ARCH="amd64"
 PROJECT_ROOT="$(pwd)"

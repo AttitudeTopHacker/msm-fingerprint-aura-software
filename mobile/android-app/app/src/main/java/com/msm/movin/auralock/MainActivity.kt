@@ -29,6 +29,7 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.animation.*
@@ -398,9 +399,20 @@ class MainActivity : FragmentActivity() {
                 val text = intent.getStringExtra(Intent.EXTRA_TEXT)
 
                 if (uri != null) {
-                    sendAuraDropFile(uri)
+                    sendAuraDropFiles(listOf(uri))
                 } else if (!text.isNullOrBlank()) {
                     sendAuraDropClipboard(text)
+                }
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                val uris = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
+                }
+                if (!uris.isNullOrEmpty()) {
+                    sendAuraDropFiles(uris)
                 }
             }
         }
@@ -482,19 +494,27 @@ class MainActivity : FragmentActivity() {
             }
         }
 
-        val openDocumentLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.OpenDocument()
-        ) { uri: Uri? ->
-            if (uri != null) {
-                sendAuraDropFile(uri)
+        val openMultipleDocumentsLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenMultipleDocuments()
+        ) { uris: List<Uri> ->
+            if (uris.isNotEmpty()) {
+                sendAuraDropFiles(uris)
             }
         }
 
-        val getContentLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.GetContent()
-        ) { uri: Uri? ->
-            if (uri != null) {
-                sendAuraDropFile(uri)
+        val getMultipleContentsLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.GetMultipleContents()
+        ) { uris: List<Uri> ->
+            if (uris.isNotEmpty()) {
+                sendAuraDropFiles(uris)
+            }
+        }
+
+        val pickMultipleMediaLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.PickMultipleVisualMedia()
+        ) { uris: List<Uri> ->
+            if (uris.isNotEmpty()) {
+                sendAuraDropFiles(uris)
             }
         }
 
@@ -503,20 +523,12 @@ class MainActivity : FragmentActivity() {
                 Toast.makeText(this@MainActivity, "Connect to PC first to share files", Toast.LENGTH_SHORT).show()
             } else {
                 try {
-                    openDocumentLauncher.launch(arrayOf("*/*"))
+                    openMultipleDocumentsLauncher.launch(arrayOf("*/*"))
                 } catch (e1: Throwable) {
                     try {
-                        getContentLauncher.launch("*/*")
+                        getMultipleContentsLauncher.launch("*/*")
                     } catch (e2: Throwable) {
-                        try {
-                            val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                                type = "*/*"
-                                addCategory(Intent.CATEGORY_OPENABLE)
-                            }
-                            startActivity(Intent.createChooser(intent, "Select File to Send"))
-                        } catch (e3: Throwable) {
-                            Toast.makeText(this@MainActivity, "No file manager found", Toast.LENGTH_LONG).show()
-                        }
+                        Toast.makeText(this@MainActivity, "No file manager found", Toast.LENGTH_LONG).show()
                     }
                 }
             }
@@ -527,18 +539,17 @@ class MainActivity : FragmentActivity() {
                 Toast.makeText(this@MainActivity, "Connect to PC first to share media", Toast.LENGTH_SHORT).show()
             } else {
                 try {
-                    openDocumentLauncher.launch(arrayOf("image/*", "video/*"))
+                    pickMultipleMediaLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                    )
                 } catch (e1: Throwable) {
                     try {
-                        getContentLauncher.launch("image/*")
+                        openMultipleDocumentsLauncher.launch(arrayOf("image/*", "video/*"))
                     } catch (e2: Throwable) {
                         try {
-                            val intent = Intent(Intent.ACTION_PICK).apply {
-                                type = "image/*"
-                            }
-                            startActivity(Intent.createChooser(intent, "Select Media to Send"))
+                            getMultipleContentsLauncher.launch("image/*")
                         } catch (e3: Throwable) {
-                            Toast.makeText(this@MainActivity, "No gallery app found", Toast.LENGTH_LONG).show()
+                            Toast.makeText(this@MainActivity, "No media app found", Toast.LENGTH_LONG).show()
                         }
                     }
                 }
@@ -2643,72 +2654,88 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    private fun sendAuraDropFile(uri: Uri) {
+    private fun sendAuraDropFiles(uris: List<Uri>) {
+        if (uris.isEmpty()) return
         if (!isConnectedState || client == null) {
-            Toast.makeText(this, "Connect to PC first to send file", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Connect to PC first to send file(s)", Toast.LENGTH_SHORT).show()
             return
         }
 
         lifecycleScope.launch {
-            try {
-                val fileName = getFileNameFromUri(uri)
-                val mimeType = try {
-                    contentResolver.getType(uri) ?: "application/octet-stream"
-                } catch (_: Throwable) {
-                    "application/octet-stream"
-                }
-                val fileSize = getFileSizeFromUri(uri)
-                val inputStream = try {
-                    contentResolver.openInputStream(uri)
-                } catch (e: Throwable) {
-                    null
-                }
+            val totalFiles = uris.size
+            var successCount = 0
+            for ((index, uri) in uris.withIndex()) {
+                try {
+                    val fileName = getFileNameFromUri(uri)
+                    val mimeType = try {
+                        contentResolver.getType(uri) ?: "application/octet-stream"
+                    } catch (_: Throwable) {
+                        "application/octet-stream"
+                    }
+                    val fileSize = getFileSizeFromUri(uri)
+                    val inputStream = try {
+                        contentResolver.openInputStream(uri)
+                    } catch (e: Throwable) {
+                        null
+                    }
 
-                if (inputStream == null) {
-                    Toast.makeText(this@MainActivity, "Could not access selected file", Toast.LENGTH_SHORT).show()
-                    return@launch
-                }
+                    if (inputStream == null) {
+                        Toast.makeText(this@MainActivity, "Could not open $fileName", Toast.LENGTH_SHORT).show()
+                        continue
+                    }
 
-                transferState = AuraDropTransferState(
-                    isTransferring = true,
-                    activeFileName = fileName,
-                    isIncoming = false,
-                    totalBytes = fileSize,
-                    progress = 0.05f
-                )
-
-                val phoneName = "${Build.MANUFACTURER} ${Build.MODEL}"
-                AuraLockService.updateTransfer(this@MainActivity, fileName, 0.05f, isIncoming = false)
-                val success = client?.sendFileStreamToPc(
-                    fileName = fileName,
-                    inputStream = inputStream,
-                    totalBytes = fileSize,
-                    mimeType = mimeType,
-                    phoneName = phoneName
-                ) { progress, bytesSent, total ->
-                    AuraLockService.updateTransfer(this@MainActivity, fileName, progress, isIncoming = false)
-                    transferState = transferState.copy(
-                        progress = progress,
-                        bytesTransferred = bytesSent,
-                        totalBytes = total
+                    val prefix = if (totalFiles > 1) "(${index + 1}/$totalFiles) " else ""
+                    transferState = AuraDropTransferState(
+                        isTransferring = true,
+                        activeFileName = "$prefix$fileName",
+                        isIncoming = false,
+                        totalBytes = fileSize,
+                        progress = 0.05f
                     )
-                } ?: false
 
-                if (success) {
-                    AuraLockService.start(this@MainActivity, pcNameState)
-                    transferState = transferState.copy(isTransferring = false, isCompleted = true)
-                    Toast.makeText(this@MainActivity, "✅ Sent $fileName to PC!", Toast.LENGTH_SHORT).show()
-                } else {
-                    AuraLockService.start(this@MainActivity, pcNameState)
-                    transferState = transferState.copy(isTransferring = false, isError = true)
-                    Toast.makeText(this@MainActivity, "Failed to send file to PC", Toast.LENGTH_SHORT).show()
+                    val phoneName = "${Build.MANUFACTURER} ${Build.MODEL}"
+                    AuraLockService.updateTransfer(this@MainActivity, "$prefix$fileName", 0.05f, isIncoming = false)
+                    val success = client?.sendFileStreamToPc(
+                        fileName = fileName,
+                        inputStream = inputStream,
+                        totalBytes = fileSize,
+                        mimeType = mimeType,
+                        phoneName = phoneName
+                    ) { progress, bytesSent, total ->
+                        AuraLockService.updateTransfer(this@MainActivity, "$prefix$fileName", progress, isIncoming = false)
+                        transferState = transferState.copy(
+                            progress = progress,
+                            bytesTransferred = bytesSent,
+                            totalBytes = total
+                        )
+                    } ?: false
+
+                    if (success) {
+                        successCount++
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
+            }
+
+            AuraLockService.start(this@MainActivity, pcNameState)
+            if (successCount == totalFiles && totalFiles > 0) {
+                transferState = transferState.copy(isTransferring = false, isCompleted = true)
+                triggerHapticFeedback()
+                Toast.makeText(this@MainActivity, if (totalFiles == 1) "✅ Sent file to PC!" else "✅ Sent all $totalFiles files to PC!", Toast.LENGTH_SHORT).show()
+            } else if (successCount > 0) {
+                transferState = transferState.copy(isTransferring = false, isCompleted = true)
+                triggerHapticFeedback()
+                Toast.makeText(this@MainActivity, "⚠️ Sent $successCount of $totalFiles files to PC", Toast.LENGTH_SHORT).show()
+            } else {
                 transferState = transferState.copy(isTransferring = false, isError = true)
-                Toast.makeText(this@MainActivity, "Error sending file: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Failed to send file(s) to PC", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    private fun sendAuraDropFile(uri: Uri) {
+        sendAuraDropFiles(listOf(uri))
     }
 
     private fun sendAuraDropClipboard(text: String) {

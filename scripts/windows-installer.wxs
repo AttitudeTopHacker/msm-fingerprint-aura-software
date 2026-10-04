@@ -4,7 +4,7 @@
     <Product Id="*" 
              Name="AuraLock Biometric Unlock" 
              Language="1033" 
-             Version="1.5.0.0" 
+             Version="1.5.1.0" 
              Manufacturer="msm.movin" 
              UpgradeCode="8E92B45F-1C8A-421A-9E34-58A2B68C9F10">
         
