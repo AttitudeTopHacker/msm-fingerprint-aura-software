@@ -21,6 +21,7 @@ import android.net.NetworkRequest
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.provider.OpenableColumns
@@ -29,6 +30,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -97,6 +99,7 @@ class MainActivity : FragmentActivity() {
     private var isPcLockedState by mutableStateOf(false)
     private var isLockActionPendingState by mutableStateOf(false)
     private var isRefreshingStatusState by mutableStateOf(false)
+    private var challengeRemainingSecondsState by mutableIntStateOf(0)
     private var pcNameState by mutableStateOf("")
     private var pcIpState by mutableStateOf("")
     private var pcPortState by mutableIntStateOf(47890)
@@ -106,6 +109,51 @@ class MainActivity : FragmentActivity() {
     private var networkTransportState = mutableStateOf("Offline")
 
     private var autoReconnectJob: Job? = null
+    private var challengeTimerJob: Job? = null
+
+    private fun getRequiredPermissionsList(): List<String> {
+        val permissions = mutableListOf<String>()
+
+        // Camera for QR Scanner
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            permissions.add(Manifest.permission.CAMERA)
+        }
+
+        // Bluetooth Scan & Connect
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.BLUETOOTH_SCAN)
+            }
+        } else {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
+        }
+
+        // Push Notifications & Media Storage
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VIDEO) != PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
+            }
+        } else {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+        }
+        return permissions
+    }
     private var isUserManuallyDisconnected = false
 
     private var bluetoothReceiver: BroadcastReceiver? = null
@@ -370,6 +418,9 @@ class MainActivity : FragmentActivity() {
         var showManualDialog by remember { mutableStateOf(false) }
         var showBluetoothSheet by remember { mutableStateOf(false) }
         var showBluetoothRequiredDialog by remember { mutableStateOf(false) }
+        var showPermissionOnboardingDialog by remember {
+            mutableStateOf(!prefs.getBoolean("has_completed_permission_onboarding", false))
+        }
         var showSettingsDialog by remember { mutableStateOf(false) }
         var showAuraDropSheet by remember { mutableStateOf(false) }
 
@@ -377,59 +428,23 @@ class MainActivity : FragmentActivity() {
             mutableStateOf(ConnectionProgressState())
         }
 
-        val requestBluetoothPermissionLauncher = rememberLauncherForActivityResult(
+        val requestAllPermissionsLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestMultiplePermissions()
-        ) { _ ->
+        ) { results ->
             isBluetoothEnabledState.value = isBluetoothEnabled()
+            prefs.edit().putBoolean("has_completed_permission_onboarding", true).apply()
+            showPermissionOnboardingDialog = false
+            val deniedCount = results.filter { !it.value }.size
+            if (deniedCount > 0) {
+                Toast.makeText(this@MainActivity, "$deniedCount permission(s) not granted. You can configure them anytime in Settings.", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this@MainActivity, "✅ All permissions granted!", Toast.LENGTH_SHORT).show()
+            }
             if (isBluetoothEnabledState.value && isPairedState && !isConnectedState && autoConnectEnabledState && pcIpState.isNotBlank()) {
                 connectToDaemon(pcIpState, pcPortState, pcNameState) { success, msg ->
                     isConnectedState = success
                     statusMessageState = msg
                 }
-            }
-        }
-
-        // Auto-request Camera (QR Scan), Bluetooth, Notification, and File/Media Storage permissions on app start
-        LaunchedEffect(Unit) {
-            try {
-                val permissionsToRequest = mutableListOf<String>()
-
-                // Camera for QR Scanner
-                val hasCamera = checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-                if (!hasCamera) permissionsToRequest.add(Manifest.permission.CAMERA)
-
-                // Bluetooth Scan & Connect
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    val hasConnect = checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
-                    val hasScan = checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
-                    if (!hasConnect) permissionsToRequest.add(Manifest.permission.BLUETOOTH_CONNECT)
-                    if (!hasScan) permissionsToRequest.add(Manifest.permission.BLUETOOTH_SCAN)
-                } else {
-                    val hasFineLoc = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                    if (!hasFineLoc) permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
-                }
-
-                // Push Notifications & Storage
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    val hasNotif = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-                    if (!hasNotif) permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
-                    val hasImages = checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
-                    val hasVideo = checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
-                    val hasAudio = checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
-                    if (!hasImages) permissionsToRequest.add(Manifest.permission.READ_MEDIA_IMAGES)
-                    if (!hasVideo) permissionsToRequest.add(Manifest.permission.READ_MEDIA_VIDEO)
-                    if (!hasAudio) permissionsToRequest.add(Manifest.permission.READ_MEDIA_AUDIO)
-                } else {
-                    val hasReadStorage = checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-                    val hasWriteStorage = checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-                    if (!hasReadStorage) permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-                    if (!hasWriteStorage) permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                }
-                if (permissionsToRequest.isNotEmpty()) {
-                    requestBluetoothPermissionLauncher.launch(permissionsToRequest.toTypedArray())
-                }
-            } catch (e: Throwable) {
-                e.printStackTrace()
             }
         }
 
@@ -441,13 +456,17 @@ class MainActivity : FragmentActivity() {
 
         val requestEnableBluetooth: () -> Unit = {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                requestBluetoothPermissionLauncher.launch(
-                    arrayOf(
-                        Manifest.permission.BLUETOOTH_CONNECT,
-                        Manifest.permission.BLUETOOTH_SCAN
+                ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                try {
+                    requestAllPermissionsLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.BLUETOOTH_CONNECT,
+                            Manifest.permission.BLUETOOTH_SCAN
+                        )
                     )
-                )
+                } catch (e: Throwable) {
+                    e.printStackTrace()
+                }
             } else {
                 val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
                 try {
@@ -465,6 +484,14 @@ class MainActivity : FragmentActivity() {
 
         val checkBluetoothAndExecute: (() -> Unit) -> Unit = { action ->
             action()
+        }
+
+        // Check if permissions are needed on launch
+        LaunchedEffect(Unit) {
+            val missing = getRequiredPermissionsList()
+            if (missing.isNotEmpty() && !prefs.getBoolean("has_completed_permission_onboarding", false)) {
+                showPermissionOnboardingDialog = true
+            }
         }
 
         // Auto-connect on launch if enabled and device is paired
@@ -639,28 +666,32 @@ class MainActivity : FragmentActivity() {
 
                         val activeClient = client
                         if (activeClient == null || !isConnectedState) {
-                            statusMessageState = "🔄 Reconnecting to $targetName..."
+                            statusMessageState = "🔄 Reconnecting to $targetName & checking status..."
                             Toast.makeText(this@MainActivity, "🔄 Reconnecting to $targetName...", Toast.LENGTH_SHORT).show()
                             connectToDaemon(pcIpState, pcPortState, pcNameState) { success, msg ->
                                 isConnectedState = success
-                                statusMessageState = msg
                                 isRefreshingStatusState = false
                                 if (success) {
                                     triggerHapticFeedback()
-                                    Toast.makeText(this@MainActivity, "⚡ Connected to $targetName!", Toast.LENGTH_SHORT).show()
+                                    val stateDesc = if (isPcLockedState) "LOCKED 🔒 (Tap to Unlock)" else "UNLOCKED 💻 (Tap to Lock)"
+                                    statusMessageState = if (isPcLockedState) "🟢 $targetName is Locked • Ready to Unlock" else "🟢 $targetName is Unlocked • System Active"
+                                    Toast.makeText(this@MainActivity, "⚡ Connected • $targetName is $stateDesc", Toast.LENGTH_SHORT).show()
                                 } else {
+                                    statusMessageState = msg
                                     Toast.makeText(this@MainActivity, "⚠️ Could not reach $targetName. Retrying...", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         } else {
                             val start = System.currentTimeMillis()
+                            // Query actual PC desktop state (Locked or Unlocked)
                             activeClient.sendPing()
-                            delay(40)
-                            val latency = System.currentTimeMillis() - start
+                            delay(300)
+                            val latency = (System.currentTimeMillis() - start - 300).coerceAtLeast(1)
                             isRefreshingStatusState = false
-                            statusMessageState = "🟢 Linked & Synchronized (${latency}ms)"
+                            val stateDesc = if (isPcLockedState) "LOCKED 🔒" else "UNLOCKED 💻"
+                            statusMessageState = if (isPcLockedState) "🟢 $targetName: Locked" else "🟢 $targetName: Unlocked"
                             triggerHapticFeedback()
-                            Toast.makeText(this@MainActivity, "⚡ Link Active with $targetName (${latency}ms)", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@MainActivity, "⚡ Synced: $targetName is $stateDesc (${latency}ms)", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
@@ -671,6 +702,7 @@ class MainActivity : FragmentActivity() {
                     isPcLocked = isPcLockedState,
                     isLockActionPending = isLockActionPendingState,
                     isRefreshingStatus = isRefreshingStatusState,
+                    challengeRemainingSeconds = challengeRemainingSecondsState,
                     statusMessage = statusMessageState,
                     pcName = pcNameState,
                     pcIp = pcIpState,
@@ -734,6 +766,46 @@ class MainActivity : FragmentActivity() {
                     }
                 )
             }
+        }
+
+        // First Launch / Missing Permissions Onboarding Modal
+        if (showPermissionOnboardingDialog) {
+            PermissionOnboardingDialog(
+                onGrantAllClicked = {
+                    val missing = getRequiredPermissionsList()
+                    if (missing.isNotEmpty()) {
+                        try {
+                            requestAllPermissionsLauncher.launch(missing.toTypedArray())
+                        } catch (e: Throwable) {
+                            e.printStackTrace()
+                            try {
+                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.fromParts("package", packageName, null)
+                                }
+                                startActivity(intent)
+                            } catch (_: Throwable) {}
+                        }
+                    } else {
+                        prefs.edit().putBoolean("has_completed_permission_onboarding", true).apply()
+                        showPermissionOnboardingDialog = false
+                        Toast.makeText(this@MainActivity, "All permissions are already granted!", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onOpenSettingsClicked = {
+                    try {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", packageName, null)
+                        }
+                        startActivity(intent)
+                    } catch (e: Throwable) {
+                        Toast.makeText(this@MainActivity, "Open Settings -> Apps -> AuraLock -> Permissions", Toast.LENGTH_LONG).show()
+                    }
+                },
+                onDismiss = {
+                    prefs.edit().putBoolean("has_completed_permission_onboarding", true).apply()
+                    showPermissionOnboardingDialog = false
+                }
+            )
         }
 
         // Bluetooth Required Alert Modal
@@ -919,6 +991,7 @@ class MainActivity : FragmentActivity() {
         isPcLocked: Boolean,
         isLockActionPending: Boolean = false,
         isRefreshingStatus: Boolean,
+        challengeRemainingSeconds: Int = 0,
         statusMessage: String,
         pcName: String,
         pcIp: String,
@@ -1094,6 +1167,7 @@ class MainActivity : FragmentActivity() {
                             isPcLocked = isPcLocked,
                             isLockActionPending = isLockActionPending,
                             isRefreshingStatus = isRefreshingStatus,
+                            challengeRemainingSeconds = challengeRemainingSeconds,
                             statusMessage = statusMessage,
                             pcName = pcName,
                             pcIp = pcIp,
@@ -1138,6 +1212,7 @@ class MainActivity : FragmentActivity() {
         isPcLocked: Boolean,
         isLockActionPending: Boolean = false,
         isRefreshingStatus: Boolean,
+        challengeRemainingSeconds: Int = 0,
         statusMessage: String,
         pcName: String,
         pcIp: String,
@@ -1179,9 +1254,64 @@ class MainActivity : FragmentActivity() {
                     onDisconnect = onDisconnectClicked
                 )
 
+                // Active Biometric Challenge 60s Countdown Banner
+                if (challengeRemainingSeconds > 0) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp)),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF064E3B)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00FF88).copy(alpha = 0.8f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Fingerprint,
+                                    contentDescription = null,
+                                    tint = Color(0xFF00FF88),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "Unlock Request Active",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = Color.White
+                                    )
+                                    Text(
+                                        text = "Touch sensor on phone",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF6EE7B7)
+                                    )
+                                }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF022C22))
+                                    .border(1.dp, Color(0xFF00FF88).copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = "⏱️ ${challengeRemainingSeconds}s",
+                                    color = Color(0xFF00FF88),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Phone Bluetooth Disabled Warning Banner
                 if (!isPhoneBluetoothOn) {
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1191,25 +1321,25 @@ class MainActivity : FragmentActivity() {
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.6f))
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.BluetoothDisabled,
                                 contentDescription = null,
                                 tint = Color(0xFFF59E0B),
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Phone Bluetooth is Turned Off",
+                                    text = "Phone Bluetooth Off",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
+                                    fontSize = 12.sp,
                                     color = Color(0xFFFBBF24)
                                 )
                                 Text(
-                                    text = "Tap to enable Bluetooth for security proximity",
+                                    text = "Enable Bluetooth for proximity security",
                                     fontSize = 11.sp,
                                     color = Color(0xFFFDE68A)
                                 )
@@ -1218,13 +1348,13 @@ class MainActivity : FragmentActivity() {
                                 imageVector = Icons.Default.ArrowForward,
                                 contentDescription = null,
                                 tint = Color(0xFFFBBF24),
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(14.dp)
                             )
                         }
                     }
                 } else if (isConnected && !isPcBluetoothOn) {
                     // PC Bluetooth Disabled Warning Banner
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1233,25 +1363,25 @@ class MainActivity : FragmentActivity() {
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.6f))
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.BluetoothDisabled,
                                 contentDescription = null,
                                 tint = Color(0xFFEF4444),
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "PC Bluetooth is Turned Off",
+                                    text = "PC Bluetooth Off",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
+                                    fontSize = 12.sp,
                                     color = Color(0xFFFCA5A5)
                                 )
                                 Text(
-                                    text = "Turn on Bluetooth on $pcName for proximity verification",
+                                    text = "Turn ON PC Bluetooth for proximity verification",
                                     fontSize = 11.sp,
                                     color = Color(0xFFFECDD3)
                                 )
@@ -1267,7 +1397,7 @@ class MainActivity : FragmentActivity() {
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f, fill = false)
-                    .padding(vertical = 12.dp)
+                    .padding(vertical = 10.dp)
             ) {
                 PulseFingerprintView(
                     isConnected = isConnected,
@@ -1275,35 +1405,38 @@ class MainActivity : FragmentActivity() {
                     onRefreshClick = onRefreshStatus
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = if (isConnected && isPhoneBluetoothOn && isPcBluetoothOn) "Hardware Biometric Key Active"
-                    else if (isConnected && !isPcBluetoothOn) "PC Bluetooth is Disabled"
-                    else if (isConnected && !isPhoneBluetoothOn) "Phone Bluetooth is Disabled"
-                    else if (isPaired) "Paired with $pcName"
-                    else "Ready for Pairing",
+                    text = if (challengeRemainingSeconds > 0) "Biometric Unlock (⏱️ ${challengeRemainingSeconds}s)"
+                    else if (isConnected && isPhoneBluetoothOn && isPcBluetoothOn) "Hardware Biometric Key"
+                    else if (isConnected && !isPcBluetoothOn) "PC Bluetooth Off"
+                    else if (isConnected && !isPhoneBluetoothOn) "Phone Bluetooth Off"
+                    else if (isPaired) "$pcName Paired"
+                    else "Ready to Pair",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp
+                    fontSize = 16.sp
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(3.dp))
 
                 Text(
-                    text = if (isConnected)
-                        "Tap fingerprint anytime to refresh link & sync ⚡"
+                    text = if (challengeRemainingSeconds > 0)
+                        "Touch fingerprint sensor on phone to unlock ⚡"
+                    else if (isConnected)
+                        "Tap fingerprint to refresh link & sync ⚡"
                     else if (isPaired)
                         "Tap fingerprint to reconnect with $pcName ⚡"
                     else
-                        "Tap 'Scan QR to Pair' to link with your PC",
+                        "Tap 'Scan QR to Pair' to link with PC",
                     color = Color(0xFF94A3B8),
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(horizontal = 20.dp)
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // Swipe Left Pill Hint
                 Box(
@@ -1312,11 +1445,11 @@ class MainActivity : FragmentActivity() {
                         .background(Color(0xFF10192A))
                         .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(20.dp))
                         .clickable(onClick = onSwipeToAuraDrop)
-                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                        .padding(horizontal = 14.dp, vertical = 5.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "Swipe left for AuraDrop & Tools ⚡",
+                            text = "Swipe for AuraDrop & Tools ⚡",
                             color = Color(0xFF00D2FF),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
@@ -1326,7 +1459,7 @@ class MainActivity : FragmentActivity() {
                             imageVector = Icons.Default.ArrowForward,
                             contentDescription = null,
                             tint = Color(0xFF00D2FF),
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(13.dp)
                         )
                     }
                 }
@@ -1562,8 +1695,8 @@ class MainActivity : FragmentActivity() {
                         Column {
                             Text(
                                 text = when {
-                                    isActionPending && isPcLocked -> "Unlocking PC..."
-                                    isActionPending && !isPcLocked -> "Locking PC..."
+                                    isActionPending && isPcLocked -> "Unlocking..."
+                                    isActionPending && !isPcLocked -> "Locking..."
                                     isPcLocked -> "Unlock PC"
                                     else -> "Lock PC"
                                 },
@@ -1573,9 +1706,9 @@ class MainActivity : FragmentActivity() {
                             )
                             Text(
                                 text = when {
-                                    isActionPending -> "Verifying with PC..."
-                                    isPcLocked -> "Screen Locked • Tap to Unlock"
-                                    else -> "Screen Active • Tap to Lock"
+                                    isActionPending -> "Verifying..."
+                                    isPcLocked -> "Locked • Tap to Unlock"
+                                    else -> "Active • Tap to Lock"
                                 },
                                 fontSize = 11.sp,
                                 color = Color.White.copy(alpha = 0.85f),
@@ -1591,7 +1724,7 @@ class MainActivity : FragmentActivity() {
                             .background(Color.Black.copy(alpha = 0.28f))
                             .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
                             .clickable(enabled = !isActionPending, onClick = onManualToggleState)
-                            .padding(horizontal = 9.dp, vertical = 6.dp)
+                            .padding(horizontal = 8.dp, vertical = 5.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
@@ -1606,10 +1739,10 @@ class MainActivity : FragmentActivity() {
                                         }
                                     )
                             )
-                            Spacer(modifier = Modifier.width(5.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = when {
-                                    isActionPending -> "SYNCING"
+                                    isActionPending -> "SYNC"
                                     isPcLocked -> "LOCKED"
                                     else -> "UNLOCKED"
                                 },
@@ -1786,7 +1919,11 @@ class MainActivity : FragmentActivity() {
                 Button(
                     onClick = {
                         if (isConnected) {
-                            filePickerLauncher.launch("*/*")
+                            try {
+                                filePickerLauncher.launch("*/*")
+                            } catch (e: Throwable) {
+                                Toast.makeText(context, "Could not open file picker: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
                         } else {
                             Toast.makeText(context, "Connect to PC first to share files", Toast.LENGTH_SHORT).show()
                         }
@@ -1809,7 +1946,11 @@ class MainActivity : FragmentActivity() {
                 Button(
                     onClick = {
                         if (isConnected) {
-                            filePickerLauncher.launch("image/*")
+                            try {
+                                filePickerLauncher.launch("image/*")
+                            } catch (e: Throwable) {
+                                Toast.makeText(context, "Could not open gallery: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
                         } else {
                             Toast.makeText(context, "Connect to PC first to share photos", Toast.LENGTH_SHORT).show()
                         }
@@ -2251,10 +2392,10 @@ class MainActivity : FragmentActivity() {
                     else Color(0xFF00FF88)
                 val btPillBg = btPillColor.copy(alpha = 0.15f)
                 val btPillBorder = btPillColor.copy(alpha = 0.4f)
-                val btPillText = if (!isPhoneBluetoothOn) "Phone BT: Off ⚠️"
-                    else if (!isConnected) "BLE: Standby"
-                    else if (!isPcBluetoothOn) "PC BT: Off 🔴"
-                    else "BLE: Linked 🟢"
+                val btPillText = if (!isPhoneBluetoothOn) "Phone BT Off"
+                    else if (!isConnected) "BLE Standby"
+                    else if (!isPcBluetoothOn) "PC BT Off"
+                    else "BLE Linked"
 
                 Box(
                     modifier = Modifier
@@ -2353,10 +2494,10 @@ class MainActivity : FragmentActivity() {
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (isConnected && isFullBluetoothOn) "🟢 Linked & Armed"
-                            else if (isConnected && !isPcBluetoothOn) "🔴 PC Bluetooth Off"
-                            else if (isPaired && !isPhoneBluetoothOn) "⚠️ Phone Bluetooth Off"
-                            else if (isPaired) "🔵 Ready to Link"
+                            text = if (isConnected && isFullBluetoothOn) "🟢 Linked"
+                            else if (isConnected && !isPcBluetoothOn) "🔴 PC BT Off"
+                            else if (isPaired && !isPhoneBluetoothOn) "⚠️ Phone BT Off"
+                            else if (isPaired) "🔵 Ready"
                             else "⚪ Unpaired",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
@@ -2376,9 +2517,9 @@ class MainActivity : FragmentActivity() {
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = if (isConnected) "Tap to Disconnect"
-                                else if (!isPhoneBluetoothOn) "⚠️ Turn On BLE"
-                                else "Tap to Link 🔄",
+                                text = if (isConnected) "Disconnect"
+                                else if (!isPhoneBluetoothOn) "Enable BLE"
+                                else "Connect ⚡",
                                 color = if (isConnected) Color(0xFFEF4444)
                                 else if (!isPhoneBluetoothOn) Color(0xFFFBBF24)
                                 else Color(0xFF00D2FF),
@@ -2412,13 +2553,13 @@ class MainActivity : FragmentActivity() {
 
                     Text(
                         text = if (isConnected && isFullBluetoothOn)
-                            "Biometric lock active on $pcIp:47890 via $networkTransport • Bluetooth Verified"
+                            "Secured on $pcIp via $networkTransport"
                         else if (isConnected && !isPcBluetoothOn)
-                            "Connected via $networkTransport, but PC Bluetooth is OFF. Turn on PC Bluetooth for proximity security."
+                            "PC Bluetooth is OFF. Turn ON for proximity."
                         else if (!isPhoneBluetoothOn)
-                            "Phone Bluetooth is required for security proximity. Turn on Bluetooth to link."
+                            "Phone Bluetooth required for proximity security."
                         else
-                            "Paired device registered. Tap card to establish live link.",
+                            "Paired device. Tap card to connect.",
                         color = if (isConnected && !isPcBluetoothOn) Color(0xFFFCA5A5) else if (!isPhoneBluetoothOn) Color(0xFFFDE68A) else Color(0xFF94A3B8),
                         fontSize = 12.sp
                     )
@@ -2433,24 +2574,16 @@ class MainActivity : FragmentActivity() {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = if (isConnected && isFullBluetoothOn) "Channel: $networkTransport • 🟢 Live Linked"
-                                else if (isConnected && !isPcBluetoothOn) "Channel: $networkTransport • 🔴 PC BLE OFF"
-                                else if (!isConnected) "Channel: $networkTransport • ⚪ Disconnected (Standby)"
-                                else if (isPhoneBluetoothOn) "Channel: $networkTransport • 🔵 BLE Standby"
-                                else "Channel: $networkTransport • 🔴 Phone BLE OFF",
-                            color = if (isConnected && isFullBluetoothOn) Color(0xFF00FF88)
-                                else if (isConnected && !isPcBluetoothOn) Color(0xFFEF4444)
-                                else if (!isConnected) Color(0xFF94A3B8)
-                                else if (isPhoneBluetoothOn) Color(0xFFCBD5E1)
-                                else Color(0xFFF87171),
+                            text = "$networkTransport • $pcIp",
+                            color = Color(0xFF94A3B8),
                             fontSize = 11.sp
                         )
                         Text(
-                            text = if (isConnected && isFullBluetoothOn) "Armed (Live)"
-                                else if (isConnected && !isPcBluetoothOn) "PC BT Off"
-                                else if (!isPhoneBluetoothOn) "Paused (No BLE)"
-                                else if (!isConnected) "Disconnected"
-                                else "Standby",
+                            text = if (isConnected && isFullBluetoothOn) "🟢 Armed"
+                                else if (isConnected && !isPcBluetoothOn) "🔴 PC BT Off"
+                                else if (!isPhoneBluetoothOn) "⚠️ No BLE"
+                                else if (!isConnected) "⚪ Standby"
+                                else "🔵 Linked",
                             color = if (isConnected && isFullBluetoothOn) Color(0xFF00FF88)
                                 else if (isConnected && !isPcBluetoothOn) Color(0xFFEF4444)
                                 else if (!isPhoneBluetoothOn) Color(0xFFF59E0B)
@@ -2478,25 +2611,38 @@ class MainActivity : FragmentActivity() {
 
         lifecycleScope.launch {
             try {
-                val fileName = getFileNameFromUri(uri) ?: "shared_file.bin"
-                val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
-                val inputStream = contentResolver.openInputStream(uri)
-                val bytes = inputStream?.readBytes() ?: ByteArray(0)
-                inputStream?.close()
+                val fileName = getFileNameFromUri(uri)
+                val mimeType = try {
+                    contentResolver.getType(uri) ?: "application/octet-stream"
+                } catch (_: Throwable) {
+                    "application/octet-stream"
+                }
+                val fileSize = getFileSizeFromUri(uri)
+                val inputStream = try {
+                    contentResolver.openInputStream(uri)
+                } catch (e: Throwable) {
+                    null
+                }
+
+                if (inputStream == null) {
+                    Toast.makeText(this@MainActivity, "Could not access selected file", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
 
                 transferState = AuraDropTransferState(
                     isTransferring = true,
                     activeFileName = fileName,
                     isIncoming = false,
-                    totalBytes = bytes.size.toLong(),
+                    totalBytes = fileSize,
                     progress = 0.05f
                 )
 
                 val phoneName = "${Build.MANUFACTURER} ${Build.MODEL}"
                 AuraLockService.updateTransfer(this@MainActivity, fileName, 0.05f, isIncoming = false)
-                val success = client?.sendFileToPc(
+                val success = client?.sendFileStreamToPc(
                     fileName = fileName,
-                    fileBytes = bytes,
+                    inputStream = inputStream,
+                    totalBytes = fileSize,
                     mimeType = mimeType,
                     phoneName = phoneName
                 ) { progress, bytesSent, total ->
@@ -2515,7 +2661,7 @@ class MainActivity : FragmentActivity() {
                 } else {
                     AuraLockService.start(this@MainActivity, pcNameState)
                     transferState = transferState.copy(isTransferring = false, isError = true)
-                    Toast.makeText(this@MainActivity, "Failed to send file", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "Failed to send file to PC", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -2540,23 +2686,53 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    private fun getFileNameFromUri(uri: Uri): String? {
-        var name: String? = null
-        if (uri.scheme == "content") {
-            val cursor = contentResolver.query(uri, null, null, null, null)
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val index = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (index != -1) {
-                        name = it.getString(index)
+    private fun getFileSizeFromUri(uri: Uri): Long {
+        return try {
+            if (uri.scheme == "content") {
+                val cursor = contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)
+                cursor?.use {
+                    if (it.moveToFirst()) {
+                        val sizeIndex = it.getColumnIndex(OpenableColumns.SIZE)
+                        if (sizeIndex != -1) {
+                            return it.getLong(sizeIndex)
+                        }
                     }
                 }
             }
+            if (uri.scheme == "file") {
+                uri.path?.let { File(it).length() } ?: 0L
+            } else {
+                contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
+            }
+        } catch (_: Throwable) {
+            0L
         }
-        if (name == null) {
-            name = uri.path?.let { File(it).name }
+    }
+
+    private fun getFileNameFromUri(uri: Uri): String {
+        var name: String? = null
+        try {
+            if (uri.scheme == "content") {
+                val cursor = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                cursor?.use {
+                    if (it.moveToFirst()) {
+                        val index = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (index != -1) {
+                            name = it.getString(index)
+                        }
+                    }
+                }
+            }
+            if (name == null) {
+                name = uri.lastPathSegment
+            }
+            if (name == null) {
+                name = uri.path?.let { File(it).name }
+            }
+        } catch (_: Throwable) {
+            name = uri.lastPathSegment
         }
-        return name
+        return name ?: "shared_file.bin"
     }
 
     private fun listenToClientEvents(
@@ -2567,6 +2743,11 @@ class MainActivity : FragmentActivity() {
         onDisconnectExtra: (() -> Unit)? = null
     ) {
         lifecycleScope.launch {
+            val safeStorageDir = try {
+                getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: filesDir
+            } catch (_: Throwable) {
+                filesDir
+            }
             clientInstance.listenForEvents(
                 onChallenge = { challenge -> handleChallenge(challenge) },
                 onIncomingFileOffer = { offer ->
@@ -2622,11 +2803,15 @@ class MainActivity : FragmentActivity() {
                 onLockStateChanged = { isLocked ->
                     isPcLockedState = isLocked
                     prefs.edit().putBoolean("is_pc_locked", isLocked).apply()
+                    if (isConnectedState) {
+                        statusMessageState = if (isLocked) "🟢 $targetPcName is Locked • Ready to Unlock" else "🟢 $targetPcName is Unlocked • System Active"
+                    }
                 },
                 onUnpaired = {
                     performLocalUnpairCleanUp()
                     Toast.makeText(this@MainActivity, "Device Unpaired by PC", Toast.LENGTH_LONG).show()
                 },
+                fallbackStorageDir = safeStorageDir,
                 onDisconnect = {
                     isConnectedState = false
                     isPcBluetoothEnabledState.value = false
@@ -2828,11 +3013,27 @@ class MainActivity : FragmentActivity() {
         try {
             isPcLockedState = true
             prefs.edit().putBoolean("is_pc_locked", true).apply()
+
+            // Start 60s live countdown timer
+            challengeTimerJob?.cancel()
+            challengeRemainingSecondsState = 60
+            challengeTimerJob = lifecycleScope.launch {
+                while (challengeRemainingSecondsState > 0) {
+                    delay(1000)
+                    challengeRemainingSecondsState--
+                }
+                if (challengeRemainingSecondsState <= 0) {
+                    Toast.makeText(this@MainActivity, "⏱️ Challenge Expired (60s)", Toast.LENGTH_SHORT).show()
+                }
+            }
+
             val signature = cryptoManager.getInitializedSignature()
             biometricPrompt.promptForUnlock(
                 signature = signature,
                 pcName = challenge.pcName,
                 onSuccess = { authedSig ->
+                    challengeTimerJob?.cancel()
+                    challengeRemainingSecondsState = 0
                     lifecycleScope.launch {
                         val signablePayload =
                             "auralock:v1:${challenge.challengeId}:${challenge.nonceHex}:${challenge.timestampEpoch}".toByteArray()
@@ -2851,10 +3052,14 @@ class MainActivity : FragmentActivity() {
                     }
                 },
                 onError = { err ->
+                    challengeTimerJob?.cancel()
+                    challengeRemainingSecondsState = 0
                     Toast.makeText(this@MainActivity, "Biometric failed: $err", Toast.LENGTH_SHORT).show()
                 }
             )
         } catch (e: Exception) {
+            challengeTimerJob?.cancel()
+            challengeRemainingSecondsState = 0
             e.printStackTrace()
             Toast.makeText(this, "Biometric Error: ${e.message}", Toast.LENGTH_LONG).show()
         }
@@ -2889,6 +3094,176 @@ class MainActivity : FragmentActivity() {
             )
         } catch (e: Exception) {
             Toast.makeText(this, "Biometric test: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    @Composable
+    private fun PermissionOnboardingDialog(
+        onGrantAllClicked: () -> Unit,
+        onOpenSettingsClicked: () -> Unit,
+        onDismiss: () -> Unit
+    ) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = Color(0xFF0F172A),
+            shape = RoundedCornerShape(20.dp),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(Color(0xFF00FF88), Color(0xFF00D2FF))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = null,
+                            tint = Color(0xFF07090E),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Welcome to AuraLock",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Device Permissions Setup",
+                            fontSize = 12.sp,
+                            color = Color(0xFF00D2FF)
+                        )
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "To pair with your PC and enable biometric unlock & wireless file transfer, AuraLock requires the following permissions:",
+                        fontSize = 13.sp,
+                        color = Color(0xFF94A3B8),
+                        lineHeight = 18.sp
+                    )
+
+                    PermissionItemRow(
+                        icon = Icons.Default.CameraAlt,
+                        iconTint = Color(0xFF38BDF8),
+                        title = "Camera",
+                        desc = "Scan PC pairing QR code from terminal"
+                    )
+
+                    PermissionItemRow(
+                        icon = Icons.Default.Bluetooth,
+                        iconTint = Color(0xFF818CF8),
+                        title = "Bluetooth & Nearby",
+                        desc = "Proximity detection & hardware unlock triggers"
+                    )
+
+                    PermissionItemRow(
+                        icon = Icons.Default.Notifications,
+                        iconTint = Color(0xFFFBBF24),
+                        title = "Notifications",
+                        desc = "Challenge alerts & background file transfer status"
+                    )
+
+                    PermissionItemRow(
+                        icon = Icons.Default.Folder,
+                        iconTint = Color(0xFF34D399),
+                        title = "Photos & Storage",
+                        desc = "Wireless AuraDrop file & photo sharing"
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = onGrantAllClicked,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF0284C7)
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Grant All Permissions", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onOpenSettingsClicked) {
+                        Text("App Settings", color = Color(0xFF64748B), fontSize = 12.sp)
+                    }
+                    TextButton(onClick = onDismiss) {
+                        Text("Skip for Now", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                    }
+                }
+            }
+        )
+    }
+
+    @Composable
+    private fun PermissionItemRow(
+        icon: androidx.compose.ui.graphics.vector.ImageVector,
+        iconTint: Color,
+        title: String,
+        desc: String
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF1E293B).copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(iconTint.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(10.dp))
+            Column {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    color = Color.White
+                )
+                Text(
+                    text = desc,
+                    fontSize = 11.sp,
+                    color = Color(0xFF94A3B8)
+                )
+            }
         }
     }
 }

@@ -82,7 +82,11 @@ fun QrScannerView(
 
     LaunchedEffect(Unit) {
         if (!hasCameraPermission) {
-            launcher.launch(Manifest.permission.CAMERA)
+            try {
+                launcher.launch(Manifest.permission.CAMERA)
+            } catch (e: Throwable) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -128,11 +132,38 @@ fun QrScannerView(
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(
-                    onClick = { launcher.launch(Manifest.permission.CAMERA) },
+                    onClick = {
+                        try {
+                            launcher.launch(Manifest.permission.CAMERA)
+                        } catch (e: Throwable) {
+                            e.printStackTrace()
+                            try {
+                                val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = android.net.Uri.fromParts("package", context.packageName, null)
+                                }
+                                context.startActivity(intent)
+                            } catch (_: Throwable) {}
+                        }
+                    },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF06B6D4)),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text("Grant Camera Permission", fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(
+                    onClick = {
+                        try {
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = android.net.Uri.fromParts("package", context.packageName, null)
+                            }
+                            context.startActivity(intent)
+                        } catch (e: Throwable) {
+                            android.widget.Toast.makeText(context, "Open Settings -> Apps -> AuraLock -> Permissions", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+                ) {
+                    Text("Open App Settings", color = Color(0xFF94A3B8), fontSize = 13.sp)
                 }
                 Spacer(modifier = Modifier.height(12.dp))
                 TextButton(onClick = onManualInputClicked) {

@@ -237,6 +237,7 @@ class AuraLockClient(
         onPcBluetoothStatus: (Boolean) -> Unit = {},
         onLockStateChanged: (Boolean) -> Unit = {},
         onUnpaired: () -> Unit = {},
+        fallbackStorageDir: File? = null,
         onDisconnect: () -> Unit
     ) = withContext(Dispatchers.IO) {
         try {
@@ -248,7 +249,11 @@ class AuraLockClient(
                 val line = reader?.readLine() ?: break
                 if (line.isBlank()) continue
 
-                val json = JSONObject(line)
+                val json = try {
+                    JSONObject(line)
+                } catch (_: Exception) {
+                    continue
+                }
                 val type = json.optString("type")
                 when (type) {
                     "BluetoothStatus" -> {
@@ -275,12 +280,12 @@ class AuraLockClient(
                         }
                     }
                     "Challenge" -> {
-                        val payload = json.getJSONObject("payload")
+                        val payload = json.optJSONObject("payload") ?: continue
                         val event = ChallengeEvent(
-                            challengeId = payload.getString("challenge_id"),
-                            nonceHex = payload.getString("nonce_hex"),
-                            timestampEpoch = payload.getLong("timestamp_epoch"),
-                            pcName = payload.getString("pc_name")
+                            challengeId = payload.optString("challenge_id"),
+                            nonceHex = payload.optString("nonce_hex"),
+                            timestampEpoch = payload.optLong("timestamp_epoch", System.currentTimeMillis() / 1000),
+                            pcName = payload.optString("pc_name", "PC")
                         )
                         withContext(Dispatchers.Main) {
                             onLockStateChanged(true)
@@ -288,85 +293,117 @@ class AuraLockClient(
                         }
                     }
                     "FileOffer" -> {
-                        val payload = json.getJSONObject("payload")
-                        val fileId = payload.getString("file_id")
-                        val fileName = payload.getString("file_name")
-                        val fileSize = payload.getLong("file_size")
-                        val mimeType = payload.optString("mime_type", "application/octet-stream")
-                        val senderName = payload.optString("sender_name", "PC")
+                        try {
+                            val payload = json.optJSONObject("payload") ?: continue
+                            val fileId = payload.optString("file_id", "file_${UUID.randomUUID().toString().take(6)}")
+                            val fileName = payload.optString("file_name", "received_file.bin")
+                            val fileSize = payload.optLong("file_size", 0L)
+                            val mimeType = payload.optString("mime_type", "application/octet-stream")
+                            val senderName = payload.optString("sender_name", "PC")
 
-                        val downloadsDir = File(
-                            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                            "AuraLock"
-                        )
-                        if (!downloadsDir.exists()) downloadsDir.mkdirs()
+                            val targetDir: File = try {
+                                val pub = File(
+                                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                                    "AuraLock"
+                                )
+                                if (!pub.exists()) pub.mkdirs()
+                                if (pub.canWrite()) pub else (fallbackStorageDir ?: pub)
+                            } catch (_: Throwable) {
+                                fallbackStorageDir ?: File("/sdcard/Download")
+                            }
+                            if (!targetDir.exists()) {
+                                try { targetDir.mkdirs() } catch (_: Throwable) {}
+                            }
 
-                        val targetFile = File(downloadsDir, fileName)
-                        val fos = FileOutputStream(targetFile)
-                        incomingFiles[fileId] = Pair(targetFile, fos)
-                        incomingSizes[fileId] = fileSize
-                        incomingBytesReceived[fileId] = 0L
+                            val targetFile = File(targetDir, fileName)
+                            val fos = try {
+                                FileOutputStream(targetFile)
+                            } catch (e: Exception) {
+                                val safeDir = fallbackStorageDir ?: targetDir
+                                if (!safeDir.exists()) safeDir.mkdirs()
+                                val safeFile = File(safeDir, fileName)
+                                FileOutputStream(safeFile)
+                            }
 
-                        withContext(Dispatchers.Main) {
-                            onIncomingFileOffer(IncomingFileOfferEvent(fileId, fileName, fileSize, mimeType, senderName))
+                            incomingFiles[fileId] = Pair(targetFile, fos)
+                            incomingSizes[fileId] = fileSize
+                            incomingBytesReceived[fileId] = 0L
+
+                            withContext(Dispatchers.Main) {
+                                onIncomingFileOffer(IncomingFileOfferEvent(fileId, fileName, fileSize, mimeType, senderName))
+                            }
+                        } catch (e: Throwable) {
+                            e.printStackTrace()
                         }
                     }
                     "FileChunk" -> {
-                        val payload = json.getJSONObject("payload")
-                        val fileId = payload.getString("file_id")
-                        val chunkIndex = payload.getInt("chunk_index")
-                        val totalChunks = payload.getInt("total_chunks")
-                        val base64Data = payload.getString("data_base64")
+                        try {
+                            val payload = json.optJSONObject("payload") ?: continue
+                            val fileId = payload.optString("file_id")
+                            val chunkIndex = payload.optInt("chunk_index", 0)
+                            val totalChunks = payload.optInt("total_chunks", 1)
+                            val base64Data = payload.optString("data_base64", "")
 
-                        val bytes = Base64.decode(base64Data, Base64.NO_WRAP)
-                        val pair = incomingFiles[fileId]
-                        if (pair != null) {
-                            pair.second.write(bytes)
-                            val received = (incomingBytesReceived[fileId] ?: 0L) + bytes.size
-                            incomingBytesReceived[fileId] = received
-                            val totalSize = incomingSizes[fileId] ?: 1L
-                            val progress = (received.toFloat() / totalSize.toFloat()).coerceIn(0f, 1f)
+                            val bytes = Base64.decode(base64Data, Base64.NO_WRAP)
+                            val pair = incomingFiles[fileId]
+                            if (pair != null) {
+                                pair.second.write(bytes)
+                                val received = (incomingBytesReceived[fileId] ?: 0L) + bytes.size
+                                incomingBytesReceived[fileId] = received
+                                val totalSize = incomingSizes[fileId] ?: 1L
+                                val progress = (received.toFloat() / totalSize.toFloat()).coerceIn(0f, 1f)
 
-                            withContext(Dispatchers.Main) {
-                                onFileProgress(
-                                    FileTransferProgressEvent(
-                                        fileId = fileId,
-                                        fileName = pair.first.name,
-                                        isIncoming = true,
-                                        progress = progress,
-                                        bytesTransferred = received,
-                                        totalBytes = totalSize
-                                    )
-                                )
-                            }
-
-                            if (chunkIndex + 1 >= totalChunks || received >= totalSize) {
-                                pair.second.flush()
-                                pair.second.close()
-                                incomingFiles.remove(fileId)
                                 withContext(Dispatchers.Main) {
-                                    onFileReceived(fileId, pair.first.name, pair.first)
+                                    onFileProgress(
+                                        FileTransferProgressEvent(
+                                            fileId = fileId,
+                                            fileName = pair.first.name,
+                                            isIncoming = true,
+                                            progress = progress,
+                                            bytesTransferred = received,
+                                            totalBytes = totalSize
+                                        )
+                                    )
+                                }
+
+                                if (chunkIndex + 1 >= totalChunks || received >= totalSize) {
+                                    try {
+                                        pair.second.flush()
+                                        pair.second.close()
+                                    } catch (_: Throwable) {}
+                                    incomingFiles.remove(fileId)
+                                    withContext(Dispatchers.Main) {
+                                        onFileReceived(fileId, pair.first.name, pair.first)
+                                    }
                                 }
                             }
+                        } catch (e: Throwable) {
+                            e.printStackTrace()
                         }
                     }
                     "FileComplete" -> {
-                        val payload = json.getJSONObject("payload")
-                        val fileId = payload.getString("file_id")
-                        val fileName = payload.getString("file_name")
-                        val pair = incomingFiles.remove(fileId)
-                        if (pair != null) {
-                            pair.second.flush()
-                            pair.second.close()
-                            withContext(Dispatchers.Main) {
-                                onFileReceived(fileId, fileName, pair.first)
+                        try {
+                            val payload = json.optJSONObject("payload") ?: continue
+                            val fileId = payload.optString("file_id")
+                            val fileName = payload.optString("file_name", "received_file")
+                            val pair = incomingFiles.remove(fileId)
+                            if (pair != null) {
+                                try {
+                                    pair.second.flush()
+                                    pair.second.close()
+                                } catch (_: Throwable) {}
+                                withContext(Dispatchers.Main) {
+                                    onFileReceived(fileId, fileName, pair.first)
+                                }
                             }
+                        } catch (e: Throwable) {
+                            e.printStackTrace()
                         }
                     }
                     "Clipboard" -> {
-                        val payload = json.getJSONObject("payload")
-                        val text = payload.getString("text")
-                        val sender = payload.optString("sender_name", "PC")
+                        val payload = json.optJSONObject("payload")
+                        val text = payload?.optString("text") ?: ""
+                        val sender = payload?.optString("sender_name", "PC") ?: "PC"
                         withContext(Dispatchers.Main) {
                             onClipboardReceived(text, sender)
                         }
@@ -387,6 +424,14 @@ class AuraLockClient(
         } catch (e: Exception) {
             e.printStackTrace()
         } finally {
+            // Close any remaining open file output streams cleanly
+            for ((_, pair) in incomingFiles) {
+                try {
+                    pair.second.flush()
+                    pair.second.close()
+                } catch (_: Throwable) {}
+            }
+            incomingFiles.clear()
             heartbeatJob?.cancel()
             withContext(Dispatchers.Main) {
                 onDisconnect()
@@ -394,16 +439,17 @@ class AuraLockClient(
         }
     }
 
-    suspend fun sendFileToPc(
+    suspend fun sendFileStreamToPc(
         fileName: String,
-        fileBytes: ByteArray,
+        inputStream: InputStream,
+        totalBytes: Long,
         mimeType: String = "application/octet-stream",
         phoneName: String = "${Build.MANUFACTURER} ${Build.MODEL}",
         onProgress: (Float, Long, Long) -> Unit
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             val fileId = "phone_file_${UUID.randomUUID().toString().take(8)}"
-            val totalBytes = fileBytes.size.toLong()
+            val safeTotal = if (totalBytes > 0L) totalBytes else 1L
 
             // 1. Send FileOffer
             val offerJson = JSONObject().apply {
@@ -417,17 +463,19 @@ class AuraLockClient(
                 })
             }
             writer?.println(offerJson.toString())
+            writer?.flush()
 
             // 2. Stream chunks (64 KB each)
             val chunkSize = 64 * 1024
-            val totalChunks = if (totalBytes == 0L) 1 else ((totalBytes + chunkSize - 1) / chunkSize).toInt()
+            val buffer = ByteArray(chunkSize)
+            val totalChunks = if (totalBytes <= 0L) 1 else ((totalBytes + chunkSize - 1) / chunkSize).toInt()
             var bytesSent = 0L
-
-            var offset = 0
             var chunkIdx = 0
-            while (offset < fileBytes.size) {
-                val end = (offset + chunkSize).coerceAtMost(fileBytes.size)
-                val chunk = fileBytes.copyOfRange(offset, end)
+
+            var bytesRead: Int
+            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                if (bytesRead <= 0) continue
+                val chunk = if (bytesRead == chunkSize) buffer else buffer.copyOfRange(0, bytesRead)
                 val base64 = Base64.encodeToString(chunk, Base64.NO_WRAP)
 
                 val chunkJson = JSONObject().apply {
@@ -440,16 +488,20 @@ class AuraLockClient(
                     })
                 }
                 writer?.println(chunkJson.toString())
-                bytesSent += chunk.size
-                offset = end
+                writer?.flush()
+                bytesSent += bytesRead
                 chunkIdx++
 
-                val prog = (bytesSent.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
+                val prog = if (totalBytes > 0) {
+                    (bytesSent.toFloat() / safeTotal.toFloat()).coerceIn(0f, 1f)
+                } else {
+                    1f
+                }
                 withContext(Dispatchers.Main) {
                     onProgress(prog, bytesSent, totalBytes)
                 }
 
-                delay(5)
+                delay(2)
             }
 
             // 3. Send Complete
@@ -463,12 +515,32 @@ class AuraLockClient(
                 })
             }
             writer?.println(completeJson.toString())
+            writer?.flush()
             true
         } catch (e: Exception) {
             e.printStackTrace()
             false
+        } finally {
+            try {
+                inputStream.close()
+            } catch (_: Throwable) {}
         }
     }
+
+    suspend fun sendFileToPc(
+        fileName: String,
+        fileBytes: ByteArray,
+        mimeType: String = "application/octet-stream",
+        phoneName: String = "${Build.MANUFACTURER} ${Build.MODEL}",
+        onProgress: (Float, Long, Long) -> Unit
+    ): Boolean = sendFileStreamToPc(
+        fileName = fileName,
+        inputStream = ByteArrayInputStream(fileBytes),
+        totalBytes = fileBytes.size.toLong(),
+        mimeType = mimeType,
+        phoneName = phoneName,
+        onProgress = onProgress
+    )
 
     suspend fun sendClipboardToPc(text: String, phoneName: String = "${Build.MANUFACTURER} ${Build.MODEL}"): Boolean = withContext(Dispatchers.IO) {
         try {

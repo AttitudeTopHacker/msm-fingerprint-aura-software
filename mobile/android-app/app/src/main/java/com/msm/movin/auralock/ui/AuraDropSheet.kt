@@ -195,7 +195,11 @@ fun AuraDropSheet(
                 Button(
                     onClick = {
                         if (isConnected) {
-                            filePickerLauncher.launch("*/*")
+                            try {
+                                filePickerLauncher.launch("*/*")
+                            } catch (e: Throwable) {
+                                Toast.makeText(context, "Could not open file picker: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
                         } else {
                             Toast.makeText(context, "Connect to PC first", Toast.LENGTH_SHORT).show()
                         }
@@ -218,7 +222,11 @@ fun AuraDropSheet(
                 Button(
                     onClick = {
                         if (isConnected) {
-                            filePickerLauncher.launch("image/*")
+                            try {
+                                filePickerLauncher.launch("image/*")
+                            } catch (e: Throwable) {
+                                Toast.makeText(context, "Could not open gallery: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
                         } else {
                             Toast.makeText(context, "Connect to PC first", Toast.LENGTH_SHORT).show()
                         }

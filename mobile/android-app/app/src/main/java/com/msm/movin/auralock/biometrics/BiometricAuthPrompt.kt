@@ -51,7 +51,7 @@ class BiometricAuthPrompt(private val activity: FragmentActivity) {
 
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
             .setTitle("Unlock $pcName")
-            .setSubtitle("Touch fingerprint sensor to unlock PC")
+            .setSubtitle("Touch sensor to unlock (60s)")
             .setNegativeButtonText("Cancel")
             .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
             .build()

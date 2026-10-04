@@ -510,7 +510,7 @@ impl NetworkService {
             let _ = tx.send(ProtocolMessage::Challenge(pending_ch)).await;
         }
 
-        // Spawn real-time Bluetooth status watcher (checks every 500ms and sends on state change)
+        // Spawn real-time Lock state & Bluetooth status watcher (checks every 500ms and sends on state change)
         let tx_bt = tx.clone();
         let pc_name_bt = self.pc_name.clone();
         let bt_watcher_task = tokio::spawn(async move {
@@ -525,6 +525,22 @@ impl NetworkService {
                         device_name: Some(pc_name_bt.clone()),
                     });
                     if tx_bt.send(msg).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+
+        let tx_lock = tx.clone();
+        let lock_watcher_task = tokio::spawn(async move {
+            let mut last_lock = is_pc_screen_locked();
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                let current_lock = is_pc_screen_locked();
+                if current_lock != last_lock {
+                    last_lock = current_lock;
+                    let msg = ProtocolMessage::LockStateChanged { is_locked: current_lock };
+                    if tx_lock.send(msg).await.is_err() {
                         break;
                     }
                 }
@@ -585,6 +601,7 @@ impl NetworkService {
         self.broadcast_event(WebEvent::ClientDisconnected);
         writer_task.abort();
         bt_watcher_task.abort();
+        lock_watcher_task.abort();
 
         info!("Client disconnected (Manual locking mode active; no auto-lock on disconnect)");
 
@@ -1313,7 +1330,50 @@ pub fn is_pc_screen_locked() -> bool {
 
         false
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "windows")]
+    {
+        // 1. Direct Win32 API check: OpenInputDesktop
+        // When desktop is locked / switched to Winlogon secure desktop, OpenInputDesktop fails with ERROR_ACCESS_DENIED (5)
+        #[link(name = "user32")]
+        extern "system" {
+            fn OpenInputDesktop(dwFlags: u32, fInherit: i32, dwDesiredAccess: u32) -> isize;
+            fn CloseDesktop(hDesktop: isize) -> i32;
+        }
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetLastError() -> u32;
+        }
+
+        unsafe {
+            let desk = OpenInputDesktop(0, 0, 0x0100 /* DESKTOP_SWITCHDESKTOP */);
+            if desk == 0 {
+                let err = GetLastError();
+                if err == 5 {
+                    return true;
+                }
+            } else {
+                CloseDesktop(desk);
+            }
+        }
+
+        // 2. Check if Windows Lock Screen / LogonUI is running
+        let mut cmd = std::process::Command::new("tasklist");
+        cmd.args(["/FI", "IMAGENAME eq LogonUI.exe", "/NH"]);
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        if let Ok(output) = cmd.output() {
+            let text = String::from_utf8_lossy(&output.stdout);
+            if text.contains("LogonUI.exe") {
+                return true;
+            }
+        }
+
+        false
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     {
         false
     }
