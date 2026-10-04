@@ -504,6 +504,12 @@ impl NetworkService {
             device_name: Some(self.pc_name.clone()),
         })).await;
 
+        // If there is an active pending challenge (e.g. from PC lock screen / PAM / Windows CP), deliver immediately
+        if let Some(pending_ch) = self.state_mgr.get_latest_valid_challenge().await {
+            info!("Pushing active pending challenge {} to newly connected phone", pending_ch.challenge_id);
+            let _ = tx.send(ProtocolMessage::Challenge(pending_ch)).await;
+        }
+
         // Spawn real-time Bluetooth status watcher (checks every 500ms and sends on state change)
         let tx_bt = tx.clone();
         let pc_name_bt = self.pc_name.clone();
@@ -596,6 +602,14 @@ impl NetworkService {
                 self.broadcast_event(WebEvent::ClientConnected {
                     phone_name: req.phone_name,
                 });
+
+                // Deliver any pending challenge waiting for phone biometric response
+                if let Some(pending_ch) = self.state_mgr.get_latest_valid_challenge().await {
+                    info!("Pushing pending challenge {} to phone on identify", pending_ch.challenge_id);
+                    if let Some(tx) = &*self.active_client.lock().await {
+                        let _ = tx.send(ProtocolMessage::Challenge(pending_ch)).await;
+                    }
+                }
             }
             ProtocolMessage::PairingReq(req) => {
                 info!("Received pairing request from phone: {}", req.phone_name);
@@ -682,6 +696,7 @@ impl NetworkService {
                 let result = self.state_mgr.verify_unlock_response(resp).await;
                 match result {
                     Ok(res) => {
+                        self.state_mgr.set_lock_state(crate::state::SessionLockState::Unlocked).await;
                         unlock_pc_screen();
                         self.broadcast_event(WebEvent::UnlockEvent {
                             success: res.success,
@@ -716,6 +731,9 @@ impl NetworkService {
                         is_active: is_pc_bluetooth_active(),
                         device_name: Some(self.pc_name.clone()),
                     })).await;
+                    if let Some(pending_ch) = self.state_mgr.get_latest_valid_challenge().await {
+                        let _ = tx.send(ProtocolMessage::Challenge(pending_ch)).await;
+                    }
                 }
             }
             ProtocolMessage::FileOffer(offer) => {
@@ -868,6 +886,7 @@ impl NetworkService {
             }
             ProtocolMessage::RemoteLockReq(_req) => {
                 info!("Received manual remote lock request from phone");
+                self.state_mgr.set_lock_state(crate::state::SessionLockState::Locked).await;
                 lock_pc_screen();
                 if let Some(tx) = &*self.active_client.lock().await {
                     let _ = tx.send(ProtocolMessage::LockStateChanged { is_locked: true }).await;
@@ -878,12 +897,18 @@ impl NetworkService {
                 if let Some(tx) = &*self.active_client.lock().await {
                     let _ = tx.send(ProtocolMessage::LockStateChanged { is_locked: true }).await;
                 }
-                match self.state_mgr.create_challenge(&self.pc_name).await {
-                    Ok((challenge, _rx)) => {
-                        let _ = self.push_challenge(challenge).await;
-                    }
-                    Err(e) => {
-                        error!("Failed to create challenge on unlock trigger: {:?}", e);
+                // If an active challenge already exists (e.g. from PAM / Windows CP), reuse it so IPC unblocks
+                if let Some(pending_ch) = self.state_mgr.get_latest_valid_challenge().await {
+                    info!("Resending active pending challenge {} on phone trigger", pending_ch.challenge_id);
+                    let _ = self.push_challenge(pending_ch).await;
+                } else {
+                    match self.state_mgr.create_challenge(&self.pc_name).await {
+                        Ok((challenge, _rx)) => {
+                            let _ = self.push_challenge(challenge).await;
+                        }
+                        Err(e) => {
+                            error!("Failed to create challenge on unlock trigger: {:?}", e);
+                        }
                     }
                 }
             }
@@ -996,98 +1021,319 @@ pub fn get_best_local_ip() -> String {
         .unwrap_or_else(|_| "127.0.0.1".to_string())
 }
 
-/// Helper function to trigger Linux / Windows desktop lockscreen
+#[cfg(target_os = "linux")]
+fn get_linux_user_environments() -> Vec<std::collections::HashMap<String, String>> {
+    let mut envs = Vec::new();
+
+    // 1. Current process environment
+    let mut current_env: std::collections::HashMap<String, String> = std::env::vars().collect();
+    if !current_env.contains_key("DISPLAY") || current_env.get("DISPLAY").map(|s| s.is_empty()).unwrap_or(true) {
+        current_env.insert("DISPLAY".to_string(), ":0".to_string());
+    }
+    envs.push(current_env);
+
+    // 2. Discover active user directories in /run/user/* (handles systemd root daemons)
+    if let Ok(entries) = std::fs::read_dir("/run/user") {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if name.chars().all(|c| c.is_ascii_digit()) {
+                        let mut user_env: std::collections::HashMap<String, String> = std::env::vars().collect();
+                        let uid = name;
+                        let runtime_dir = format!("/run/user/{}", uid);
+                        let bus_socket = format!("/run/user/{}/bus", uid);
+
+                        user_env.insert("XDG_RUNTIME_DIR".to_string(), runtime_dir);
+                        if std::path::Path::new(&bus_socket).exists() {
+                            user_env.insert("DBUS_SESSION_BUS_ADDRESS".to_string(), format!("unix:path={}", bus_socket));
+                        }
+                        if !user_env.contains_key("DISPLAY") || user_env.get("DISPLAY").map(|s| s.is_empty()).unwrap_or(true) {
+                            user_env.insert("DISPLAY".to_string(), ":0".to_string());
+                        }
+                        envs.push(user_env);
+                    }
+                }
+            }
+        }
+    }
+
+    envs
+}
+
+#[cfg(target_os = "linux")]
+fn get_active_logind_sessions() -> Vec<String> {
+    let mut sessions = Vec::new();
+    if let Ok(output) = std::process::Command::new("loginctl")
+        .args(["list-sessions", "--no-legend"])
+        .output()
+    {
+        if let Ok(text) = String::from_utf8(output.stdout) {
+            for line in text.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(session_id) = parts.first() {
+                    if !session_id.is_empty() {
+                        sessions.push(session_id.to_string());
+                    }
+                }
+            }
+        }
+    }
+    sessions
+}
+
+/// Helper function to trigger Linux / Windows / macOS desktop lockscreen
 pub fn lock_pc_screen() {
+    info!("🔒 Triggering PC desktop screen lock");
+
     #[cfg(target_os = "linux")]
     {
-        // 1. Standard systemd loginctl lock
+        // 1. System-wide D-Bus signal to systemd-logind (Works directly from root daemon without user session bus!)
+        let _ = std::process::Command::new("dbus-send")
+            .args([
+                "--system",
+                "--type=method_call",
+                "--dest=org.freedesktop.login1",
+                "/org/freedesktop/login1",
+                "org.freedesktop.login1.Manager.LockSessions",
+            ])
+            .spawn();
+
+        let _ = std::process::Command::new("gdbus")
+            .args([
+                "call",
+                "--system",
+                "--dest", "org.freedesktop.login1",
+                "--object-path", "/org/freedesktop/login1",
+                "--method", "org.freedesktop.login1.Manager.LockSessions",
+            ])
+            .spawn();
+
+        // 2. Systemd loginctl lock-sessions (plural: locks all active graphical sessions)
         let _ = std::process::Command::new("loginctl")
-            .arg("lock-session")
+            .args(["lock-sessions", "--no-ask-password"])
             .spawn();
 
-        // 2. GNOME & FreeDesktop DBus ScreenSaver Lock
-        let _ = std::process::Command::new("dbus-send")
-            .args(["--type=method_call", "--dest=org.gnome.ScreenSaver", "/org/gnome/ScreenSaver", "org.gnome.ScreenSaver.Lock"])
+        // 3. Lock individual active logind sessions discovered on the system
+        for session_id in get_active_logind_sessions() {
+            let _ = std::process::Command::new("loginctl")
+                .args(["lock-session", &session_id, "--no-ask-password"])
+                .spawn();
+        }
+
+        let _ = std::process::Command::new("loginctl")
+            .args(["lock-session", "--no-ask-password"])
             .spawn();
 
-        let _ = std::process::Command::new("dbus-send")
-            .args(["--type=method_call", "--dest=org.freedesktop.ScreenSaver", "/org/freedesktop/ScreenSaver", "org.freedesktop.ScreenSaver.Lock"])
-            .spawn();
+        // 4. Trigger desktop-specific screensavers across all active user sessions (Cinnamon, GNOME, KDE, MATE, XFCE, etc.)
+        for env in get_linux_user_environments() {
+            // Cinnamon ScreenSaver DBus
+            let _ = std::process::Command::new("dbus-send")
+                .envs(&env)
+                .args(["--session", "--type=method_call", "--dest=org.cinnamon.ScreenSaver", "/org/cinnamon/ScreenSaver", "org.cinnamon.ScreenSaver.Lock"])
+                .spawn();
 
-        // 3. GNOME screensaver command fallback
-        let _ = std::process::Command::new("gnome-screensaver-command")
-            .arg("-l")
-            .spawn();
+            // GNOME ScreenSaver DBus
+            let _ = std::process::Command::new("dbus-send")
+                .envs(&env)
+                .args(["--session", "--type=method_call", "--dest=org.gnome.ScreenSaver", "/org/gnome/ScreenSaver", "org.gnome.ScreenSaver.Lock"])
+                .spawn();
 
-        // 4. Cinnamon screensaver fallback
-        let _ = std::process::Command::new("cinnamon-screensaver-command")
-            .arg("-l")
-            .spawn();
+            // FreeDesktop ScreenSaver DBus
+            let _ = std::process::Command::new("dbus-send")
+                .envs(&env)
+                .args(["--session", "--type=method_call", "--dest=org.freedesktop.ScreenSaver", "/org/freedesktop/ScreenSaver", "org.freedesktop.ScreenSaver.Lock"])
+                .spawn();
 
-        // 5. MATE screensaver fallback
-        let _ = std::process::Command::new("mate-screensaver-command")
-            .arg("-l")
-            .spawn();
+            // KDE Plasma ScreenLocker
+            let _ = std::process::Command::new("dbus-send")
+                .envs(&env)
+                .args(["--session", "--type=method_call", "--dest=org.kde.kscreenlocker", "/MainApplication", "org.kde.KScreenLocker.lock"])
+                .spawn();
 
-        // 6. XDG screensaver lock fallback
-        let _ = std::process::Command::new("xdg-screensaver")
-            .arg("lock")
-            .spawn();
+            // MATE ScreenSaver DBus
+            let _ = std::process::Command::new("dbus-send")
+                .envs(&env)
+                .args(["--session", "--type=method_call", "--dest=org.mate.ScreenSaver", "/org/mate/ScreenSaver", "org.mate.ScreenSaver.Lock"])
+                .spawn();
 
-        // 7. KDE qdbus fallback
-        let _ = std::process::Command::new("qdbus")
-            .args(["org.freedesktop.ScreenSaver", "/ScreenSaver", "Lock"])
-            .spawn();
+            // Cinnamon screensaver commands
+            let _ = std::process::Command::new("cinnamon-screensaver-command")
+                .envs(&env)
+                .arg("-l")
+                .spawn();
 
-        // 8. XFCE screen lock
-        let _ = std::process::Command::new("xflock4")
-            .spawn();
+            let _ = std::process::Command::new("cinnamon-screensaver-command")
+                .envs(&env)
+                .arg("--lock")
+                .spawn();
+
+            // GNOME screensaver command
+            let _ = std::process::Command::new("gnome-screensaver-command")
+                .envs(&env)
+                .arg("-l")
+                .spawn();
+
+            // MATE screensaver command
+            let _ = std::process::Command::new("mate-screensaver-command")
+                .envs(&env)
+                .arg("-l")
+                .spawn();
+
+            // XDG screensaver command
+            let _ = std::process::Command::new("xdg-screensaver")
+                .envs(&env)
+                .arg("lock")
+                .spawn();
+
+            // KDE qdbus commands
+            let _ = std::process::Command::new("qdbus")
+                .envs(&env)
+                .args(["org.freedesktop.ScreenSaver", "/ScreenSaver", "Lock"])
+                .spawn();
+            let _ = std::process::Command::new("qdbus")
+                .envs(&env)
+                .args(["org.kde.kscreenlocker", "/MainApplication", "lock"])
+                .spawn();
+
+            // XFCE screen lock
+            let _ = std::process::Command::new("xflock4")
+                .envs(&env)
+                .spawn();
+        }
     }
+
     #[cfg(target_os = "windows")]
     {
+        // 1. Direct Win32 API Call (Instant & Reliable)
+        #[link(name = "user32")]
+        extern "system" {
+            fn LockWorkStation() -> i32;
+        }
+        unsafe {
+            LockWorkStation();
+        }
+
+        // 2. Fallback via rundll32
         let _ = std::process::Command::new("rundll32.exe")
             .args(["user32.dll,LockWorkStation"])
             .spawn();
     }
+
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession")
+            .arg("-suspend")
+            .spawn();
+        let _ = std::process::Command::new("pmset")
+            .arg("displaysleepnow")
+            .spawn();
+    }
 }
 
-/// Helper function to trigger Linux desktop unlock / dismiss screensaver
+/// Helper function to trigger Linux / Windows / macOS desktop unlock / dismiss screensaver
 pub fn unlock_pc_screen() {
+    info!("🔓 Triggering PC desktop screen unlock / dismiss screensaver");
+
     #[cfg(target_os = "linux")]
     {
-        // 1. Standard systemd loginctl unlock
+        // 1. System-wide D-Bus signal to systemd-logind
+        let _ = std::process::Command::new("dbus-send")
+            .args([
+                "--system",
+                "--type=method_call",
+                "--dest=org.freedesktop.login1",
+                "/org/freedesktop/login1",
+                "org.freedesktop.login1.Manager.UnlockSessions",
+            ])
+            .spawn();
+
+        let _ = std::process::Command::new("gdbus")
+            .args([
+                "call",
+                "--system",
+                "--dest", "org.freedesktop.login1",
+                "--object-path", "/org/freedesktop/login1",
+                "--method", "org.freedesktop.login1.Manager.UnlockSessions",
+            ])
+            .spawn();
+
+        // 2. Standard systemd loginctl unlock-sessions
         let _ = std::process::Command::new("loginctl")
-            .arg("unlock-session")
+            .args(["unlock-sessions", "--no-ask-password"])
             .spawn();
 
-        // 2. GNOME / FreeDesktop ScreenSaver Deactivate
-        let _ = std::process::Command::new("dbus-send")
-            .args(["--type=method_call", "--dest=org.gnome.ScreenSaver", "/org/gnome/ScreenSaver", "org.gnome.ScreenSaver.SetActive", "boolean:false"])
+        for session_id in get_active_logind_sessions() {
+            let _ = std::process::Command::new("loginctl")
+                .args(["unlock-session", &session_id, "--no-ask-password"])
+                .spawn();
+        }
+
+        let _ = std::process::Command::new("loginctl")
+            .args(["unlock-session", "--no-ask-password"])
             .spawn();
 
-        let _ = std::process::Command::new("dbus-send")
-            .args(["--type=method_call", "--dest=org.freedesktop.ScreenSaver", "/org/freedesktop/ScreenSaver", "org.freedesktop.ScreenSaver.SetActive", "boolean:false"])
-            .spawn();
+        // 3. Deactivate screensavers across active user sessions
+        for env in get_linux_user_environments() {
+            // Cinnamon ScreenSaver Deactivate
+            let _ = std::process::Command::new("dbus-send")
+                .envs(&env)
+                .args(["--session", "--type=method_call", "--dest=org.cinnamon.ScreenSaver", "/org/cinnamon/ScreenSaver", "org.cinnamon.ScreenSaver.SetActive", "boolean:false"])
+                .spawn();
 
-        // 3. GNOME screensaver deactivate fallback
-        let _ = std::process::Command::new("gnome-screensaver-command")
-            .arg("-d")
-            .spawn();
+            // GNOME ScreenSaver Deactivate
+            let _ = std::process::Command::new("dbus-send")
+                .envs(&env)
+                .args(["--session", "--type=method_call", "--dest=org.gnome.ScreenSaver", "/org/gnome/ScreenSaver", "org.gnome.ScreenSaver.SetActive", "boolean:false"])
+                .spawn();
 
-        // 4. Cinnamon screensaver deactivate fallback
-        let _ = std::process::Command::new("cinnamon-screensaver-command")
-            .arg("-d")
-            .spawn();
+            // FreeDesktop ScreenSaver Deactivate
+            let _ = std::process::Command::new("dbus-send")
+                .envs(&env)
+                .args(["--session", "--type=method_call", "--dest=org.freedesktop.ScreenSaver", "/org/freedesktop/ScreenSaver", "org.freedesktop.ScreenSaver.SetActive", "boolean:false"])
+                .spawn();
 
-        // 5. MATE screensaver deactivate fallback
-        let _ = std::process::Command::new("mate-screensaver-command")
-            .arg("-d")
-            .spawn();
+            // MATE ScreenSaver Deactivate
+            let _ = std::process::Command::new("dbus-send")
+                .envs(&env)
+                .args(["--session", "--type=method_call", "--dest=org.mate.ScreenSaver", "/org/mate/ScreenSaver", "org.mate.ScreenSaver.SetActive", "boolean:false"])
+                .spawn();
 
-        // 6. XDG screensaver reset fallback
-        let _ = std::process::Command::new("xdg-screensaver")
-            .arg("reset")
-            .spawn();
+            // Cinnamon screensaver deactivate command
+            let _ = std::process::Command::new("cinnamon-screensaver-command")
+                .envs(&env)
+                .arg("-d")
+                .spawn();
+
+            let _ = std::process::Command::new("cinnamon-screensaver-command")
+                .envs(&env)
+                .arg("--deactivate")
+                .spawn();
+
+            // GNOME screensaver deactivate fallback
+            let _ = std::process::Command::new("gnome-screensaver-command")
+                .envs(&env)
+                .arg("-d")
+                .spawn();
+
+            // MATE screensaver deactivate fallback
+            let _ = std::process::Command::new("mate-screensaver-command")
+                .envs(&env)
+                .arg("-d")
+                .spawn();
+
+            // XDG screensaver reset fallback
+            let _ = std::process::Command::new("xdg-screensaver")
+                .envs(&env)
+                .arg("reset")
+                .spawn();
+
+            // KDE qdbus deactivate
+            let _ = std::process::Command::new("qdbus")
+                .envs(&env)
+                .args(["org.freedesktop.ScreenSaver", "/ScreenSaver", "SetActive", "false"])
+                .spawn();
+        }
     }
 }
 

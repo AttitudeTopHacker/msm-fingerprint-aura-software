@@ -116,7 +116,7 @@ pub extern "C" fn pam_sm_authenticate(
     }
 
     // Display native UI prompt on lockscreen
-    send_pam_info(pamh, "📱 [AuraLock] Touch fingerprint on your phone to unlock...", false);
+    send_pam_info(pamh, "📱 [AuraLock] Touch fingerprint on paired phone to unlock (1 min)...", false);
 
     // Run async IPC request synchronously inside the PAM thread
     let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -135,7 +135,7 @@ pub extern "C" fn pam_sm_authenticate(
         }
         Ok(false) => {
             // Phone rejected or timed out; allow fallback to standard password
-            send_pam_info(pamh, "⚠️ [AuraLock] Biometric timed out / rejected. Please enter password:", true);
+            send_pam_info(pamh, "⚠️ [AuraLock] Biometric timed out (1 min) / rejected. Please enter password:", true);
             PAM_AUTH_ERR
         }
         Err(_) => {

@@ -13,7 +13,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{broadcast, oneshot, Mutex};
 use tracing::{error, info, warn};
 
-const MAX_CHALLENGE_AGE_SECS: i64 = 5;
+const MAX_CHALLENGE_AGE_SECS: i64 = 60;
 const MAX_FAILED_ATTEMPTS: u32 = 5;
 const LOCKOUT_DURATION_SECS: u64 = 60;
 
@@ -131,9 +131,9 @@ impl StateManager {
             None => return Err(AuraLockError::ExpiredOrReplayedNonce),
         };
 
-        // 2. Enforce 5-second TTL
+        // 2. Enforce 60-second TTL
         if active.created_at.elapsed() > Duration::from_secs(MAX_CHALLENGE_AGE_SECS as u64) {
-            warn!("Challenge {} expired (> 5s)", resp.challenge_id);
+            warn!("Challenge {} expired (> {}s)", resp.challenge_id, MAX_CHALLENGE_AGE_SECS);
             return Err(AuraLockError::ExpiredOrReplayedNonce);
         }
 
@@ -190,5 +190,16 @@ impl StateManager {
         state.active_challenges.clear();
         state.failed_attempts = 0;
         state.lockout_until = None;
+    }
+
+    /// Gets the most recent active challenge if still within TTL
+    pub async fn get_latest_valid_challenge(&self) -> Option<UnlockChallenge> {
+        let mut state = self.inner.lock().await;
+        state.active_challenges.retain(|_, c| c.created_at.elapsed() <= Duration::from_secs(MAX_CHALLENGE_AGE_SECS as u64));
+        state
+            .active_challenges
+            .values()
+            .max_by_key(|c| c.created_at)
+            .map(|c| c.challenge.clone())
     }
 }

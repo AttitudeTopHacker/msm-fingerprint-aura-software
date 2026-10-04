@@ -20,7 +20,7 @@ android {
         applicationId = "com.msm.movin.auralock"
         minSdk = 26
         targetSdk = 34
-        versionCode = 9
+        versionCode = 10
         versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

@@ -122,13 +122,11 @@ impl IpcServer {
                 match self.state_mgr.create_challenge(&self.pc_name).await {
                     Ok((challenge, rx)) => {
                         if let Err(e) = self.net_service.push_challenge(challenge).await {
-                            return IpcResponse::UnlockDenied {
-                                reason: format!("Could not reach mobile phone: {e}"),
-                            };
+                            info!("Phone not immediately reachable ({e}); waiting up to 60s for phone to connect/refresh...");
                         }
 
-                        // Await biometric approval with a 10-second timeout
-                        match tokio::time::timeout(std::time::Duration::from_secs(10), rx).await {
+                        // Await biometric approval with a 60-second (1 minute) timeout
+                        match tokio::time::timeout(std::time::Duration::from_secs(60), rx).await {
                             Ok(Ok(true)) => {
                                 info!("Biometric approval received via IPC!");
                                 IpcResponse::UnlockApproved
@@ -141,8 +139,8 @@ impl IpcServer {
                                 IpcResponse::UnlockDenied { reason: "Challenge cancelled".into() }
                             }
                             Err(_) => {
-                                warn!("Biometric prompt timed out (10s)");
-                                IpcResponse::UnlockDenied { reason: "Biometric prompt timed out on phone".into() }
+                                warn!("Biometric prompt timed out (60s)");
+                                IpcResponse::UnlockDenied { reason: "Biometric prompt timed out (60s) on phone".into() }
                             }
                         }
                     }

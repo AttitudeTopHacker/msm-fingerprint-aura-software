@@ -98,6 +98,8 @@ pub async fn start_web_server(net_service: Arc<NetworkService>, port: u16) -> Re
         .route("/api/qr", get(get_qr))
         .route("/api/pair/refresh", post(refresh_pairing))
         .route("/api/unlock/test", post(test_unlock))
+        .route("/api/lock", post(lock_endpoint))
+        .route("/api/unlock", post(unlock_endpoint))
         .route("/api/vault/password", post(save_password))
         .route("/api/vault/unpair", post(force_unpair_endpoint))
         .route("/api/unpair/initiate", post(initiate_unpair_endpoint))
@@ -216,6 +218,30 @@ async fn test_unlock(State(state): State<AppState>) -> Json<ApiResponse> {
             message: format!("Failed to create challenge: {e}"),
         }),
     }
+}
+
+async fn lock_endpoint(State(state): State<AppState>) -> Json<ApiResponse> {
+    state.net_service.state_mgr.set_lock_state(crate::state::SessionLockState::Locked).await;
+    crate::network::lock_pc_screen();
+    if let Some(tx) = &*state.net_service.active_client.lock().await {
+        let _ = tx.send(crate::protocol::ProtocolMessage::LockStateChanged { is_locked: true }).await;
+    }
+    Json(ApiResponse {
+        success: true,
+        message: "PC Screen Locked successfully".into(),
+    })
+}
+
+async fn unlock_endpoint(State(state): State<AppState>) -> Json<ApiResponse> {
+    state.net_service.state_mgr.set_lock_state(crate::state::SessionLockState::Unlocked).await;
+    crate::network::unlock_pc_screen();
+    if let Some(tx) = &*state.net_service.active_client.lock().await {
+        let _ = tx.send(crate::protocol::ProtocolMessage::LockStateChanged { is_locked: false }).await;
+    }
+    Json(ApiResponse {
+        success: true,
+        message: "PC Screen Unlocked successfully".into(),
+    })
 }
 
 async fn save_password(

@@ -95,6 +95,7 @@ class MainActivity : FragmentActivity() {
     private var isConnectedState by mutableStateOf(false)
     private var isPairedState by mutableStateOf(false)
     private var isPcLockedState by mutableStateOf(false)
+    private var isLockActionPendingState by mutableStateOf(false)
     private var isRefreshingStatusState by mutableStateOf(false)
     private var pcNameState by mutableStateOf("")
     private var pcIpState by mutableStateOf("")
@@ -535,10 +536,12 @@ class MainActivity : FragmentActivity() {
             ScreenState.DASHBOARD -> {
                 val performLockPc: () -> Unit = {
                     lifecycleScope.launch {
+                        if (isLockActionPendingState) return@launch
                         if (!isPairedState || pcIpState.isBlank()) {
                             Toast.makeText(this@MainActivity, "No PC is paired yet", Toast.LENGTH_SHORT).show()
                             return@launch
                         }
+                        isLockActionPendingState = true
                         var activeClient = client
                         if (activeClient == null || !isConnectedState) {
                             Toast.makeText(this@MainActivity, "Connecting to lock PC...", Toast.LENGTH_SHORT).show()
@@ -555,22 +558,44 @@ class MainActivity : FragmentActivity() {
                         if (targetClient != null) {
                             val sent = targetClient.sendRemoteLock()
                             if (sent) {
-                                isPcLockedState = true
-                                prefs.edit().putBoolean("is_pc_locked", true).apply()
-                                triggerHapticFeedback()
-                                Toast.makeText(this@MainActivity, "🔒 PC Screen Locked", Toast.LENGTH_SHORT).show()
+                                // Wait up to 4 seconds for PC to confirm lock state via LockStateChanged
+                                val startTime = System.currentTimeMillis()
+                                while (System.currentTimeMillis() - startTime < 4000) {
+                                    if (isPcLockedState) {
+                                        break
+                                    }
+                                    delay(100)
+                                }
+
+                                if (isPcLockedState) {
+                                    triggerHapticFeedback()
+                                    Toast.makeText(this@MainActivity, "🔒 PC Screen Locked", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    // PC did not confirm lock within timeout -> revert/remain unlocked!
+                                    isPcLockedState = false
+                                    prefs.edit().putBoolean("is_pc_locked", false).apply()
+                                    triggerHapticFeedback()
+                                    Toast.makeText(this@MainActivity, "⚠️ PC Lock unconfirmed. PC remains unlocked.", Toast.LENGTH_SHORT).show()
+                                }
                             } else {
+                                isPcLockedState = false
+                                prefs.edit().putBoolean("is_pc_locked", false).apply()
                                 Toast.makeText(this@MainActivity, "Failed to send lock signal to PC", Toast.LENGTH_SHORT).show()
                             }
                         } else {
+                            isPcLockedState = false
+                            prefs.edit().putBoolean("is_pc_locked", false).apply()
                             Toast.makeText(this@MainActivity, "Cannot reach PC to lock", Toast.LENGTH_SHORT).show()
                         }
+                        isLockActionPendingState = false
                     }
                 }
 
                 val performUnlockPc: () -> Unit = {
                     checkBluetoothAndExecute {
                         lifecycleScope.launch {
+                            if (isLockActionPendingState) return@launch
+                            isLockActionPendingState = true
                             var activeClient = client
                             if (activeClient == null || !isConnectedState) {
                                 if (isPairedState && pcIpState.isNotBlank()) {
@@ -593,6 +618,8 @@ class MainActivity : FragmentActivity() {
                             } else {
                                 testBiometricsPrompt()
                             }
+                            delay(500)
+                            isLockActionPendingState = false
                         }
                     }
                 }
@@ -648,6 +675,7 @@ class MainActivity : FragmentActivity() {
                     isConnected = isConnectedState,
                     isPaired = isPairedState,
                     isPcLocked = isPcLockedState,
+                    isLockActionPending = isLockActionPendingState,
                     isRefreshingStatus = isRefreshingStatusState,
                     statusMessage = statusMessageState,
                     pcName = pcNameState,
@@ -895,6 +923,7 @@ class MainActivity : FragmentActivity() {
         isConnected: Boolean,
         isPaired: Boolean,
         isPcLocked: Boolean,
+        isLockActionPending: Boolean = false,
         isRefreshingStatus: Boolean,
         statusMessage: String,
         pcName: String,
@@ -1069,6 +1098,7 @@ class MainActivity : FragmentActivity() {
                             isConnected = isConnected,
                             isPaired = isPaired,
                             isPcLocked = isPcLocked,
+                            isLockActionPending = isLockActionPending,
                             isRefreshingStatus = isRefreshingStatus,
                             statusMessage = statusMessage,
                             pcName = pcName,
@@ -1112,6 +1142,7 @@ class MainActivity : FragmentActivity() {
         isConnected: Boolean,
         isPaired: Boolean,
         isPcLocked: Boolean,
+        isLockActionPending: Boolean = false,
         isRefreshingStatus: Boolean,
         statusMessage: String,
         pcName: String,
@@ -1318,6 +1349,7 @@ class MainActivity : FragmentActivity() {
                     DynamicLockActionButton(
                         isPcLocked = isPcLocked,
                         isConnected = isConnected,
+                        isActionPending = isLockActionPending,
                         onExecuteAction = onToggleLockAction,
                         onManualToggleState = onManualToggleLockState
                     )
@@ -1433,10 +1465,20 @@ class MainActivity : FragmentActivity() {
     private fun DynamicLockActionButton(
         isPcLocked: Boolean,
         isConnected: Boolean,
+        isActionPending: Boolean = false,
         onExecuteAction: () -> Unit,
         onManualToggleState: () -> Unit
     ) {
-        val bgGradient = if (isPcLocked) {
+        val bgGradient = if (isActionPending) {
+            // Action is in progress -> Amber / Orange glowing gradient
+            Brush.horizontalGradient(
+                listOf(
+                    Color(0xFFD97706),
+                    Color(0xFFB45309),
+                    Color(0xFF92400E)
+                )
+            )
+        } else if (isPcLocked) {
             // PC is Locked -> Action is Unlock PC (Emerald / Teal / Cyan glowing gradient)
             Brush.horizontalGradient(
                 listOf(
@@ -1456,7 +1498,11 @@ class MainActivity : FragmentActivity() {
             )
         }
 
-        val borderColor = if (isPcLocked) Color(0xFF34D399).copy(alpha = 0.55f) else Color(0xFFFB7185).copy(alpha = 0.55f)
+        val borderColor = when {
+            isActionPending -> Color(0xFFFBBF24).copy(alpha = 0.75f)
+            isPcLocked -> Color(0xFF34D399).copy(alpha = 0.55f)
+            else -> Color(0xFFFB7185).copy(alpha = 0.55f)
+        }
 
         Card(
             modifier = Modifier
@@ -1464,7 +1510,7 @@ class MainActivity : FragmentActivity() {
                 .height(58.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .border(1.5.dp, borderColor, RoundedCornerShape(16.dp))
-                .clickable(onClick = onExecuteAction),
+                .clickable(enabled = !isActionPending, onClick = onExecuteAction),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = Color.Transparent),
             elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
@@ -1492,56 +1538,55 @@ class MainActivity : FragmentActivity() {
                                 .background(Color.Black.copy(alpha = 0.25f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            AnimatedContent(
-                                targetState = isPcLocked,
-                                transitionSpec = {
-                                    (fadeIn(animationSpec = tween(220)) + scaleIn(initialScale = 0.8f))
-                                        .togetherWith(fadeOut(animationSpec = tween(220)) + scaleOut(targetScale = 0.8f))
-                                },
-                                label = "LockIconAnim"
-                            ) { locked ->
-                                Icon(
-                                    imageVector = if (locked) Icons.Default.LockOpen else Icons.Default.Lock,
-                                    contentDescription = if (locked) "Unlock PC" else "Lock PC",
-                                    modifier = Modifier.size(22.dp),
-                                    tint = Color.White
+                            if (isActionPending) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.5.dp,
+                                    color = Color.White
                                 )
+                            } else {
+                                AnimatedContent(
+                                    targetState = isPcLocked,
+                                    transitionSpec = {
+                                        (fadeIn(animationSpec = tween(220)) + scaleIn(initialScale = 0.8f))
+                                            .togetherWith(fadeOut(animationSpec = tween(220)) + scaleOut(targetScale = 0.8f))
+                                    },
+                                    label = "LockIconAnim"
+                                ) { locked ->
+                                    Icon(
+                                        imageVector = if (locked) Icons.Default.LockOpen else Icons.Default.Lock,
+                                        contentDescription = if (locked) "Unlock PC" else "Lock PC",
+                                        modifier = Modifier.size(22.dp),
+                                        tint = Color.White
+                                    )
+                                }
                             }
                         }
 
                         Spacer(modifier = Modifier.width(12.dp))
 
                         Column {
-                            AnimatedContent(
-                                targetState = isPcLocked,
-                                transitionSpec = {
-                                    (slideInVertically { height -> height } + fadeIn())
-                                        .togetherWith(slideOutVertically { height -> -height } + fadeOut())
+                            Text(
+                                text = when {
+                                    isActionPending && isPcLocked -> "Unlocking PC..."
+                                    isActionPending && !isPcLocked -> "Locking PC..."
+                                    isPcLocked -> "Unlock PC"
+                                    else -> "Lock PC"
                                 },
-                                label = "LockTitleAnim"
-                            ) { locked ->
-                                Text(
-                                    text = if (locked) "Unlock PC" else "Lock PC",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp,
-                                    color = Color.White
-                                )
-                            }
-                            AnimatedContent(
-                                targetState = isPcLocked,
-                                transitionSpec = {
-                                    (fadeIn(animationSpec = tween(250)))
-                                        .togetherWith(fadeOut(animationSpec = tween(200)))
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = Color.White
+                            )
+                            Text(
+                                text = when {
+                                    isActionPending -> "Verifying with PC..."
+                                    isPcLocked -> "Screen Locked • Tap to Unlock"
+                                    else -> "Screen Active • Tap to Lock"
                                 },
-                                label = "LockSubAnim"
-                            ) { locked ->
-                                Text(
-                                    text = if (locked) "Screen Locked • Tap to Unlock" else "Screen Active • Tap to Lock",
-                                    fontSize = 11.sp,
-                                    color = Color.White.copy(alpha = 0.85f),
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
+                                fontSize = 11.sp,
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontWeight = FontWeight.Medium
+                            )
                         }
                     }
 
@@ -1551,7 +1596,7 @@ class MainActivity : FragmentActivity() {
                             .clip(RoundedCornerShape(10.dp))
                             .background(Color.Black.copy(alpha = 0.28f))
                             .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
-                            .clickable(onClick = onManualToggleState)
+                            .clickable(enabled = !isActionPending, onClick = onManualToggleState)
                             .padding(horizontal = 9.dp, vertical = 6.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1559,11 +1604,21 @@ class MainActivity : FragmentActivity() {
                                 modifier = Modifier
                                     .size(7.dp)
                                     .clip(CircleShape)
-                                    .background(if (isPcLocked) Color(0xFF34D399) else Color(0xFFFB7185))
+                                    .background(
+                                        when {
+                                            isActionPending -> Color(0xFFFBBF24)
+                                            isPcLocked -> Color(0xFF34D399)
+                                            else -> Color(0xFFFB7185)
+                                        }
+                                    )
                             )
                             Spacer(modifier = Modifier.width(5.dp))
                             Text(
-                                text = if (isPcLocked) "LOCKED" else "UNLOCKED",
+                                text = when {
+                                    isActionPending -> "SYNCING"
+                                    isPcLocked -> "LOCKED"
+                                    else -> "UNLOCKED"
+                                },
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White

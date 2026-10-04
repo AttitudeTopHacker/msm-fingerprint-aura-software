@@ -120,6 +120,32 @@ async fn trigger_test_unlock(state: State<'_, AppStateWrapper>) -> Result<Comman
 }
 
 #[tauri::command]
+async fn lock_pc(state: State<'_, AppStateWrapper>) -> Result<CommandResult, String> {
+    state.net_service.state_mgr.set_lock_state(auralock_core::state::SessionLockState::Locked).await;
+    auralock_core::network::lock_pc_screen();
+    if let Some(tx) = &*state.net_service.active_client.lock().await {
+        let _ = tx.send(auralock_core::protocol::ProtocolMessage::LockStateChanged { is_locked: true }).await;
+    }
+    Ok(CommandResult {
+        success: true,
+        message: "PC Screen Locked".into(),
+    })
+}
+
+#[tauri::command]
+async fn unlock_pc(state: State<'_, AppStateWrapper>) -> Result<CommandResult, String> {
+    state.net_service.state_mgr.set_lock_state(auralock_core::state::SessionLockState::Unlocked).await;
+    auralock_core::network::unlock_pc_screen();
+    if let Some(tx) = &*state.net_service.active_client.lock().await {
+        let _ = tx.send(auralock_core::protocol::ProtocolMessage::LockStateChanged { is_locked: false }).await;
+    }
+    Ok(CommandResult {
+        success: true,
+        message: "PC Screen Unlocked".into(),
+    })
+}
+
+#[tauri::command]
 async fn save_vault_password(password: String, state: State<'_, AppStateWrapper>) -> Result<CommandResult, String> {
     let paired_phone = state.vault_mgr.load().ok().and_then(|v| v.paired_phone);
     let paired_phone = match paired_phone {
@@ -327,6 +353,8 @@ fn main() {
             get_daemon_status,
             get_pairing_qr,
             trigger_test_unlock,
+            lock_pc,
+            unlock_pc,
             save_vault_password,
             unpair_device,
             initiate_pc_unpair,
