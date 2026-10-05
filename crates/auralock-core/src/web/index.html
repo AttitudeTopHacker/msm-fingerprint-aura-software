@@ -495,6 +495,262 @@
       transform: translateY(0);
       opacity: 1;
     }
+
+    /* FLOATING LIVE TRANSFER HUD */
+    .floating-transfer-hud {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 1500;
+      max-width: 380px;
+      width: calc(100vw - 48px);
+      transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .transfer-hud-card {
+      background: rgba(13, 20, 36, 0.92);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(0, 255, 136, 0.35);
+      border-radius: 20px;
+      padding: 16px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 25px rgba(0, 210, 255, 0.2);
+      animation: hudSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes hudSlideUp {
+      from { transform: translateY(30px) scale(0.95); opacity: 0; }
+      to { transform: translateY(0) scale(1); opacity: 1; }
+    }
+
+    .transfer-hud-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .transfer-hud-title-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .transfer-hud-badge {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(0, 210, 255, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+
+    .transfer-hud-badge.pulse {
+      animation: hudPulseGlow 1.5s infinite alternate;
+    }
+
+    @keyframes hudPulseGlow {
+      0% { box-shadow: 0 0 5px rgba(0, 210, 255, 0.3); }
+      100% { box-shadow: 0 0 16px rgba(0, 255, 136, 0.6); }
+    }
+
+    .transfer-hud-header h4 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #FFF;
+      margin: 0;
+    }
+
+    .transfer-hud-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .transfer-hud-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .transfer-hud-btn {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+
+    .transfer-hud-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      color: #FFF;
+      border-color: var(--accent-cyan);
+    }
+
+    .transfer-hud-body {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .transfer-hud-file-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .transfer-hud-file-icon {
+      font-size: 1.5rem;
+    }
+
+    .transfer-hud-file-details {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .transfer-hud-file-name {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #FFF;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .transfer-hud-stats {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .transfer-hud-pct {
+      color: var(--accent-green);
+      font-weight: 700;
+    }
+
+    .transfer-hud-progress-track {
+      width: 100%;
+      height: 8px;
+      background: #1E293B;
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .transfer-hud-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #00FF88, #00D2FF, #9D4EDD);
+      background-size: 200% 100%;
+      animation: gradientShift 2s linear infinite;
+      border-radius: 4px;
+      transition: width 0.2s ease;
+    }
+
+    @keyframes gradientShift {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+
+    /* MINIMIZED PILL */
+    .transfer-hud-pill {
+      background: rgba(13, 20, 36, 0.95);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(0, 255, 136, 0.4);
+      border-radius: 40px;
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 15px rgba(0, 210, 255, 0.25);
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      animation: hudSlideUp 0.3s ease;
+    }
+
+    .transfer-hud-pill:hover {
+      transform: translateY(-2px);
+      border-color: var(--accent-cyan);
+      box-shadow: 0 12px 35px rgba(0, 210, 255, 0.35);
+    }
+
+    .transfer-hud-pill-spinner {
+      position: relative;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .pill-svg-spin {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+
+    .pill-circle-bg {
+      fill: none;
+      stroke: #1E293B;
+      stroke-width: 3.5;
+    }
+
+    .pill-circle-fill {
+      fill: none;
+      stroke: var(--accent-green);
+      stroke-width: 3.5;
+      stroke-linecap: round;
+      transition: stroke-dasharray 0.25s ease;
+    }
+
+    .transfer-hud-pill-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .transfer-pill-name {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #FFF;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 140px;
+    }
+
+    .transfer-pill-pct {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--accent-green);
+    }
+
+    .transfer-hud-pill-expand {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--accent-cyan);
+    }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
@@ -736,6 +992,71 @@
       </div>
     </div>
   </main>
+
+  <!-- FLOATING LIVE TRANSFER HUD (EXPANDED & MINIMIZED) -->
+  <div id="floating-transfer-hud" class="floating-transfer-hud" style="display: none;">
+    <!-- Expanded View -->
+    <div id="transfer-hud-expanded" class="transfer-hud-card">
+      <div class="transfer-hud-header">
+        <div class="transfer-hud-title-group">
+          <div id="transfer-hud-icon-badge" class="transfer-hud-badge pulse">
+            <span id="transfer-hud-direction-icon">📥</span>
+          </div>
+          <div>
+            <h4 id="transfer-hud-title">Receiving File...</h4>
+            <span id="transfer-hud-phone-name" class="transfer-hud-sub">from Linked Phone</span>
+          </div>
+        </div>
+        <div class="transfer-hud-controls">
+          <button class="transfer-hud-btn" id="transfer-hud-min-btn" onclick="toggleTransferHudMinimize()" title="Minimize Transfer HUD">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg>
+          </button>
+          <button class="transfer-hud-btn" id="transfer-hud-close-btn" onclick="closeTransferHud()" title="Close" style="display: none;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="transfer-hud-body">
+        <div class="transfer-hud-file-info">
+          <span id="transfer-hud-file-icon" class="transfer-hud-file-icon">📄</span>
+          <div class="transfer-hud-file-details">
+            <span id="transfer-hud-file-name" class="transfer-hud-file-name">filename.ext</span>
+            <div class="transfer-hud-stats">
+              <span id="transfer-hud-bytes">0 MB / 0 MB</span>
+              <span id="transfer-hud-pct" class="transfer-hud-pct">0%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="transfer-hud-progress-track">
+          <div id="transfer-hud-progress-fill" class="transfer-hud-progress-fill" style="width: 0%;"></div>
+        </div>
+
+        <div id="transfer-hud-complete-actions" style="display: none; margin-top: 10px; text-align: right;">
+          <button class="btn btn-sm btn-primary" onclick="openDownloadsFolder()">📂 Open Downloads Folder</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Minimized Pill View -->
+    <div id="transfer-hud-minimized" class="transfer-hud-pill" style="display: none;" onclick="toggleTransferHudMinimize()">
+      <div class="transfer-hud-pill-spinner">
+        <svg class="pill-svg-spin" viewBox="0 0 36 36">
+          <path class="pill-circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+          <path id="transfer-pill-circle-fill" class="pill-circle-fill" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+        </svg>
+        <span id="transfer-pill-icon">📥</span>
+      </div>
+      <div class="transfer-hud-pill-info">
+        <span id="transfer-pill-name" class="transfer-pill-name">Transferring...</span>
+        <span id="transfer-pill-pct" class="transfer-pill-pct">0%</span>
+      </div>
+      <div class="transfer-hud-pill-expand" title="Expand Details">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z"/></svg>
+      </div>
+    </div>
+  </div>
 
   <div id="toast">
     <span id="toast-icon">✅</span>
@@ -1141,11 +1462,20 @@
               log(`Unlock rejected: ${ev.data.message}`, "error");
               showToast(`Unlock denied: ${ev.data.message}`, "❌");
             }
+          } else if (ev.type === 'FileTransferProgress') {
+            updateTransferHudProgress(ev.data);
           } else if (ev.type === 'FileTransferCompleted') {
-            if (ev.data.is_incoming) {
+            updateTransferHudCompleted(ev.data);
+            if (ev.data.is_incoming && ev.data.success !== false) {
               log(`Received file: ${ev.data.file_name}`, "success");
               showToast(`Received ${ev.data.file_name} from phone!`, "📥");
               fetchReceivedFiles();
+            } else if (!ev.data.is_incoming && ev.data.success !== false) {
+              log(`File ${ev.data.file_name} successfully sent to phone`, "success");
+              showToast(`Sent ${ev.data.file_name} to phone!`, "🚀");
+            } else {
+              log(`File transfer failed: ${ev.data.message || 'Error'}`, "error");
+              showToast(`Transfer failed: ${ev.data.message || 'Error'}`, "❌");
             }
           } else if (ev.type === 'ClipboardReceived') {
             log(`Received clipboard from phone: "${ev.data.text}"`, "info");
@@ -1159,6 +1489,141 @@
       ws.onclose = () => {
         setTimeout(setupWebSocket, 2000);
       };
+    }
+
+    // FLOATING LIVE TRANSFER HUD
+    let isTransferHudMinimized = false;
+    let transferHudDismissTimeout = null;
+
+    function formatBytes(bytes) {
+      if (!bytes || bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    function getFileIcon(filename) {
+      const ext = (filename || '').split('.').pop().toLowerCase();
+      if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext)) return '🖼️';
+      if (['mp4', 'mkv', 'mov', 'avi', 'webm'].includes(ext)) return '🎬';
+      if (['mp3', 'wav', 'flac', 'ogg', 'm4a'].includes(ext)) return '🎵';
+      if (['pdf', 'doc', 'docx', 'txt', 'md'].includes(ext)) return '📄';
+      if (['zip', 'tar', 'gz', '7z', 'rar', 'deb', 'rpm'].includes(ext)) return '📦';
+      return '📁';
+    }
+
+    function updateTransferHudProgress(data) {
+      const hud = document.getElementById('floating-transfer-hud');
+      const expanded = document.getElementById('transfer-hud-expanded');
+      const minimized = document.getElementById('transfer-hud-minimized');
+      if (!hud) return;
+
+      if (transferHudDismissTimeout) {
+        clearTimeout(transferHudDismissTimeout);
+        transferHudDismissTimeout = null;
+      }
+
+      hud.style.display = 'block';
+      if (isTransferHudMinimized) {
+        if (expanded) expanded.style.display = 'none';
+        if (minimized) minimized.style.display = 'flex';
+      } else {
+        if (expanded) expanded.style.display = 'block';
+        if (minimized) minimized.style.display = 'none';
+      }
+
+      const pctVal = Math.min(100, Math.max(0, Math.round((data.progress || 0) * 100)));
+      const directionIcon = data.is_incoming ? '📥' : '📤';
+      const directionTitle = data.is_incoming ? 'Receiving File from Phone...' : 'Sending to Phone...';
+
+      const dirIconEl = document.getElementById('transfer-hud-direction-icon');
+      const titleEl = document.getElementById('transfer-hud-title');
+      const fileIconEl = document.getElementById('transfer-hud-file-icon');
+      const fileNameEl = document.getElementById('transfer-hud-file-name');
+      const bytesEl = document.getElementById('transfer-hud-bytes');
+      const pctEl = document.getElementById('transfer-hud-pct');
+      const fillEl = document.getElementById('transfer-hud-progress-fill');
+      const completeActions = document.getElementById('transfer-hud-complete-actions');
+      const closeBtn = document.getElementById('transfer-hud-close-btn');
+
+      if (dirIconEl) dirIconEl.innerText = directionIcon;
+      if (titleEl) titleEl.innerText = directionTitle;
+      if (fileIconEl) fileIconEl.innerText = getFileIcon(data.file_name);
+      if (fileNameEl) fileNameEl.innerText = data.file_name || 'file';
+      if (bytesEl) bytesEl.innerText = `${formatBytes(data.bytes_transferred)} / ${formatBytes(data.total_bytes)}`;
+      if (pctEl) pctEl.innerText = `${pctVal}%`;
+      if (fillEl) fillEl.style.width = `${pctVal}%`;
+      if (completeActions) completeActions.style.display = 'none';
+      if (closeBtn) closeBtn.style.display = 'none';
+
+      // Update minimized pill
+      const pillIcon = document.getElementById('transfer-pill-icon');
+      const pillName = document.getElementById('transfer-pill-name');
+      const pillPct = document.getElementById('transfer-pill-pct');
+      const pillFill = document.getElementById('transfer-pill-circle-fill');
+
+      if (pillIcon) pillIcon.innerText = directionIcon;
+      if (pillName) pillName.innerText = data.file_name || 'Transferring...';
+      if (pillPct) pillPct.innerText = `${pctVal}%`;
+      if (pillFill) pillFill.setAttribute('stroke-dasharray', `${pctVal}, 100`);
+    }
+
+    function updateTransferHudCompleted(data) {
+      const hud = document.getElementById('floating-transfer-hud');
+      if (!hud) return;
+
+      const isSuccess = data.success !== false;
+      const titleEl = document.getElementById('transfer-hud-title');
+      const dirIconEl = document.getElementById('transfer-hud-direction-icon');
+      const fillEl = document.getElementById('transfer-hud-progress-fill');
+      const pctEl = document.getElementById('transfer-hud-pct');
+      const completeActions = document.getElementById('transfer-hud-complete-actions');
+      const closeBtn = document.getElementById('transfer-hud-close-btn');
+
+      if (titleEl) titleEl.innerText = isSuccess ? 'Transfer Complete! 🎉' : 'Transfer Failed ❌';
+      if (dirIconEl) dirIconEl.innerText = isSuccess ? '✅' : '❌';
+      if (fillEl) fillEl.style.width = isSuccess ? '100%' : '0%';
+      if (pctEl) pctEl.innerText = isSuccess ? '100%' : 'Failed';
+      if (completeActions && data.is_incoming && isSuccess) completeActions.style.display = 'block';
+      if (closeBtn) closeBtn.style.display = 'flex';
+
+      const pillName = document.getElementById('transfer-pill-name');
+      const pillPct = document.getElementById('transfer-pill-pct');
+      const pillIcon = document.getElementById('transfer-pill-icon');
+      const pillFill = document.getElementById('transfer-pill-circle-fill');
+
+      if (pillName) pillName.innerText = isSuccess ? 'Transfer Complete!' : 'Transfer Failed';
+      if (pillPct) pillPct.innerText = isSuccess ? '100%' : 'Err';
+      if (pillIcon) pillIcon.innerText = isSuccess ? '✅' : '❌';
+      if (pillFill) pillFill.setAttribute('stroke-dasharray', isSuccess ? '100, 100' : '0, 100');
+
+      // Auto-dismiss after 6 seconds if not interacted
+      transferHudDismissTimeout = setTimeout(() => {
+        closeTransferHud();
+      }, 6000);
+    }
+
+    function toggleTransferHudMinimize() {
+      isTransferHudMinimized = !isTransferHudMinimized;
+      const expanded = document.getElementById('transfer-hud-expanded');
+      const minimized = document.getElementById('transfer-hud-minimized');
+      if (isTransferHudMinimized) {
+        if (expanded) expanded.style.display = 'none';
+        if (minimized) minimized.style.display = 'flex';
+      } else {
+        if (expanded) expanded.style.display = 'block';
+        if (minimized) minimized.style.display = 'none';
+      }
+    }
+
+    function closeTransferHud() {
+      const hud = document.getElementById('floating-transfer-hud');
+      if (hud) hud.style.display = 'none';
+      if (transferHudDismissTimeout) {
+        clearTimeout(transferHudDismissTimeout);
+        transferHudDismissTimeout = null;
+      }
     }
 
     async function cancelChallenge() {

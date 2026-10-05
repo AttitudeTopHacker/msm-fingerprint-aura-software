@@ -662,11 +662,20 @@ function setupWebSocket() {
           log(`Unlock rejected: ${ev.data.message}`, "error");
           showToast(`Unlock denied: ${ev.data.message}`, "❌");
         }
+      } else if (ev.type === 'FileTransferProgress') {
+        updateTransferHudProgress(ev.data);
       } else if (ev.type === 'FileTransferCompleted') {
-        if (ev.data.is_incoming) {
+        updateTransferHudCompleted(ev.data);
+        if (ev.data.is_incoming && ev.data.success !== false) {
           log(`Received file: ${ev.data.file_name}`, "success");
           showToast(`Received ${ev.data.file_name} from phone!`, "📥");
           fetchReceivedFiles();
+        } else if (!ev.data.is_incoming && ev.data.success !== false) {
+          log(`File ${ev.data.file_name} successfully sent to phone`, "success");
+          showToast(`Sent ${ev.data.file_name} to phone!`, "🚀");
+        } else {
+          log(`File transfer failed: ${ev.data.message || 'Error'}`, "error");
+          showToast(`Transfer failed: ${ev.data.message || 'Error'}`, "❌");
         }
       } else if (ev.type === 'ClipboardReceived') {
         log(`Received clipboard from phone: "${ev.data.text}"`, "info");
@@ -692,6 +701,141 @@ function setupWebSocket() {
     setTimeout(setupWebSocket, 2000);
   };
 }
+
+// FLOATING LIVE TRANSFER HUD
+let isTransferHudMinimized = false;
+let transferHudDismissTimeout = null;
+
+function formatBytes(bytes) {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function getFileIcon(filename) {
+  const ext = (filename || '').split('.').pop().toLowerCase();
+  if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext)) return '🖼️';
+  if (['mp4', 'mkv', 'mov', 'avi', 'webm'].includes(ext)) return '🎬';
+  if (['mp3', 'wav', 'flac', 'ogg', 'm4a'].includes(ext)) return '🎵';
+  if (['pdf', 'doc', 'docx', 'txt', 'md'].includes(ext)) return '📄';
+  if (['zip', 'tar', 'gz', '7z', 'rar', 'deb', 'rpm'].includes(ext)) return '📦';
+  return '📁';
+}
+
+function updateTransferHudProgress(data) {
+  const hud = document.getElementById('floating-transfer-hud');
+  const expanded = document.getElementById('transfer-hud-expanded');
+  const minimized = document.getElementById('transfer-hud-minimized');
+  if (!hud) return;
+
+  if (transferHudDismissTimeout) {
+    clearTimeout(transferHudDismissTimeout);
+    transferHudDismissTimeout = null;
+  }
+
+  hud.style.display = 'block';
+  if (isTransferHudMinimized) {
+    if (expanded) expanded.style.display = 'none';
+    if (minimized) minimized.style.display = 'flex';
+  } else {
+    if (expanded) expanded.style.display = 'block';
+    if (minimized) minimized.style.display = 'none';
+  }
+
+  const pctVal = Math.min(100, Math.max(0, Math.round((data.progress || 0) * 100)));
+  const directionIcon = data.is_incoming ? '📥' : '📤';
+  const directionTitle = data.is_incoming ? 'Receiving File from Phone...' : 'Sending to Phone...';
+
+  const dirIconEl = document.getElementById('transfer-hud-direction-icon');
+  const titleEl = document.getElementById('transfer-hud-title');
+  const fileIconEl = document.getElementById('transfer-hud-file-icon');
+  const fileNameEl = document.getElementById('transfer-hud-file-name');
+  const bytesEl = document.getElementById('transfer-hud-bytes');
+  const pctEl = document.getElementById('transfer-hud-pct');
+  const fillEl = document.getElementById('transfer-hud-progress-fill');
+  const completeActions = document.getElementById('transfer-hud-complete-actions');
+  const closeBtn = document.getElementById('transfer-hud-close-btn');
+
+  if (dirIconEl) dirIconEl.innerText = directionIcon;
+  if (titleEl) titleEl.innerText = directionTitle;
+  if (fileIconEl) fileIconEl.innerText = getFileIcon(data.file_name);
+  if (fileNameEl) fileNameEl.innerText = data.file_name || 'file';
+  if (bytesEl) bytesEl.innerText = `${formatBytes(data.bytes_transferred)} / ${formatBytes(data.total_bytes)}`;
+  if (pctEl) pctEl.innerText = `${pctVal}%`;
+  if (fillEl) fillEl.style.width = `${pctVal}%`;
+  if (completeActions) completeActions.style.display = 'none';
+  if (closeBtn) closeBtn.style.display = 'none';
+
+  // Update minimized pill
+  const pillIcon = document.getElementById('transfer-pill-icon');
+  const pillName = document.getElementById('transfer-pill-name');
+  const pillPct = document.getElementById('transfer-pill-pct');
+  const pillFill = document.getElementById('transfer-pill-circle-fill');
+
+  if (pillIcon) pillIcon.innerText = directionIcon;
+  if (pillName) pillName.innerText = data.file_name || 'Transferring...';
+  if (pillPct) pillPct.innerText = `${pctVal}%`;
+  if (pillFill) pillFill.setAttribute('stroke-dasharray', `${pctVal}, 100`);
+}
+
+function updateTransferHudCompleted(data) {
+  const hud = document.getElementById('floating-transfer-hud');
+  if (!hud) return;
+
+  const isSuccess = data.success !== false;
+  const titleEl = document.getElementById('transfer-hud-title');
+  const dirIconEl = document.getElementById('transfer-hud-direction-icon');
+  const fillEl = document.getElementById('transfer-hud-progress-fill');
+  const pctEl = document.getElementById('transfer-hud-pct');
+  const completeActions = document.getElementById('transfer-hud-complete-actions');
+  const closeBtn = document.getElementById('transfer-hud-close-btn');
+
+  if (titleEl) titleEl.innerText = isSuccess ? 'Transfer Complete! 🎉' : 'Transfer Failed ❌';
+  if (dirIconEl) dirIconEl.innerText = isSuccess ? '✅' : '❌';
+  if (fillEl) fillEl.style.width = isSuccess ? '100%' : '0%';
+  if (pctEl) pctEl.innerText = isSuccess ? '100%' : 'Failed';
+  if (completeActions && data.is_incoming && isSuccess) completeActions.style.display = 'block';
+  if (closeBtn) closeBtn.style.display = 'flex';
+
+  const pillName = document.getElementById('transfer-pill-name');
+  const pillPct = document.getElementById('transfer-pill-pct');
+  const pillIcon = document.getElementById('transfer-pill-icon');
+  const pillFill = document.getElementById('transfer-pill-circle-fill');
+
+  if (pillName) pillName.innerText = isSuccess ? 'Transfer Complete!' : 'Transfer Failed';
+  if (pillPct) pillPct.innerText = isSuccess ? '100%' : 'Err';
+  if (pillIcon) pillIcon.innerText = isSuccess ? '✅' : '❌';
+  if (pillFill) pillFill.setAttribute('stroke-dasharray', isSuccess ? '100, 100' : '0, 100');
+
+  // Auto-dismiss after 6 seconds if not interacted
+  transferHudDismissTimeout = setTimeout(() => {
+    window.closeTransferHud();
+  }, 6000);
+}
+
+window.toggleTransferHudMinimize = function () {
+  isTransferHudMinimized = !isTransferHudMinimized;
+  const expanded = document.getElementById('transfer-hud-expanded');
+  const minimized = document.getElementById('transfer-hud-minimized');
+  if (isTransferHudMinimized) {
+    if (expanded) expanded.style.display = 'none';
+    if (minimized) minimized.style.display = 'flex';
+  } else {
+    if (expanded) expanded.style.display = 'block';
+    if (minimized) minimized.style.display = 'none';
+  }
+};
+
+window.closeTransferHud = function () {
+  const hud = document.getElementById('floating-transfer-hud');
+  if (hud) hud.style.display = 'none';
+  if (transferHudDismissTimeout) {
+    clearTimeout(transferHudDismissTimeout);
+    transferHudDismissTimeout = null;
+  }
+};
 
 // CANCEL BIOMETRIC CHALLENGE (ESC / Manual Stop)
 window.cancelChallenge = async function () {

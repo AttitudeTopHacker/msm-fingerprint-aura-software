@@ -6,6 +6,7 @@
 package com.msm.movin.auralock
 
 import android.Manifest
+import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.content.BroadcastReceiver
 import android.content.ClipData
@@ -24,6 +25,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.widget.Toast
@@ -94,6 +96,7 @@ class MainActivity : FragmentActivity() {
 
     private val receivedFiles = mutableStateListOf<AuraDropFileItem>()
     private var transferState by mutableStateOf(AuraDropTransferState())
+    private var isTransferMinimized by mutableStateOf(false)
     private var latestReceivedClipboard by mutableStateOf<String?>(null)
     private var isConnectedState by mutableStateOf(false)
     private var isPairedState by mutableStateOf(false)
@@ -494,27 +497,27 @@ class MainActivity : FragmentActivity() {
             }
         }
 
-        val openMultipleDocumentsLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.OpenMultipleDocuments()
-        ) { uris: List<Uri> ->
-            if (uris.isNotEmpty()) {
-                sendAuraDropFiles(uris)
-            }
-        }
-
-        val getMultipleContentsLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.GetMultipleContents()
-        ) { uris: List<Uri> ->
-            if (uris.isNotEmpty()) {
-                sendAuraDropFiles(uris)
-            }
-        }
-
-        val pickMultipleMediaLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.PickMultipleVisualMedia()
-        ) { uris: List<Uri> ->
-            if (uris.isNotEmpty()) {
-                sendAuraDropFiles(uris)
+        val universalPickerLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+                val selectedUris = mutableListOf<Uri>()
+                val clipData = result.data?.clipData
+                if (clipData != null) {
+                    for (i in 0 until clipData.itemCount) {
+                        clipData.getItemAt(i)?.uri?.let { uri ->
+                            selectedUris.add(uri)
+                        }
+                    }
+                }
+                if (selectedUris.isEmpty()) {
+                    result.data?.data?.let { uri ->
+                        selectedUris.add(uri)
+                    }
+                }
+                if (selectedUris.isNotEmpty()) {
+                    sendAuraDropFiles(selectedUris)
+                }
             }
         }
 
@@ -522,14 +525,51 @@ class MainActivity : FragmentActivity() {
             if (!isConnectedState) {
                 Toast.makeText(this@MainActivity, "Connect to PC first to share files", Toast.LENGTH_SHORT).show()
             } else {
+                var launched = false
+                // Intent A: Chooser with ACTION_GET_CONTENT + ACTION_OPEN_DOCUMENT
                 try {
-                    openMultipleDocumentsLauncher.launch(arrayOf("*/*"))
-                } catch (e1: Throwable) {
-                    try {
-                        getMultipleContentsLauncher.launch("*/*")
-                    } catch (e2: Throwable) {
-                        Toast.makeText(this@MainActivity, "No file manager found", Toast.LENGTH_LONG).show()
+                    val getContentIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                        type = "*/*"
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        putExtra(Intent.EXTRA_LOCAL_ONLY, false)
                     }
+                    val openDocIntent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        type = "*/*"
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    }
+                    val chooser = Intent.createChooser(getContentIntent, "Select Files to Send").apply {
+                        putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(openDocIntent))
+                    }
+                    universalPickerLauncher.launch(chooser)
+                    launched = true
+                } catch (_: Throwable) {}
+
+                // Intent B: Fallback to standard ACTION_GET_CONTENT
+                if (!launched) {
+                    try {
+                        val simpleIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                            type = "*/*"
+                        }
+                        universalPickerLauncher.launch(Intent.createChooser(simpleIntent, "Select File"))
+                        launched = true
+                    } catch (_: Throwable) {}
+                }
+
+                // Intent C: Fallback to ACTION_PICK
+                if (!launched) {
+                    try {
+                        val pickIntent = Intent(Intent.ACTION_PICK).apply {
+                            type = "*/*"
+                        }
+                        universalPickerLauncher.launch(pickIntent)
+                        launched = true
+                    } catch (_: Throwable) {}
+                }
+
+                if (!launched) {
+                    Toast.makeText(this@MainActivity, "Please install a file manager app (e.g. Google Files)", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -538,20 +578,54 @@ class MainActivity : FragmentActivity() {
             if (!isConnectedState) {
                 Toast.makeText(this@MainActivity, "Connect to PC first to share media", Toast.LENGTH_SHORT).show()
             } else {
+                var launched = false
+                // Intent A: Chooser with ACTION_PICK on MediaStore & ACTION_GET_CONTENT
                 try {
-                    pickMultipleMediaLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                    )
-                } catch (e1: Throwable) {
-                    try {
-                        openMultipleDocumentsLauncher.launch(arrayOf("image/*", "video/*"))
-                    } catch (e2: Throwable) {
-                        try {
-                            getMultipleContentsLauncher.launch("image/*")
-                        } catch (e3: Throwable) {
-                            Toast.makeText(this@MainActivity, "No media app found", Toast.LENGTH_LONG).show()
-                        }
+                    val pickMediaIntent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply {
+                        type = "image/*,video/*"
+                        putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                     }
+                    val getContentMedia = Intent(Intent.ACTION_GET_CONTENT).apply {
+                        type = "image/*"
+                        putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    }
+                    val chooser = Intent.createChooser(pickMediaIntent, "Select Photos & Videos").apply {
+                        putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(getContentMedia))
+                    }
+                    universalPickerLauncher.launch(chooser)
+                    launched = true
+                } catch (_: Throwable) {}
+
+                // Intent B: Fallback to generic image/video GET_CONTENT
+                if (!launched) {
+                    try {
+                        val getContentSimple = Intent(Intent.ACTION_GET_CONTENT).apply {
+                            type = "image/*"
+                            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+                            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        }
+                        universalPickerLauncher.launch(Intent.createChooser(getContentSimple, "Select Media"))
+                        launched = true
+                    } catch (_: Throwable) {}
+                }
+
+                // Intent C: Fallback to ACTION_OPEN_DOCUMENT for media
+                if (!launched) {
+                    try {
+                        val pickDoc = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            type = "*/*"
+                            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+                            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        }
+                        universalPickerLauncher.launch(Intent.createChooser(pickDoc, "Select Media"))
+                        launched = true
+                    } catch (_: Throwable) {}
+                }
+
+                if (!launched) {
+                    Toast.makeText(this@MainActivity, "Please install a Gallery or Photos app", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -1332,6 +1406,27 @@ class MainActivity : FragmentActivity() {
                     onDisconnect = onDisconnectClicked
                 )
 
+                // Active AuraDrop Transfer Card / Minimized Pill in Biometrics Dashboard
+                if (transferState.isTransferring || transferState.isCompleted) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (isTransferMinimized) {
+                        AuraDropMinimizedPill(
+                            transferState = transferState,
+                            onExpand = { isTransferMinimized = false },
+                            modifier = Modifier.padding(horizontal = 0.dp)
+                        )
+                    } else {
+                        AuraDropTransferCard(
+                            transferState = transferState,
+                            isMinimized = false,
+                            onToggleMinimize = { isTransferMinimized = true },
+                            onDismiss = {
+                                this@MainActivity.transferState = AuraDropTransferState()
+                            }
+                        )
+                    }
+                }
+
                 // Active Biometric Challenge 60s Countdown Banner
                 if (challengeRemainingSeconds > 0) {
                     Spacer(modifier = Modifier.height(8.dp))
@@ -1926,58 +2021,24 @@ class MainActivity : FragmentActivity() {
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Active Transfer Progress Card (Animated)
-            AnimatedVisibility(
-                visible = transferState.isTransferring,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
-                    shape = RoundedCornerShape(16.dp),
-                    border = CardDefaults.outlinedCardBorder().copy(brush = Brush.horizontalGradient(listOf(Color(0xFF00FF88), Color(0xFF00D2FF))))
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = if (transferState.isIncoming) "📥 Receiving File..." else "📤 Sending to PC...",
-                                color = Color.White,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
-                            )
-                            Text(
-                                text = "${(transferState.progress * 100).toInt()}%",
-                                color = Color(0xFF00FF88),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = transferState.activeFileName,
-                            color = Color(0xFF94A3B8),
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        LinearProgressIndicator(
-                            progress = { transferState.progress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp)),
-                            color = Color(0xFF00FF88),
-                            trackColor = Color(0xFF1E293B)
-                        )
-                    }
+            // Active Transfer Animated Transition & Card / Minimized Pill
+            if (transferState.isTransferring || transferState.isCompleted) {
+                if (isTransferMinimized) {
+                    AuraDropMinimizedPill(
+                        transferState = transferState,
+                        onExpand = { isTransferMinimized = false },
+                        modifier = Modifier.padding(bottom = 14.dp)
+                    )
+                } else {
+                    AuraDropTransferCard(
+                        transferState = transferState,
+                        isMinimized = false,
+                        onToggleMinimize = { isTransferMinimized = true },
+                        onDismiss = {
+                            this@MainActivity.transferState = AuraDropTransferState()
+                        },
+                        modifier = Modifier.padding(bottom = 14.dp)
+                    )
                 }
             }
 
@@ -2662,6 +2723,7 @@ class MainActivity : FragmentActivity() {
         }
 
         lifecycleScope.launch {
+            isTransferMinimized = false
             val totalFiles = uris.size
             var successCount = 0
             for ((index, uri) in uris.withIndex()) {
@@ -2695,6 +2757,8 @@ class MainActivity : FragmentActivity() {
 
                     val phoneName = "${Build.MANUFACTURER} ${Build.MODEL}"
                     AuraLockService.updateTransfer(this@MainActivity, "$prefix$fileName", 0.05f, isIncoming = false)
+                    var lastTime = System.currentTimeMillis()
+                    var lastBytes = 0L
                     val success = client?.sendFileStreamToPc(
                         fileName = fileName,
                         inputStream = inputStream,
@@ -2702,11 +2766,20 @@ class MainActivity : FragmentActivity() {
                         mimeType = mimeType,
                         phoneName = phoneName
                     ) { progress, bytesSent, total ->
+                        val currentTime = System.currentTimeMillis()
+                        val timeDelta = (currentTime - lastTime) / 1000f
+                        var currentSpeed = transferState.speedMBps
+                        if (timeDelta >= 0.5f) {
+                            currentSpeed = ((bytesSent - lastBytes) / (1024f * 1024f)) / timeDelta
+                            lastTime = currentTime
+                            lastBytes = bytesSent
+                        }
                         AuraLockService.updateTransfer(this@MainActivity, "$prefix$fileName", progress, isIncoming = false)
                         transferState = transferState.copy(
                             progress = progress,
                             bytesTransferred = bytesSent,
-                            totalBytes = total
+                            totalBytes = total,
+                            speedMBps = currentSpeed
                         )
                     } ?: false
 
@@ -2818,6 +2891,7 @@ class MainActivity : FragmentActivity() {
             clientInstance.listenForEvents(
                 onChallenge = { challenge -> handleChallenge(challenge) },
                 onIncomingFileOffer = { offer ->
+                    isTransferMinimized = false
                     AuraLockService.updateTransfer(this@MainActivity, offer.fileName, 0.05f, isIncoming = true)
                     transferState = AuraDropTransferState(
                         isTransferring = true,
@@ -3139,9 +3213,7 @@ class MainActivity : FragmentActivity() {
         challengeTimerJob?.cancel()
         challengeRemainingSecondsState = 0
         biometricPrompt.cancelAuthentication()
-        if (reason.contains("cancelled", ignoreCase = true) || reason.contains("Esc", ignoreCase = true)) {
-            Toast.makeText(this@MainActivity, "⌨️ PC Biometric Cancelled (Swapped to PIN)", Toast.LENGTH_SHORT).show()
-        }
+        Toast.makeText(this@MainActivity, "⌨️ Swapped to Password on PC", Toast.LENGTH_SHORT).show()
     }
 
     private fun triggerHapticFeedback() {

@@ -123,58 +123,22 @@ fun AuraDropSheet(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Active Transfer Card
-            AnimatedVisibility(
-                visible = transferState.isTransferring,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131C2E)),
-                    shape = RoundedCornerShape(16.dp),
-                    border = CardDefaults.outlinedCardBorder().copy(brush = Brush.horizontalGradient(listOf(Color(0xFF00FF88), Color(0xFF00D2FF))))
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = if (transferState.isIncoming) "Receiving File..." else "Sending to PC...",
-                                color = Color.White,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
-                            )
-                            Text(
-                                text = "${(transferState.progress * 100).toInt()}%",
-                                color = Color(0xFF00FF88),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = transferState.activeFileName,
-                            color = Color(0xFF94A3B8),
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        LinearProgressIndicator(
-                            progress = { transferState.progress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp)),
-                            color = Color(0xFF00FF88),
-                            trackColor = Color(0xFF1E293B)
-                        )
-                    }
+            // Active Transfer Animated Transition & Card
+            var isTransferCardMinimized by remember { mutableStateOf(false) }
+            if (transferState.isTransferring || transferState.isCompleted) {
+                if (isTransferCardMinimized) {
+                    AuraDropMinimizedPill(
+                        transferState = transferState,
+                        onExpand = { isTransferCardMinimized = false },
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                } else {
+                    AuraDropTransferCard(
+                        transferState = transferState,
+                        isMinimized = false,
+                        onToggleMinimize = { isTransferCardMinimized = true },
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
                 }
             }
 

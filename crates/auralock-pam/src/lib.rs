@@ -88,7 +88,7 @@ fn send_pam_info(pamh: *mut c_void, message: &str, is_error: bool) {
 }
 
 #[cfg(unix)]
-async fn wait_for_user_escape_or_keypress() {
+async fn wait_for_user_enter_or_keypress() {
     let mut poll_fds = [libc::pollfd {
         fd: libc::STDIN_FILENO,
         events: libc::POLLIN | libc::POLLPRI,
@@ -109,7 +109,7 @@ async fn wait_for_user_escape_or_keypress() {
                 )
             };
             if n > 0 {
-                // Key pressed (Esc 0x1B, Enter '\n', or user keypress to enter PIN)
+                // Key pressed (Enter '\n' or user keypress to enter password)
                 return;
             }
         }
@@ -118,8 +118,8 @@ async fn wait_for_user_escape_or_keypress() {
 
 /// Linux PAM Authentication Hook
 ///
-/// When the screen lock or login prompt is triggered on Linux (GNOME, KDE, GDM, SDDM, etc.),
-/// this function communicates with the local AuraLock background daemon and displays native lock screen prompts.
+/// When the screen lock, sudo, or polkit login prompt is triggered on Linux,
+/// this function communicates with the local AuraLock background daemon and displays native prompts.
 #[cfg(unix)]
 #[no_mangle]
 pub extern "C" fn pam_sm_authenticate(
@@ -144,10 +144,10 @@ pub extern "C" fn pam_sm_authenticate(
         return PAM_IGNORE;
     }
 
-    // Display native UI prompt on lockscreen (with Esc shortcut)
+    // Display native UI prompt on lockscreen & terminal
     send_pam_info(
         pamh,
-        "📱 Tap finger on your phone (30s)",
+        "📱 Tap phone fingerprint OR press Enter for password (30s)",
         false,
     );
 
@@ -180,8 +180,8 @@ pub extern "C" fn pam_sm_authenticate(
                     }
                 }
             }
-            _ = wait_for_user_escape_or_keypress() => {
-                // User pressed Esc or key on PC keyboard! Immediately cancel challenge on daemon & phone
+            _ = wait_for_user_enter_or_keypress() => {
+                // User pressed Enter on PC keyboard! Immediately cancel challenge on daemon & phone
                 let _ = IpcClient::cancel_unlock(DEFAULT_UNIX_SOCKET_PATH).await;
                 send_pam_info(pamh, "⌨️ Swapped to Password mode", false);
                 PAM_IGNORE

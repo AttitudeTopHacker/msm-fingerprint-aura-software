@@ -5,6 +5,15 @@
 
 package com.msm.movin.auralock.model
 
+fun formatBytes(bytes: Long): String {
+    return when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> String.format("%.1f KB", bytes / 1024.0)
+        bytes < 1024 * 1024 * 1024 -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
+        else -> String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+    }
+}
+
 data class AuraDropFileItem(
     val fileId: String,
     val fileName: String,
@@ -18,12 +27,7 @@ data class AuraDropFileItem(
     val timestamp: Long = System.currentTimeMillis()
 ) {
     fun getFormattedSize(): String {
-        return when {
-            fileSize < 1024 -> "$fileSize B"
-            fileSize < 1024 * 1024 -> String.format("%.1f KB", fileSize / 1024.0)
-            fileSize < 1024 * 1024 * 1024 -> String.format("%.1f MB", fileSize / (1024.0 * 1024.0))
-            else -> String.format("%.2f GB", fileSize / (1024.0 * 1024.0 * 1024.0))
-        }
+        return formatBytes(fileSize)
     }
 }
 
@@ -40,4 +44,14 @@ data class AuraDropTransferState(
     val isCompleted: Boolean = false,
     val isError: Boolean = false,
     val errorMessage: String? = null
-)
+) {
+    fun getFormattedProgress(): String {
+        if (totalBytes <= 0) return "${(progress * 100).toInt()}%"
+        return "${formatBytes(bytesTransferred)} / ${formatBytes(totalBytes)}"
+    }
+
+    fun getFormattedSpeed(): String {
+        return if (speedMBps > 0.05f) String.format("%.1f MB/s", speedMBps) else ""
+    }
+}
+

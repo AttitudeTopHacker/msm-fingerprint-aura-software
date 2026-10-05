@@ -298,6 +298,71 @@
     </div>
   </div>
 
+  <!-- FLOATING LIVE TRANSFER HUD (EXPANDED & MINIMIZED) -->
+  <div id="floating-transfer-hud" class="floating-transfer-hud" style="display: none;">
+    <!-- Expanded View -->
+    <div id="transfer-hud-expanded" class="transfer-hud-card">
+      <div class="transfer-hud-header">
+        <div class="transfer-hud-title-group">
+          <div id="transfer-hud-icon-badge" class="transfer-hud-badge pulse">
+            <span id="transfer-hud-direction-icon">📥</span>
+          </div>
+          <div>
+            <h4 id="transfer-hud-title">Receiving File...</h4>
+            <span id="transfer-hud-phone-name" class="transfer-hud-sub">from Linked Phone</span>
+          </div>
+        </div>
+        <div class="transfer-hud-controls">
+          <button class="transfer-hud-btn" id="transfer-hud-min-btn" onclick="toggleTransferHudMinimize()" title="Minimize Transfer HUD">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg>
+          </button>
+          <button class="transfer-hud-btn" id="transfer-hud-close-btn" onclick="closeTransferHud()" title="Close" style="display: none;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="transfer-hud-body">
+        <div class="transfer-hud-file-info">
+          <span id="transfer-hud-file-icon" class="transfer-hud-file-icon">📄</span>
+          <div class="transfer-hud-file-details">
+            <span id="transfer-hud-file-name" class="transfer-hud-file-name">filename.ext</span>
+            <div class="transfer-hud-stats">
+              <span id="transfer-hud-bytes">0 MB / 0 MB</span>
+              <span id="transfer-hud-pct" class="transfer-hud-pct">0%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="transfer-hud-progress-track">
+          <div id="transfer-hud-progress-fill" class="transfer-hud-progress-fill" style="width: 0%;"></div>
+        </div>
+
+        <div id="transfer-hud-complete-actions" style="display: none; margin-top: 10px; text-align: right;">
+          <button class="btn btn-sm btn-primary" onclick="openDownloadsFolder()">📂 Open Downloads Folder</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Minimized Pill View -->
+    <div id="transfer-hud-minimized" class="transfer-hud-pill" style="display: none;" onclick="toggleTransferHudMinimize()">
+      <div class="transfer-hud-pill-spinner">
+        <svg class="pill-svg-spin" viewBox="0 0 36 36">
+          <path class="pill-circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+          <path id="transfer-pill-circle-fill" class="pill-circle-fill" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+        </svg>
+        <span id="transfer-pill-icon">📥</span>
+      </div>
+      <div class="transfer-hud-pill-info">
+        <span id="transfer-pill-name" class="transfer-pill-name">Transferring...</span>
+        <span id="transfer-pill-pct" class="transfer-pill-pct">0%</span>
+      </div>
+      <div class="transfer-hud-pill-expand" title="Expand Details">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z"/></svg>
+      </div>
+    </div>
+  </div>
+
   <div id="toast">
     <span id="toast-icon">✅</span>
     <span id="toast-message">Action completed successfully!</span>
