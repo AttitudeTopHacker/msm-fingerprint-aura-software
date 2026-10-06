@@ -751,6 +751,49 @@
       background: rgba(255, 255, 255, 0.08);
       color: var(--accent-cyan);
     }
+
+    .transfer-hud-pill-close {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: 2px;
+      transition: all 0.2s ease;
+    }
+
+    .transfer-hud-pill-close:hover {
+      background: rgba(239, 68, 68, 0.25);
+      color: #EF4444;
+      border-color: #EF4444;
+    }
+
+    .floating-transfer-hud.hud-closing {
+      transform: translateY(20px) scale(0.9);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .transfer-hud-card.hud-failed,
+    .transfer-hud-pill.hud-failed {
+      border-color: rgba(239, 68, 68, 0.6) !important;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 25px rgba(239, 68, 68, 0.3) !important;
+    }
+
+    .transfer-hud-card.hud-success,
+    .transfer-hud-pill.hud-success {
+      border-color: rgba(0, 255, 136, 0.5) !important;
+    }
+
+    .transfer-hud-progress-fill.fill-failed {
+      background: #EF4444 !important;
+      animation: none !important;
+    }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
@@ -1011,7 +1054,7 @@
           <button class="transfer-hud-btn" id="transfer-hud-min-btn" onclick="toggleTransferHudMinimize()" title="Minimize Transfer HUD">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg>
           </button>
-          <button class="transfer-hud-btn" id="transfer-hud-close-btn" onclick="closeTransferHud()" title="Close" style="display: none;">
+          <button class="transfer-hud-btn" id="transfer-hud-close-btn" onclick="closeTransferHud()" title="Close / Dismiss">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
           </button>
         </div>
@@ -1024,6 +1067,7 @@
             <span id="transfer-hud-file-name" class="transfer-hud-file-name">filename.ext</span>
             <div class="transfer-hud-stats">
               <span id="transfer-hud-bytes">0 MB / 0 MB</span>
+              <span id="transfer-hud-speed" style="color: var(--accent-cyan); font-size: 0.75rem; font-weight: 600;"></span>
               <span id="transfer-hud-pct" class="transfer-hud-pct">0%</span>
             </div>
           </div>
@@ -1055,6 +1099,9 @@
       <div class="transfer-hud-pill-expand" title="Expand Details">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z"/></svg>
       </div>
+      <button class="transfer-hud-pill-close" onclick="event.stopPropagation(); closeTransferHud()" title="Close / Dismiss">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
     </div>
   </div>
 
@@ -1325,41 +1372,55 @@
 
     async function handleFileSelected(files) {
       if (!files || files.length === 0) return;
-      const file = files[0];
-      
-      const progressBox = document.getElementById('upload-progress-box');
-      const progressFill = document.getElementById('upload-progress-fill');
-      const statusText = document.getElementById('upload-status-text');
+      const fileList = Array.from(files);
+      const totalFiles = fileList.length;
 
-      progressBox.style.display = 'block';
-      progressFill.style.width = '10%';
-      statusText.innerText = `Streaming ${file.name} to Phone...`;
-      log(`Starting AuraDrop file transfer: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`, "info");
+      for (let i = 0; i < totalFiles; i++) {
+        const file = fileList[i];
+        const prefix = totalFiles > 1 ? `(${i + 1}/${totalFiles}) ` : '';
 
-      const formData = new FormData();
-      formData.append('file', file);
+        const progressBox = document.getElementById('upload-progress-box');
+        const progressFill = document.getElementById('upload-progress-fill');
+        const statusText = document.getElementById('upload-status-text');
 
-      try {
-        const res = await fetch('/api/auradrop/send-file', {
-          method: 'POST',
-          body: formData
-        });
-        const data = await res.json();
-        if (data.success) {
-          progressFill.style.width = '100%';
-          statusText.innerText = `✅ Sent ${file.name} successfully!`;
-          showToast(`Sent ${file.name} to Phone!`, "🚀");
-          log(`File ${file.name} successfully transferred to phone`, "success");
-          setTimeout(() => { progressBox.style.display = 'none'; statusText.innerText = ''; }, 3000);
-        } else {
-          statusText.innerText = `❌ ${data.message || 'Transfer failed'}`;
-          showToast(data.message || "Transfer failed", "❌");
-          log(`File transfer failed: ${data.message}`, "error");
+        if (progressBox) progressBox.style.display = 'block';
+        if (progressFill) progressFill.style.width = '10%';
+        if (statusText) statusText.innerText = `${prefix}Streaming ${file.name} to Phone...`;
+        log(`Starting AuraDrop file transfer: ${prefix}${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`, "info");
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+          const res = await fetch('/api/auradrop/send-file', {
+            method: 'POST',
+            body: formData
+          });
+          const data = await res.json();
+          if (data.success) {
+            if (progressFill) progressFill.style.width = '100%';
+            if (statusText) statusText.innerText = `✅ Sent ${prefix}${file.name} successfully!`;
+            showToast(`Sent ${file.name} to Phone!`, "🚀");
+            log(`File ${file.name} successfully transferred to phone`, "success");
+          } else {
+            if (statusText) statusText.innerText = `❌ ${prefix}${data.message || 'Transfer failed'}`;
+            showToast(data.message || "Transfer failed", "❌");
+            log(`File transfer failed: ${data.message}`, "error");
+            break;
+          }
+        } catch (e) {
+          if (statusText) statusText.innerText = `❌ Failed to transfer ${file.name}`;
+          showToast("Transfer error", "❌");
+          break;
         }
-      } catch (e) {
-        statusText.innerText = '❌ Failed to transfer file';
-        showToast("Transfer error", "❌");
       }
+
+      setTimeout(() => {
+        const progressBox = document.getElementById('upload-progress-box');
+        const statusText = document.getElementById('upload-status-text');
+        if (progressBox) progressBox.style.display = 'none';
+        if (statusText) statusText.innerText = '';
+      }, 3500);
     }
 
     async function fetchReceivedFiles() {
@@ -1494,6 +1555,51 @@
     // FLOATING LIVE TRANSFER HUD
     let isTransferHudMinimized = false;
     let transferHudDismissTimeout = null;
+    let hudSpeedTracker = {
+      file_id: null,
+      bytes: 0,
+      time: 0,
+      speed: 0
+    };
+
+    function calculateSpeedAndEta(fileId, bytesTransferred, totalBytes) {
+      const now = performance.now();
+      if (hudSpeedTracker.file_id !== fileId || !hudSpeedTracker.time) {
+        hudSpeedTracker = {
+          file_id: fileId,
+          bytes: bytesTransferred,
+          time: now,
+          speed: 0
+        };
+        return '';
+      }
+
+      const dt = (now - hudSpeedTracker.time) / 1000;
+      if (dt >= 0.25) {
+        const dBytes = bytesTransferred - hudSpeedTracker.bytes;
+        if (dBytes > 0) {
+          const instantSpeed = dBytes / dt;
+          hudSpeedTracker.speed = hudSpeedTracker.speed > 0
+            ? (hudSpeedTracker.speed * 0.65 + instantSpeed * 0.35)
+            : instantSpeed;
+        }
+        hudSpeedTracker.bytes = bytesTransferred;
+        hudSpeedTracker.time = now;
+      }
+
+      const speedBps = hudSpeedTracker.speed;
+      const speedStr = speedBps > 1024 ? `${formatBytes(speedBps)}/s` : '';
+      const remainingBytes = Math.max(0, totalBytes - bytesTransferred);
+      let etaStr = '';
+      if (speedBps > 1024 && remainingBytes > 0) {
+        const etaSec = Math.round(remainingBytes / speedBps);
+        etaStr = etaSec < 60 ? `ETA ${etaSec}s` : `ETA ${Math.floor(etaSec / 60)}m ${etaSec % 60}s`;
+      }
+
+      if (speedStr && etaStr) return `${speedStr} • ${etaStr}`;
+      if (speedStr) return speedStr;
+      return etaStr;
+    }
 
     function formatBytes(bytes) {
       if (!bytes || bytes === 0) return '0 B';
@@ -1524,6 +1630,9 @@
         transferHudDismissTimeout = null;
       }
 
+      expanded?.classList.remove('hud-failed', 'hud-success');
+      minimized?.classList.remove('hud-failed', 'hud-success');
+
       hud.style.display = 'block';
       if (isTransferHudMinimized) {
         if (expanded) expanded.style.display = 'none';
@@ -1552,10 +1661,16 @@
       if (fileIconEl) fileIconEl.innerText = getFileIcon(data.file_name);
       if (fileNameEl) fileNameEl.innerText = data.file_name || 'file';
       if (bytesEl) bytesEl.innerText = `${formatBytes(data.bytes_transferred)} / ${formatBytes(data.total_bytes)}`;
-      if (pctEl) pctEl.innerText = `${pctVal}%`;
-      if (fillEl) fillEl.style.width = `${pctVal}%`;
+      if (pctEl) {
+        pctEl.innerText = `${pctVal}%`;
+        pctEl.style.color = 'var(--accent-green)';
+      }
+      if (fillEl) {
+        fillEl.style.width = `${pctVal}%`;
+        fillEl.classList.remove('fill-failed');
+      }
       if (completeActions) completeActions.style.display = 'none';
-      if (closeBtn) closeBtn.style.display = 'none';
+      if (closeBtn) closeBtn.style.display = 'flex';
 
       // Update minimized pill
       const pillIcon = document.getElementById('transfer-pill-icon');
@@ -1565,13 +1680,26 @@
 
       if (pillIcon) pillIcon.innerText = directionIcon;
       if (pillName) pillName.innerText = data.file_name || 'Transferring...';
-      if (pillPct) pillPct.innerText = `${pctVal}%`;
-      if (pillFill) pillFill.setAttribute('stroke-dasharray', `${pctVal}, 100`);
+      if (pillPct) {
+        pillPct.innerText = `${pctVal}%`;
+        pillPct.style.color = 'var(--accent-green)';
+      }
+      if (pillFill) {
+        pillFill.setAttribute('stroke-dasharray', `${pctVal}, 100`);
+        pillFill.style.stroke = 'var(--accent-green)';
+      }
     }
 
     function updateTransferHudCompleted(data) {
       const hud = document.getElementById('floating-transfer-hud');
+      const expanded = document.getElementById('transfer-hud-expanded');
+      const minimized = document.getElementById('transfer-hud-minimized');
       if (!hud) return;
+
+      if (transferHudDismissTimeout) {
+        clearTimeout(transferHudDismissTimeout);
+        transferHudDismissTimeout = null;
+      }
 
       const isSuccess = data.success !== false;
       const titleEl = document.getElementById('transfer-hud-title');
@@ -1581,11 +1709,40 @@
       const completeActions = document.getElementById('transfer-hud-complete-actions');
       const closeBtn = document.getElementById('transfer-hud-close-btn');
 
-      if (titleEl) titleEl.innerText = isSuccess ? 'Transfer Complete! 🎉' : 'Transfer Failed ❌';
-      if (dirIconEl) dirIconEl.innerText = isSuccess ? '✅' : '❌';
-      if (fillEl) fillEl.style.width = isSuccess ? '100%' : '0%';
-      if (pctEl) pctEl.innerText = isSuccess ? '100%' : 'Failed';
-      if (completeActions && data.is_incoming && isSuccess) completeActions.style.display = 'block';
+      expanded?.classList.remove('hud-failed', 'hud-success');
+      minimized?.classList.remove('hud-failed', 'hud-success');
+
+      if (isSuccess) {
+        expanded?.classList.add('hud-success');
+        minimized?.classList.add('hud-success');
+        if (titleEl) titleEl.innerText = 'Transfer Complete! 🎉';
+        if (dirIconEl) dirIconEl.innerText = '✅';
+        if (fillEl) {
+          fillEl.style.width = '100%';
+          fillEl.classList.remove('fill-failed');
+        }
+        if (pctEl) {
+          pctEl.innerText = '100%';
+          pctEl.style.color = 'var(--accent-green)';
+        }
+        if (completeActions && data.is_incoming) completeActions.style.display = 'block';
+      } else {
+        expanded?.classList.add('hud-failed');
+        minimized?.classList.add('hud-failed');
+        const msg = data.message || 'Transfer Cancelled';
+        if (titleEl) titleEl.innerText = `${msg} 🛑`;
+        if (dirIconEl) dirIconEl.innerText = '🛑';
+        if (fillEl) {
+          fillEl.style.width = '100%';
+          fillEl.classList.add('fill-failed');
+        }
+        if (pctEl) {
+          pctEl.innerText = 'Cancelled';
+          pctEl.style.color = '#EF4444';
+        }
+        if (completeActions) completeActions.style.display = 'none';
+      }
+
       if (closeBtn) closeBtn.style.display = 'flex';
 
       const pillName = document.getElementById('transfer-pill-name');
@@ -1593,15 +1750,24 @@
       const pillIcon = document.getElementById('transfer-pill-icon');
       const pillFill = document.getElementById('transfer-pill-circle-fill');
 
-      if (pillName) pillName.innerText = isSuccess ? 'Transfer Complete!' : 'Transfer Failed';
-      if (pillPct) pillPct.innerText = isSuccess ? '100%' : 'Err';
-      if (pillIcon) pillIcon.innerText = isSuccess ? '✅' : '❌';
-      if (pillFill) pillFill.setAttribute('stroke-dasharray', isSuccess ? '100, 100' : '0, 100');
+      if (pillName) pillName.innerText = isSuccess ? 'Transfer Complete!' : (data.message || 'Cancelled');
+      if (pillPct) {
+        pillPct.innerText = isSuccess ? '100%' : '🛑';
+        pillPct.style.color = isSuccess ? 'var(--accent-green)' : '#EF4444';
+      }
+      if (pillIcon) pillIcon.innerText = isSuccess ? '✅' : '🛑';
+      if (pillFill) {
+        pillFill.setAttribute('stroke-dasharray', '100, 100');
+        pillFill.style.stroke = isSuccess ? 'var(--accent-green)' : '#EF4444';
+      }
 
-      // Auto-dismiss after 6 seconds if not interacted
+      // Ensure HUD is shown
+      hud.style.display = 'block';
+
+      // Auto-dismiss after 4 seconds (failure/cancel) or 5 seconds (success)
       transferHudDismissTimeout = setTimeout(() => {
         closeTransferHud();
-      }, 6000);
+      }, isSuccess ? 5000 : 4000);
     }
 
     function toggleTransferHudMinimize() {
@@ -1619,7 +1785,18 @@
 
     function closeTransferHud() {
       const hud = document.getElementById('floating-transfer-hud');
-      if (hud) hud.style.display = 'none';
+      if (hud) {
+        hud.classList.add('hud-closing');
+        setTimeout(() => {
+          hud.style.display = 'none';
+          hud.classList.remove('hud-closing');
+          isTransferHudMinimized = false;
+          const expanded = document.getElementById('transfer-hud-expanded');
+          const minimized = document.getElementById('transfer-hud-minimized');
+          if (expanded) expanded.style.display = 'block';
+          if (minimized) minimized.style.display = 'none';
+        }, 250);
+      }
       if (transferHudDismissTimeout) {
         clearTimeout(transferHudDismissTimeout);
         transferHudDismissTimeout = null;

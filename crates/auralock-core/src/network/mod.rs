@@ -78,6 +78,7 @@ struct IncomingTransfer {
     local_path: PathBuf,
     bytes_received: u64,
     file_handle: tokio::fs::File,
+    last_broadcast_time: std::time::Instant,
 }
 
 pub struct NetworkService {
@@ -131,6 +132,27 @@ pub fn get_default_downloads_dir() -> PathBuf {
     let p = std::env::temp_dir().join("AuraLock_Downloads");
     let _ = std::fs::create_dir_all(&p);
     p
+}
+
+pub fn get_unique_target_path(dir: &std::path::Path, file_name: &str) -> (String, PathBuf) {
+    let original = PathBuf::from(file_name);
+    let stem = original.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+    let ext = original.extension().and_then(|s| s.to_str());
+
+    let mut candidate_name = file_name.to_string();
+    let mut candidate_path = dir.join(&candidate_name);
+    let mut counter = 1;
+
+    while candidate_path.exists() {
+        candidate_name = match ext {
+            Some(e) if !e.is_empty() => format!("{} ({}).{}", stem, counter, e),
+            _ => format!("{} ({})", stem, counter),
+        };
+        candidate_path = dir.join(&candidate_name);
+        counter += 1;
+    }
+
+    (candidate_name, candidate_path)
 }
 
 impl NetworkService {
@@ -362,8 +384,8 @@ impl NetworkService {
             .await
             .map_err(|e| AuraLockError::ProtocolError(format!("Failed to send file offer: {e}")))?;
 
-        // 2. Stream Chunks (64 KB each)
-        let chunk_size = 64 * 1024;
+        // 2. Stream Chunks (256 KB each for maximum bandwidth saturation)
+        let chunk_size = 256 * 1024;
         let total_chunks = if file_size == 0 {
             1
         } else {
@@ -372,6 +394,7 @@ impl NetworkService {
 
         let engine = base64::engine::general_purpose::STANDARD;
         let mut bytes_sent: u64 = 0;
+        let mut last_progress_time = std::time::Instant::now();
 
         for (idx, chunk) in file_bytes.chunks(chunk_size).enumerate() {
             let chunk_msg = ProtocolMessage::FileChunk(FileTransferChunk {
@@ -381,23 +404,38 @@ impl NetworkService {
                 data_base64: engine.encode(chunk),
             });
 
-            tx.send(chunk_msg)
-                .await
-                .map_err(|e| AuraLockError::ProtocolError(format!("Failed to send chunk: {e}")))?;
+            if let Err(e) = tx.send(chunk_msg).await {
+                self.broadcast_event(WebEvent::FileTransferCompleted {
+                    file_id: file_id.clone(),
+                    file_name: file_name.clone(),
+                    is_incoming: false,
+                    success: false,
+                    message: "Transfer cancelled: connection lost".into(),
+                    local_path: None,
+                });
+                return Err(AuraLockError::ProtocolError(format!("Failed to send chunk: {e}")));
+            }
 
             bytes_sent += chunk.len() as u64;
             let progress = (bytes_sent as f32) / (file_size.max(1) as f32);
 
-            self.broadcast_event(WebEvent::FileTransferProgress {
-                file_id: file_id.clone(),
-                file_name: file_name.clone(),
-                is_incoming: false,
-                progress,
-                bytes_transferred: bytes_sent,
-                total_bytes: file_size,
-            });
+            let should_broadcast = last_progress_time.elapsed() >= std::time::Duration::from_millis(60)
+                || bytes_sent >= file_size;
 
-            tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
+            if should_broadcast {
+                last_progress_time = std::time::Instant::now();
+                self.broadcast_event(WebEvent::FileTransferProgress {
+                    file_id: file_id.clone(),
+                    file_name: file_name.clone(),
+                    is_incoming: false,
+                    progress,
+                    bytes_transferred: bytes_sent,
+                    total_bytes: file_size,
+                });
+            }
+
+            // Yield cooperatively to runtime without introducing artificial latency
+            tokio::task::yield_now().await;
         }
 
         // 3. Send Complete
@@ -507,6 +545,7 @@ impl NetworkService {
     }
 
     async fn handle_connection(&self, stream: TcpStream, client_addr: SocketAddr) -> Result<()> {
+        let _ = stream.set_nodelay(true);
         let (reader, mut writer) = stream.into_split();
         let mut buf_reader = BufReader::new(reader);
         let mut line = String::new();
@@ -625,6 +664,19 @@ impl NetworkService {
             *guard = None;
             let mut phone_guard = self.connected_phone_name.lock().await;
             *phone_guard = None;
+            let mut transfers_guard = self.incoming_transfers.lock().await;
+            for (file_id, transfer) in transfers_guard.drain() {
+                drop(transfer.file_handle);
+                let _ = tokio::fs::remove_file(&transfer.local_path).await;
+                self.broadcast_event(WebEvent::FileTransferCompleted {
+                    file_id,
+                    file_name: transfer.file_name,
+                    is_incoming: true,
+                    success: false,
+                    message: "Phone disconnected during transfer".into(),
+                    local_path: None,
+                });
+            }
         }
         self.broadcast_event(WebEvent::ClientDisconnected);
         writer_task.abort();
@@ -805,13 +857,14 @@ impl NetworkService {
                 info!("Incoming AuraDrop file offer from {}: {} ({} bytes)", offer.sender_name, offer.file_name, offer.file_size);
                 let downloads_dir = get_default_downloads_dir();
                 
-                // Sanitize file name
-                let safe_name = PathBuf::from(&offer.file_name)
+                // Sanitize and ensure conflict-free file name
+                let safe_base_name = PathBuf::from(&offer.file_name)
                     .file_name()
                     .map(|f| f.to_string_lossy().to_string())
                     .unwrap_or_else(|| "downloaded_file.bin".to_string());
                 
-                let target_path = downloads_dir.join(&safe_name);
+                let (safe_name, target_path) = get_unique_target_path(&downloads_dir, &safe_base_name);
+                
                 match tokio::fs::File::create(&target_path).await {
                     Ok(file) => {
                         let transfer = IncomingTransfer {
@@ -822,6 +875,7 @@ impl NetworkService {
                             local_path: target_path,
                             bytes_received: 0,
                             file_handle: file,
+                            last_broadcast_time: std::time::Instant::now(),
                         };
                         {
                             let mut guard = self.incoming_transfers.lock().await;
@@ -863,22 +917,27 @@ impl NetworkService {
                         transfer.bytes_received += decoded_bytes.len() as u64;
 
                         let progress = (transfer.bytes_received as f32) / (transfer.file_size.max(1) as f32);
-                        self.broadcast_event(WebEvent::FileTransferProgress {
-                            file_id: chunk.file_id.clone(),
-                            file_name: transfer.file_name.clone(),
-                            is_incoming: true,
-                            progress,
-                            bytes_transferred: transfer.bytes_received,
-                            total_bytes: transfer.file_size,
-                        });
+                        let is_final = chunk.chunk_index + 1 >= chunk.total_chunks || transfer.bytes_received >= transfer.file_size;
 
-                        if chunk.chunk_index + 1 >= chunk.total_chunks || transfer.bytes_received >= transfer.file_size {
+                        if transfer.last_broadcast_time.elapsed() >= std::time::Duration::from_millis(60) || is_final {
+                            transfer.last_broadcast_time = std::time::Instant::now();
+                            self.broadcast_event(WebEvent::FileTransferProgress {
+                                file_id: chunk.file_id.clone(),
+                                file_name: transfer.file_name.clone(),
+                                is_incoming: true,
+                                progress,
+                                bytes_transferred: transfer.bytes_received,
+                                total_bytes: transfer.file_size,
+                            });
+                        }
+
+                        if is_final {
                             let _ = transfer.file_handle.flush().await;
                             let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
                             completed_info = Some(AuraDropReceivedFile {
                                 file_id: chunk.file_id.clone(),
                                 file_name: transfer.file_name.clone(),
-                                file_size: transfer.file_size,
+                                file_size: transfer.bytes_received,
                                 mime_type: transfer.mime_type.clone(),
                                 sender_name: transfer.sender_name.clone(),
                                 local_path: transfer.local_path.to_string_lossy().to_string(),
@@ -906,14 +965,27 @@ impl NetworkService {
                     });
                 }
             }
+            ProtocolMessage::FileAccept(accept) => {
+                if !accept.accepted {
+                    info!("File transfer rejected by phone for file_id: {}", accept.file_id);
+                    self.broadcast_event(WebEvent::FileTransferCompleted {
+                        file_id: accept.file_id,
+                        file_name: "File".into(),
+                        is_incoming: false,
+                        success: false,
+                        message: accept.message.unwrap_or_else(|| "Transfer rejected by phone".into()),
+                        local_path: None,
+                    });
+                }
+            }
             ProtocolMessage::FileComplete(comp) => {
-                info!("Received FileComplete for file_id: {}", comp.file_id);
-                let completed_info: Option<AuraDropReceivedFile> = {
-                    let mut transfers_guard = self.incoming_transfers.lock().await;
-                    if let Some(mut transfer) = transfers_guard.remove(&comp.file_id) {
+                info!("Received FileComplete for file_id: {}, success: {}", comp.file_id, comp.success);
+                let mut transfers_guard = self.incoming_transfers.lock().await;
+                if let Some(mut transfer) = transfers_guard.remove(&comp.file_id) {
+                    if comp.success {
                         let _ = transfer.file_handle.flush().await;
                         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
-                        Some(AuraDropReceivedFile {
+                        let info = AuraDropReceivedFile {
                             file_id: comp.file_id.clone(),
                             file_name: transfer.file_name.clone(),
                             file_size: transfer.bytes_received,
@@ -921,24 +993,40 @@ impl NetworkService {
                             sender_name: transfer.sender_name.clone(),
                             local_path: transfer.local_path.to_string_lossy().to_string(),
                             timestamp_epoch: now,
-                        })
+                        };
+                        {
+                            let mut files_guard = self.received_files.lock().await;
+                            files_guard.insert(0, info.clone());
+                        }
+                        self.broadcast_event(WebEvent::FileTransferCompleted {
+                            file_id: comp.file_id.clone(),
+                            file_name: info.file_name.clone(),
+                            is_incoming: true,
+                            success: true,
+                            message: "Saved to Downloads/AuraLock".into(),
+                            local_path: Some(info.local_path),
+                        });
                     } else {
-                        None
+                        // Transfer cancelled / failed — remove partial file from disk
+                        drop(transfer.file_handle);
+                        let _ = tokio::fs::remove_file(&transfer.local_path).await;
+                        self.broadcast_event(WebEvent::FileTransferCompleted {
+                            file_id: comp.file_id.clone(),
+                            file_name: transfer.file_name.clone(),
+                            is_incoming: true,
+                            success: false,
+                            message: if comp.message.is_empty() { "Transfer cancelled".into() } else { comp.message.clone() },
+                            local_path: None,
+                        });
                     }
-                };
-
-                if let Some(info) = completed_info {
-                    {
-                        let mut files_guard = self.received_files.lock().await;
-                        files_guard.insert(0, info.clone());
-                    }
+                } else if !comp.success {
                     self.broadcast_event(WebEvent::FileTransferCompleted {
                         file_id: comp.file_id.clone(),
-                        file_name: info.file_name.clone(),
+                        file_name: if comp.file_name.is_empty() { "File".into() } else { comp.file_name.clone() },
                         is_incoming: true,
-                        success: true,
-                        message: "Saved to Downloads/AuraLock".into(),
-                        local_path: Some(info.local_path),
+                        success: false,
+                        message: if comp.message.is_empty() { "Transfer cancelled".into() } else { comp.message.clone() },
+                        local_path: None,
                     });
                 }
             }

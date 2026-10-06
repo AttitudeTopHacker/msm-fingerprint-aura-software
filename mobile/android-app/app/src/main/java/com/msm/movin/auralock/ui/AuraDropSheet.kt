@@ -123,24 +123,6 @@ fun AuraDropSheet(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Active Transfer Animated Transition & Card
-            var isTransferCardMinimized by remember { mutableStateOf(false) }
-            if (transferState.isTransferring || transferState.isCompleted) {
-                if (isTransferCardMinimized) {
-                    AuraDropMinimizedPill(
-                        transferState = transferState,
-                        onExpand = { isTransferCardMinimized = false },
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-                } else {
-                    AuraDropTransferCard(
-                        transferState = transferState,
-                        isMinimized = false,
-                        onToggleMinimize = { isTransferCardMinimized = true },
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-                }
-            }
 
             // Quick Send Actions
             Row(

@@ -28,6 +28,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.msm.movin.auralock.model.AuraDropTransferState
 
 @Composable
@@ -419,6 +421,325 @@ fun AuraDropMinimizedPill(
                         tint = Color(0xFF00D2FF),
                         modifier = Modifier.size(14.dp)
                     )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AuraDropTransferDialog(
+    transferState: AuraDropTransferState,
+    onCancelTransfer: () -> Unit,
+    onRetryTransfer: (() -> Unit)? = null,
+    onDismiss: () -> Unit
+) {
+    if (!transferState.isTransferring && !transferState.isCompleted && !transferState.isError) {
+        return
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        val infiniteTransition = rememberInfiniteTransition(label = "pulseGlow")
+        val glowAlpha by infiniteTransition.animateFloat(
+            initialValue = 0.45f,
+            targetValue = 0.95f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1200, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "glowAlpha"
+        )
+
+        val animatedProgress by animateFloatAsState(
+            targetValue = transferState.progress.coerceIn(0f, 1f),
+            animationSpec = tween(durationMillis = 180, easing = LinearEasing),
+            label = "animatedTransferProgress"
+        )
+
+        val isFinished = transferState.isCompleted
+        val isErr = transferState.isError
+        val isTransferring = transferState.isTransferring
+
+        val borderColors = when {
+            isErr -> listOf(Color(0xFFFF3366), Color(0xFFFF6B6B))
+            isFinished -> listOf(Color(0xFF00FF88), Color(0xFF00D2FF))
+            else -> listOf(
+                Color(0xFF00FF88).copy(alpha = glowAlpha),
+                Color(0xFF00D2FF).copy(alpha = glowAlpha),
+                Color(0xFF9D4EDD).copy(alpha = glowAlpha)
+            )
+        }
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .wrapContentHeight()
+                .shadow(
+                    elevation = 24.dp,
+                    shape = RoundedCornerShape(24.dp),
+                    ambientColor = Color(0xFF00FF88).copy(alpha = 0.25f),
+                    spotColor = Color(0xFF00D2FF).copy(alpha = 0.35f)
+                ),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0D1424)),
+            shape = RoundedCornerShape(24.dp),
+            border = BorderStroke(1.8.dp, Brush.horizontalGradient(borderColors))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp)
+            ) {
+                // Header Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when {
+                                        isErr -> Color(0xFFFF3366).copy(alpha = 0.2f)
+                                        isFinished -> Color(0xFF00FF88).copy(alpha = 0.2f)
+                                        else -> Color(0xFF00D2FF).copy(alpha = 0.2f)
+                                    }
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = when {
+                                    isErr -> Icons.Default.ErrorOutline
+                                    isFinished -> Icons.Default.CheckCircle
+                                    transferState.isIncoming -> Icons.Default.FileDownload
+                                    else -> Icons.Default.FileUpload
+                                },
+                                contentDescription = null,
+                                tint = when {
+                                    isErr -> Color(0xFFFF3366)
+                                    isFinished -> Color(0xFF00FF88)
+                                    transferState.isIncoming -> Color(0xFF00D2FF)
+                                    else -> Color(0xFF00FF88)
+                                },
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        Column {
+                            Text(
+                                text = when {
+                                    isErr -> "Transfer Failed"
+                                    isFinished -> "Transfer Complete! 🎉"
+                                    transferState.isIncoming -> "Receiving File..."
+                                    else -> "Sending to PC..."
+                                },
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                            Text(
+                                text = if (isFinished) "Saved successfully" else if (transferState.isIncoming) "Incoming transfer from PC" else "AuraDrop Fast Transfer",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF1E293B))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close Popup",
+                            tint = Color(0xFF94A3B8),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                // Circular Progress Indicator & Speed Center Ring
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        progress = { animatedProgress },
+                        modifier = Modifier.size(104.dp),
+                        strokeWidth = 6.dp,
+                        color = if (isFinished) Color(0xFF00FF88) else Color(0xFF00D2FF),
+                        trackColor = Color(0xFF1E293B)
+                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "${(animatedProgress * 100).toInt()}%",
+                            color = Color.White,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 20.sp
+                        )
+                        val speed = transferState.getFormattedSpeed()
+                        if (speed.isNotBlank() && isTransferring) {
+                            Text(
+                                text = speed,
+                                color = Color(0xFF00FF88),
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // File Details Box
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF10192A)),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, Color(0xFF1E293B))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = getFileIconForName(transferState.activeFileName),
+                            contentDescription = null,
+                            tint = Color(0xFF00D2FF),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = transferState.activeFileName.ifBlank { "Sharing File..." },
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            val eta = transferState.getFormattedEta()
+                            val detailSubtext = if (eta.isNotBlank() && isTransferring) {
+                                "${transferState.getFormattedProgress()} • $eta"
+                            } else {
+                                transferState.getFormattedProgress()
+                            }
+                            Text(
+                                text = detailSubtext,
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Glowing Linear Progress Bar
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color(0xFF1E293B))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(animatedProgress)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(
+                                        Color(0xFF00FF88),
+                                        Color(0xFF00D2FF),
+                                        Color(0xFF9D4EDD)
+                                    )
+                                )
+                            )
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Action Buttons: Cancel, Retry, and Close
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (isTransferring) {
+                        Button(
+                            onClick = onCancelTransfer,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFEF4444),
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Icon(Icons.Default.Cancel, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Cancel", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    } else if (isErr && onRetryTransfer != null) {
+                        Button(
+                            onClick = onRetryTransfer,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF00D2FF),
+                                contentColor = Color(0xFF07090E)
+                            )
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Retry", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(46.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isTransferring) Color(0xFF1E293B) else Color(0xFF00FF88),
+                            contentColor = if (isTransferring) Color.White else Color(0xFF07090E)
+                        )
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (isTransferring) "Close" else "Done", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
                 }
             }
         }

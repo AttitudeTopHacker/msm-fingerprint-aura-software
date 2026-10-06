@@ -949,3 +949,46 @@ input:checked + .slider:before {
   color: var(--accent-cyan);
 }
 
+.transfer-hud-pill-close {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+  transition: all 0.2s ease;
+}
+
+.transfer-hud-pill-close:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #EF4444;
+  border-color: #EF4444;
+}
+
+.floating-transfer-hud.hud-closing {
+  transform: translateY(20px) scale(0.9);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.transfer-hud-card.hud-failed,
+.transfer-hud-pill.hud-failed {
+  border-color: rgba(239, 68, 68, 0.6) !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 25px rgba(239, 68, 68, 0.3) !important;
+}
+
+.transfer-hud-card.hud-success,
+.transfer-hud-pill.hud-success {
+  border-color: rgba(0, 255, 136, 0.5) !important;
+}
+
+.transfer-hud-progress-fill.fill-failed {
+  background: #EF4444 !important;
+  animation: none !important;
+}
+

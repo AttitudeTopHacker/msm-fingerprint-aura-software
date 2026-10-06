@@ -54,9 +54,24 @@ class AuraLockClient(
     private var isRunning = false
     private var heartbeatJob: Job? = null
 
-    private val incomingFiles = mutableMapOf<String, Pair<File, FileOutputStream>>()
+    private val incomingFiles = mutableMapOf<String, Pair<File, OutputStream>>()
     private val incomingSizes = mutableMapOf<String, Long>()
     private val incomingBytesReceived = mutableMapOf<String, Long>()
+    private val incomingLastProgressTime = mutableMapOf<String, Long>()
+
+    private fun getUniqueTargetFile(directory: File, originalName: String): File {
+        var candidate = File(directory, originalName)
+        if (!candidate.exists()) return candidate
+        val dotIndex = originalName.lastIndexOf('.')
+        val baseName = if (dotIndex > 0) originalName.substring(0, dotIndex) else originalName
+        val extension = if (dotIndex > 0) originalName.substring(dotIndex) else ""
+        var count = 1
+        while (candidate.exists()) {
+            candidate = File(directory, "$baseName ($count)$extension")
+            count++
+        }
+        return candidate
+    }
 
     companion object {
         suspend fun discoverPcIp(timeoutMs: Int = 2000): Pair<String, Int>? = withContext(Dispatchers.IO) {
@@ -98,6 +113,8 @@ class AuraLockClient(
             sock.tcpNoDelay = true
             sock.keepAlive = true
             sock.soTimeout = 0
+            sock.sendBufferSize = 512 * 1024
+            sock.receiveBufferSize = 512 * 1024
 
             val connected = try {
                 sock.connect(InetSocketAddress(targetHost, targetPort), 3500)
@@ -112,6 +129,8 @@ class AuraLockClient(
                     sock.tcpNoDelay = true
                     sock.keepAlive = true
                     sock.soTimeout = 0
+                    sock.sendBufferSize = 512 * 1024
+                    sock.receiveBufferSize = 512 * 1024
                     sock.connect(InetSocketAddress(targetHost, targetPort), 3500)
                     true
                 } else {
@@ -124,8 +143,8 @@ class AuraLockClient(
             }
 
             socket = sock
-            writer = PrintWriter(OutputStreamWriter(sock.getOutputStream()), true)
-            reader = BufferedReader(InputStreamReader(sock.getInputStream()))
+            writer = PrintWriter(BufferedWriter(OutputStreamWriter(sock.getOutputStream(), Charsets.UTF_8), 256 * 1024), true)
+            reader = BufferedReader(InputStreamReader(sock.getInputStream(), Charsets.UTF_8), 256 * 1024)
             isRunning = true
 
             // Send identify immediately so PC registers connected phone
@@ -239,6 +258,7 @@ class AuraLockClient(
         onChallengeCancelled: (String) -> Unit = {},
         onUnpaired: () -> Unit = {},
         fallbackStorageDir: File? = null,
+        onFileTransferCancelled: (fileId: String, fileName: String, message: String) -> Unit = { _, _, _ -> },
         onDisconnect: () -> Unit
     ) = withContext(Dispatchers.IO) {
         try {
@@ -269,9 +289,6 @@ class AuraLockClient(
                         val isLocked = payload?.optBoolean("is_locked", true) ?: true
                         withContext(Dispatchers.Main) {
                             onLockStateChanged(isLocked)
-                            if (!isLocked) {
-                                onChallengeCancelled("PC Unlocked")
-                            }
                         }
                     }
                     "Result" -> {
@@ -303,7 +320,7 @@ class AuraLockClient(
                         try {
                             val payload = json.optJSONObject("payload") ?: continue
                             val fileId = payload.optString("file_id", "file_${UUID.randomUUID().toString().take(6)}")
-                            val fileName = payload.optString("file_name", "received_file.bin")
+                            val rawFileName = payload.optString("file_name", "received_file.bin")
                             val fileSize = payload.optLong("file_size", 0L)
                             val mimeType = payload.optString("mime_type", "application/octet-stream")
                             val senderName = payload.optString("sender_name", "PC")
@@ -322,22 +339,23 @@ class AuraLockClient(
                                 try { targetDir.mkdirs() } catch (_: Throwable) {}
                             }
 
-                            val targetFile = File(targetDir, fileName)
-                            val fos = try {
-                                FileOutputStream(targetFile)
+                            val targetFile = getUniqueTargetFile(targetDir, rawFileName)
+                            val bos = try {
+                                BufferedOutputStream(FileOutputStream(targetFile), 256 * 1024)
                             } catch (e: Exception) {
                                 val safeDir = fallbackStorageDir ?: targetDir
                                 if (!safeDir.exists()) safeDir.mkdirs()
-                                val safeFile = File(safeDir, fileName)
-                                FileOutputStream(safeFile)
+                                val safeFile = getUniqueTargetFile(safeDir, rawFileName)
+                                BufferedOutputStream(FileOutputStream(safeFile), 256 * 1024)
                             }
 
-                            incomingFiles[fileId] = Pair(targetFile, fos)
+                            incomingFiles[fileId] = Pair(targetFile, bos)
                             incomingSizes[fileId] = fileSize
                             incomingBytesReceived[fileId] = 0L
+                            incomingLastProgressTime[fileId] = 0L
 
                             withContext(Dispatchers.Main) {
-                                onIncomingFileOffer(IncomingFileOfferEvent(fileId, fileName, fileSize, mimeType, senderName))
+                                onIncomingFileOffer(IncomingFileOfferEvent(fileId, targetFile.name, fileSize, mimeType, senderName))
                             }
                         } catch (e: Throwable) {
                             e.printStackTrace()
@@ -360,25 +378,32 @@ class AuraLockClient(
                                 val totalSize = incomingSizes[fileId] ?: 1L
                                 val progress = (received.toFloat() / totalSize.toFloat()).coerceIn(0f, 1f)
 
-                                withContext(Dispatchers.Main) {
-                                    onFileProgress(
-                                        FileTransferProgressEvent(
-                                            fileId = fileId,
-                                            fileName = pair.first.name,
-                                            isIncoming = true,
-                                            progress = progress,
-                                            bytesTransferred = received,
-                                            totalBytes = totalSize
+                                val now = System.currentTimeMillis()
+                                val lastProgTime = incomingLastProgressTime[fileId] ?: 0L
+                                val isFinalChunk = chunkIndex + 1 >= totalChunks || received >= totalSize
+                                if (now - lastProgTime >= 60L || isFinalChunk) {
+                                    incomingLastProgressTime[fileId] = now
+                                    withContext(Dispatchers.Main) {
+                                        onFileProgress(
+                                            FileTransferProgressEvent(
+                                                fileId = fileId,
+                                                fileName = pair.first.name,
+                                                isIncoming = true,
+                                                progress = progress,
+                                                bytesTransferred = received,
+                                                totalBytes = totalSize
+                                            )
                                         )
-                                    )
+                                    }
                                 }
 
-                                if (chunkIndex + 1 >= totalChunks || received >= totalSize) {
+                                if (isFinalChunk) {
                                     try {
                                         pair.second.flush()
                                         pair.second.close()
                                     } catch (_: Throwable) {}
                                     incomingFiles.remove(fileId)
+                                    incomingLastProgressTime.remove(fileId)
                                     withContext(Dispatchers.Main) {
                                         onFileReceived(fileId, pair.first.name, pair.first)
                                     }
@@ -393,14 +418,31 @@ class AuraLockClient(
                             val payload = json.optJSONObject("payload") ?: continue
                             val fileId = payload.optString("file_id")
                             val fileName = payload.optString("file_name", "received_file")
+                            val isSuccess = payload.optBoolean("success", true)
+                            val message = payload.optString("message", if (isSuccess) "Completed" else "Transfer cancelled")
                             val pair = incomingFiles.remove(fileId)
+                            incomingLastProgressTime.remove(fileId)
                             if (pair != null) {
                                 try {
                                     pair.second.flush()
                                     pair.second.close()
                                 } catch (_: Throwable) {}
+                                val received = incomingBytesReceived.remove(fileId) ?: 0L
+                                val expected = incomingSizes.remove(fileId) ?: 0L
+                                if (!isSuccess || (expected > 0L && received < expected)) {
+                                    try { pair.first.delete() } catch (_: Throwable) {}
+                                }
                                 withContext(Dispatchers.Main) {
-                                    onFileReceived(fileId, fileName, pair.first)
+                                    if (isSuccess && (expected <= 0L || received >= expected)) {
+                                        onFileReceived(fileId, fileName, pair.first)
+                                    } else {
+                                        val errorMsg = if (!isSuccess) message else "Incomplete file ($received / $expected bytes)"
+                                        onFileTransferCancelled(fileId, fileName, errorMsg)
+                                    }
+                                }
+                            } else if (!isSuccess) {
+                                withContext(Dispatchers.Main) {
+                                    onFileTransferCancelled(fileId, fileName, message)
                                 }
                             }
                         } catch (e: Throwable) {
@@ -439,6 +481,7 @@ class AuraLockClient(
                 } catch (_: Throwable) {}
             }
             incomingFiles.clear()
+            incomingLastProgressTime.clear()
             heartbeatJob?.cancel()
             withContext(Dispatchers.Main) {
                 onDisconnect()
@@ -454,8 +497,10 @@ class AuraLockClient(
         phoneName: String = "${Build.MANUFACTURER} ${Build.MODEL}",
         onProgress: (Float, Long, Long) -> Unit
     ): Boolean = withContext(Dispatchers.IO) {
+        var transferSuccessfullyCompleted = false
+        val fileId = "phone_file_${UUID.randomUUID().toString().take(8)}"
+        val bufferedInput = if (inputStream is BufferedInputStream) inputStream else BufferedInputStream(inputStream, 256 * 1024)
         try {
-            val fileId = "phone_file_${UUID.randomUUID().toString().take(8)}"
             val safeTotal = if (totalBytes > 0L) totalBytes else 1L
 
             // 1. Send FileOffer
@@ -472,15 +517,17 @@ class AuraLockClient(
             writer?.println(offerJson.toString())
             writer?.flush()
 
-            // 2. Stream chunks (64 KB each)
-            val chunkSize = 64 * 1024
+            // 2. Stream chunks (256 KB each for super-fast throughput)
+            val chunkSize = 256 * 1024
             val buffer = ByteArray(chunkSize)
             val totalChunks = if (totalBytes <= 0L) 1 else ((totalBytes + chunkSize - 1) / chunkSize).toInt()
             var bytesSent = 0L
             var chunkIdx = 0
+            var lastProgressTime = 0L
 
             var bytesRead: Int
-            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+            while (bufferedInput.read(buffer).also { bytesRead = it } != -1) {
+                ensureActive()
                 if (bytesRead <= 0) continue
                 val chunk = if (bytesRead == chunkSize) buffer else buffer.copyOfRange(0, bytesRead)
                 val base64 = Base64.encodeToString(chunk, Base64.NO_WRAP)
@@ -504,14 +551,19 @@ class AuraLockClient(
                 } else {
                     1f
                 }
-                withContext(Dispatchers.Main) {
-                    onProgress(prog, bytesSent, totalBytes)
+
+                val now = System.currentTimeMillis()
+                if (now - lastProgressTime >= 60L || bytesSent >= totalBytes) {
+                    lastProgressTime = now
+                    withContext(Dispatchers.Main) {
+                        onProgress(prog, bytesSent, totalBytes)
+                    }
                 }
 
-                delay(2)
+                yield()
             }
 
-            // 3. Send Complete
+            // 3. Send Complete (Success)
             val completeJson = JSONObject().apply {
                 put("type", "FileComplete")
                 put("payload", JSONObject().apply {
@@ -523,14 +575,80 @@ class AuraLockClient(
             }
             writer?.println(completeJson.toString())
             writer?.flush()
+            transferSuccessfullyCompleted = true
             true
+        } catch (e: CancellationException) {
+            // Cancelled by user/coroutine
+            withContext(NonCancellable + Dispatchers.IO) {
+                try {
+                    val cancelJson = JSONObject().apply {
+                        put("type", "FileComplete")
+                        put("payload", JSONObject().apply {
+                            put("file_id", fileId)
+                            put("file_name", fileName)
+                            put("success", false)
+                            put("message", "Cancelled by Phone")
+                        })
+                    }
+                    writer?.println(cancelJson.toString())
+                    writer?.flush()
+                } catch (_: Throwable) {}
+            }
+            throw e
         } catch (e: Exception) {
             e.printStackTrace()
+            withContext(NonCancellable + Dispatchers.IO) {
+                try {
+                    val cancelJson = JSONObject().apply {
+                        put("type", "FileComplete")
+                        put("payload", JSONObject().apply {
+                            put("file_id", fileId)
+                            put("file_name", fileName)
+                            put("success", false)
+                            put("message", "Transfer error: ${e.message ?: "Unknown"}")
+                        })
+                    }
+                    writer?.println(cancelJson.toString())
+                    writer?.flush()
+                } catch (_: Throwable) {}
+            }
             false
         } finally {
+            if (!transferSuccessfullyCompleted) {
+                try {
+                    val cancelJson = JSONObject().apply {
+                        put("type", "FileComplete")
+                        put("payload", JSONObject().apply {
+                            put("file_id", fileId)
+                            put("file_name", fileName)
+                            put("success", false)
+                            put("message", "Transfer aborted")
+                        })
+                    }
+                    writer?.println(cancelJson.toString())
+                    writer?.flush()
+                } catch (_: Throwable) {}
+            }
             try {
-                inputStream.close()
+                bufferedInput.close()
             } catch (_: Throwable) {}
+        }
+    }
+
+    fun cancelFileTransfer(fileId: String? = null, fileName: String = "") {
+        try {
+            val json = JSONObject().apply {
+                put("type", "FileComplete")
+                put("payload", JSONObject().apply {
+                    put("file_id", fileId ?: "")
+                    put("file_name", fileName)
+                    put("success", false)
+                    put("message", "Transfer cancelled by phone user")
+                })
+            }
+            sendRaw(json.toString())
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 

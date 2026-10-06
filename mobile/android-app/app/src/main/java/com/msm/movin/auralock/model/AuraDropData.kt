@@ -53,5 +53,16 @@ data class AuraDropTransferState(
     fun getFormattedSpeed(): String {
         return if (speedMBps > 0.05f) String.format("%.1f MB/s", speedMBps) else ""
     }
+
+    fun getFormattedEta(): String {
+        if (speedMBps <= 0.05f || totalBytes <= bytesTransferred) return ""
+        val remainingBytes = totalBytes - bytesTransferred
+        val remainingSec = (remainingBytes / (speedMBps * 1024 * 1024)).toInt()
+        return if (remainingSec > 60) {
+            "${remainingSec / 60}m ${remainingSec % 60}s"
+        } else {
+            "${remainingSec}s"
+        }
+    }
 }
 

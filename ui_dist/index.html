@@ -4,19 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AuraLock • Biometric Security & AuraDrop</title>
-  <link rel="icon" type="image/png" href="/icon.png">
+  <link rel="icon" type="image/png" href="./icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/src/style.css">
-  <script src="/src/qrcode.min.js"></script>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./qrcode.min.js"></script>
 </head>
 <body>
 
   <!-- HEADER -->
   <header>
     <div class="brand">
-      <img src="/icon.png" alt="AuraLock Logo" class="app-icon">
+      <img src="./icon.png" alt="AuraLock Logo" class="app-icon">
       <div class="brand-text">
         <h1>AuraLock Desktop</h1>
         <span>TAURI DESKTOP EDITION • MSM.MOVIN</span>
@@ -316,7 +316,7 @@
           <button class="transfer-hud-btn" id="transfer-hud-min-btn" onclick="toggleTransferHudMinimize()" title="Minimize Transfer HUD">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg>
           </button>
-          <button class="transfer-hud-btn" id="transfer-hud-close-btn" onclick="closeTransferHud()" title="Close" style="display: none;">
+          <button class="transfer-hud-btn" id="transfer-hud-close-btn" onclick="closeTransferHud()" title="Close / Dismiss">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
           </button>
         </div>
@@ -329,6 +329,7 @@
             <span id="transfer-hud-file-name" class="transfer-hud-file-name">filename.ext</span>
             <div class="transfer-hud-stats">
               <span id="transfer-hud-bytes">0 MB / 0 MB</span>
+              <span id="transfer-hud-speed" style="color: var(--accent-cyan); font-size: 0.75rem; font-weight: 600;"></span>
               <span id="transfer-hud-pct" class="transfer-hud-pct">0%</span>
             </div>
           </div>
@@ -360,6 +361,9 @@
       <div class="transfer-hud-pill-expand" title="Expand Details">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z"/></svg>
       </div>
+      <button class="transfer-hud-pill-close" onclick="event.stopPropagation(); closeTransferHud()" title="Close / Dismiss">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
     </div>
   </div>
 
@@ -368,6 +372,6 @@
     <span id="toast-message">Action completed successfully!</span>
   </div>
 
-  <script type="module" src="/src/main.js"></script>
+  <script src="./main.js"></script>
 </body>
 </html>

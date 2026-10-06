@@ -1,6 +1,6 @@
 [package]
 name = "auralock-desktop"
-version = "1.5.2"
+version = "1.5.3"
 description = "AuraLock Biometric Security & AuraDrop Desktop App"
 authors = ["msm.movin"]
 license = "Proprietary"

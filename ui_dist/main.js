@@ -499,47 +499,58 @@ window.sendClipboard = async function () {
   }
 };
 
-// SEND FILE
+// SEND FILE (Supports multi-file queue)
 window.handleFileSelected = async function (files) {
   if (!files || files.length === 0) return;
-  const file = files[0];
+  const fileList = Array.from(files);
+  const totalFiles = fileList.length;
 
-  const progressBox = document.getElementById('upload-progress-box');
-  const progressFill = document.getElementById('upload-progress-fill');
-  const statusText = document.getElementById('upload-status-text');
+  for (let i = 0; i < totalFiles; i++) {
+    const file = fileList[i];
+    const prefix = totalFiles > 1 ? `(${i + 1}/${totalFiles}) ` : '';
 
-  if (progressBox) progressBox.style.display = 'block';
-  if (progressFill) progressFill.style.width = '15%';
-  if (statusText) statusText.innerText = `Streaming ${file.name} to Phone...`;
-  log(`Starting AuraDrop file transfer: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`, "info");
+    const progressBox = document.getElementById('upload-progress-box');
+    const progressFill = document.getElementById('upload-progress-fill');
+    const statusText = document.getElementById('upload-status-text');
 
-  const formData = new FormData();
-  formData.append('file', file);
+    if (progressBox) progressBox.style.display = 'block';
+    if (progressFill) progressFill.style.width = '10%';
+    if (statusText) statusText.innerText = `${prefix}Streaming ${file.name} to Phone...`;
+    log(`Starting AuraDrop file transfer: ${prefix}${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`, "info");
 
-  try {
-    const res = await fetch('http://127.0.0.1:47891/api/auradrop/send-file', {
-      method: 'POST',
-      body: formData
-    });
-    const data = await res.json();
-    if (data.success) {
-      if (progressFill) progressFill.style.width = '100%';
-      if (statusText) statusText.innerText = `✅ Sent ${file.name} successfully!`;
-      showToast(`Sent ${file.name} to Phone!`, "🚀");
-      log(`File ${file.name} successfully transferred to phone`, "success");
-      setTimeout(() => { 
-        if (progressBox) progressBox.style.display = 'none'; 
-        if (statusText) statusText.innerText = ''; 
-      }, 3000);
-    } else {
-      if (statusText) statusText.innerText = `❌ ${data.message || 'Transfer failed'}`;
-      showToast(data.message || "Transfer failed", "❌");
-      log(`File transfer failed: ${data.message}`, "error");
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('http://127.0.0.1:47891/api/auradrop/send-file', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (progressFill) progressFill.style.width = '100%';
+        if (statusText) statusText.innerText = `✅ Sent ${prefix}${file.name} successfully!`;
+        showToast(`Sent ${file.name} to Phone!`, "🚀");
+        log(`File ${file.name} successfully transferred to phone`, "success");
+      } else {
+        if (statusText) statusText.innerText = `❌ ${prefix}${data.message || 'Transfer failed'}`;
+        showToast(data.message || "Transfer failed", "❌");
+        log(`File transfer failed: ${data.message}`, "error");
+        break;
+      }
+    } catch (e) {
+      if (statusText) statusText.innerText = `❌ Failed to transfer ${file.name}`;
+      showToast("Transfer error", "❌");
+      break;
     }
-  } catch (e) {
-    if (statusText) statusText.innerText = '❌ Failed to transfer file';
-    showToast("Transfer error", "❌");
   }
+
+  setTimeout(() => {
+    const progressBox = document.getElementById('upload-progress-box');
+    const statusText = document.getElementById('upload-status-text');
+    if (progressBox) progressBox.style.display = 'none';
+    if (statusText) statusText.innerText = '';
+  }, 3500);
 };
 
 // RECEIVED FILES
@@ -705,6 +716,51 @@ function setupWebSocket() {
 // FLOATING LIVE TRANSFER HUD
 let isTransferHudMinimized = false;
 let transferHudDismissTimeout = null;
+let hudSpeedTracker = {
+  file_id: null,
+  bytes: 0,
+  time: 0,
+  speed: 0
+};
+
+function calculateSpeedAndEta(fileId, bytesTransferred, totalBytes) {
+  const now = performance.now();
+  if (hudSpeedTracker.file_id !== fileId || !hudSpeedTracker.time) {
+    hudSpeedTracker = {
+      file_id: fileId,
+      bytes: bytesTransferred,
+      time: now,
+      speed: 0
+    };
+    return '';
+  }
+
+  const dt = (now - hudSpeedTracker.time) / 1000;
+  if (dt >= 0.25) {
+    const dBytes = bytesTransferred - hudSpeedTracker.bytes;
+    if (dBytes > 0) {
+      const instantSpeed = dBytes / dt;
+      hudSpeedTracker.speed = hudSpeedTracker.speed > 0
+        ? (hudSpeedTracker.speed * 0.65 + instantSpeed * 0.35)
+        : instantSpeed;
+    }
+    hudSpeedTracker.bytes = bytesTransferred;
+    hudSpeedTracker.time = now;
+  }
+
+  const speedBps = hudSpeedTracker.speed;
+  const speedStr = speedBps > 1024 ? `${formatBytes(speedBps)}/s` : '';
+  const remainingBytes = Math.max(0, totalBytes - bytesTransferred);
+  let etaStr = '';
+  if (speedBps > 1024 && remainingBytes > 0) {
+    const etaSec = Math.round(remainingBytes / speedBps);
+    etaStr = etaSec < 60 ? `ETA ${etaSec}s` : `ETA ${Math.floor(etaSec / 60)}m ${etaSec % 60}s`;
+  }
+
+  if (speedStr && etaStr) return `${speedStr} • ${etaStr}`;
+  if (speedStr) return speedStr;
+  return etaStr;
+}
 
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 B';
@@ -735,6 +791,9 @@ function updateTransferHudProgress(data) {
     transferHudDismissTimeout = null;
   }
 
+  expanded?.classList.remove('hud-failed', 'hud-success');
+  minimized?.classList.remove('hud-failed', 'hud-success');
+
   hud.style.display = 'block';
   if (isTransferHudMinimized) {
     if (expanded) expanded.style.display = 'none';
@@ -753,20 +812,30 @@ function updateTransferHudProgress(data) {
   const fileIconEl = document.getElementById('transfer-hud-file-icon');
   const fileNameEl = document.getElementById('transfer-hud-file-name');
   const bytesEl = document.getElementById('transfer-hud-bytes');
+  const speedEl = document.getElementById('transfer-hud-speed');
   const pctEl = document.getElementById('transfer-hud-pct');
   const fillEl = document.getElementById('transfer-hud-progress-fill');
   const completeActions = document.getElementById('transfer-hud-complete-actions');
   const closeBtn = document.getElementById('transfer-hud-close-btn');
+
+  const speedEtaText = calculateSpeedAndEta(data.file_id, data.bytes_transferred, data.total_bytes);
 
   if (dirIconEl) dirIconEl.innerText = directionIcon;
   if (titleEl) titleEl.innerText = directionTitle;
   if (fileIconEl) fileIconEl.innerText = getFileIcon(data.file_name);
   if (fileNameEl) fileNameEl.innerText = data.file_name || 'file';
   if (bytesEl) bytesEl.innerText = `${formatBytes(data.bytes_transferred)} / ${formatBytes(data.total_bytes)}`;
-  if (pctEl) pctEl.innerText = `${pctVal}%`;
-  if (fillEl) fillEl.style.width = `${pctVal}%`;
+  if (speedEl) speedEl.innerText = speedEtaText;
+  if (pctEl) {
+    pctEl.innerText = `${pctVal}%`;
+    pctEl.style.color = 'var(--accent-green)';
+  }
+  if (fillEl) {
+    fillEl.style.width = `${pctVal}%`;
+    fillEl.classList.remove('fill-failed');
+  }
   if (completeActions) completeActions.style.display = 'none';
-  if (closeBtn) closeBtn.style.display = 'none';
+  if (closeBtn) closeBtn.style.display = 'flex';
 
   // Update minimized pill
   const pillIcon = document.getElementById('transfer-pill-icon');
@@ -775,28 +844,75 @@ function updateTransferHudProgress(data) {
   const pillFill = document.getElementById('transfer-pill-circle-fill');
 
   if (pillIcon) pillIcon.innerText = directionIcon;
-  if (pillName) pillName.innerText = data.file_name || 'Transferring...';
-  if (pillPct) pillPct.innerText = `${pctVal}%`;
-  if (pillFill) pillFill.setAttribute('stroke-dasharray', `${pctVal}, 100`);
+  if (pillName) pillName.innerText = speedEtaText ? `${data.file_name || 'File'} • ${speedEtaText}` : (data.file_name || 'Transferring...');
+  if (pillPct) {
+    pctVal >= 100 ? (pillPct.innerText = '100%') : (pillPct.innerText = `${pctVal}%`);
+    pillPct.style.color = 'var(--accent-green)';
+  }
+  if (pillFill) {
+    pillFill.setAttribute('stroke-dasharray', `${pctVal}, 100`);
+    pillFill.style.stroke = 'var(--accent-green)';
+  }
 }
 
 function updateTransferHudCompleted(data) {
   const hud = document.getElementById('floating-transfer-hud');
+  const expanded = document.getElementById('transfer-hud-expanded');
+  const minimized = document.getElementById('transfer-hud-minimized');
   if (!hud) return;
+
+  if (transferHudDismissTimeout) {
+    clearTimeout(transferHudDismissTimeout);
+    transferHudDismissTimeout = null;
+  }
+
+  hudSpeedTracker = { file_id: null, bytes: 0, time: 0, speed: 0 };
 
   const isSuccess = data.success !== false;
   const titleEl = document.getElementById('transfer-hud-title');
   const dirIconEl = document.getElementById('transfer-hud-direction-icon');
   const fillEl = document.getElementById('transfer-hud-progress-fill');
+  const speedEl = document.getElementById('transfer-hud-speed');
   const pctEl = document.getElementById('transfer-hud-pct');
   const completeActions = document.getElementById('transfer-hud-complete-actions');
   const closeBtn = document.getElementById('transfer-hud-close-btn');
 
-  if (titleEl) titleEl.innerText = isSuccess ? 'Transfer Complete! 🎉' : 'Transfer Failed ❌';
-  if (dirIconEl) dirIconEl.innerText = isSuccess ? '✅' : '❌';
-  if (fillEl) fillEl.style.width = isSuccess ? '100%' : '0%';
-  if (pctEl) pctEl.innerText = isSuccess ? '100%' : 'Failed';
-  if (completeActions && data.is_incoming && isSuccess) completeActions.style.display = 'block';
+  expanded?.classList.remove('hud-failed', 'hud-success');
+  minimized?.classList.remove('hud-failed', 'hud-success');
+
+  if (speedEl) speedEl.innerText = '';
+
+  if (isSuccess) {
+    expanded?.classList.add('hud-success');
+    minimized?.classList.add('hud-success');
+    if (titleEl) titleEl.innerText = 'Transfer Complete! 🎉';
+    if (dirIconEl) dirIconEl.innerText = '✅';
+    if (fillEl) {
+      fillEl.style.width = '100%';
+      fillEl.classList.remove('fill-failed');
+    }
+    if (pctEl) {
+      pctEl.innerText = '100%';
+      pctEl.style.color = 'var(--accent-green)';
+    }
+    if (completeActions && data.is_incoming) completeActions.style.display = 'block';
+  } else {
+    expanded?.classList.add('hud-failed');
+    minimized?.classList.add('hud-failed');
+    const msg = data.message || 'Transfer Cancelled';
+    if (titleEl) titleEl.innerText = `${msg} 🛑`;
+    if (dirIconEl) dirIconEl.innerText = '🛑';
+    if (fillEl) {
+      fillEl.style.width = '100%';
+      fillEl.classList.add('fill-failed');
+    }
+    if (pctEl) {
+      pctEl.innerText = 'Cancelled';
+      pctEl.style.color = '#EF4444';
+    }
+    if (completeActions) completeActions.style.display = 'none';
+  }
+
   if (closeBtn) closeBtn.style.display = 'flex';
 
   const pillName = document.getElementById('transfer-pill-name');
@@ -804,15 +920,24 @@ function updateTransferHudCompleted(data) {
   const pillIcon = document.getElementById('transfer-pill-icon');
   const pillFill = document.getElementById('transfer-pill-circle-fill');
 
-  if (pillName) pillName.innerText = isSuccess ? 'Transfer Complete!' : 'Transfer Failed';
-  if (pillPct) pillPct.innerText = isSuccess ? '100%' : 'Err';
-  if (pillIcon) pillIcon.innerText = isSuccess ? '✅' : '❌';
-  if (pillFill) pillFill.setAttribute('stroke-dasharray', isSuccess ? '100, 100' : '0, 100');
+  if (pillName) pillName.innerText = isSuccess ? 'Transfer Complete!' : (data.message || 'Cancelled');
+  if (pillPct) {
+    pillPct.innerText = isSuccess ? '100%' : '🛑';
+    pillPct.style.color = isSuccess ? 'var(--accent-green)' : '#EF4444';
+  }
+  if (pillIcon) pillIcon.innerText = isSuccess ? '✅' : '🛑';
+  if (pillFill) {
+    pillFill.setAttribute('stroke-dasharray', '100, 100');
+    pillFill.style.stroke = isSuccess ? 'var(--accent-green)' : '#EF4444';
+  }
 
-  // Auto-dismiss after 6 seconds if not interacted
+  // Ensure HUD is shown
+  hud.style.display = 'block';
+
+  // Auto-dismiss after 4 seconds (failure/cancel) or 5 seconds (success)
   transferHudDismissTimeout = setTimeout(() => {
     window.closeTransferHud();
-  }, 6000);
+  }, isSuccess ? 5000 : 4000);
 }
 
 window.toggleTransferHudMinimize = function () {
@@ -830,7 +955,18 @@ window.toggleTransferHudMinimize = function () {
 
 window.closeTransferHud = function () {
   const hud = document.getElementById('floating-transfer-hud');
-  if (hud) hud.style.display = 'none';
+  if (hud) {
+    hud.classList.add('hud-closing');
+    setTimeout(() => {
+      hud.style.display = 'none';
+      hud.classList.remove('hud-closing');
+      isTransferHudMinimized = false;
+      const expanded = document.getElementById('transfer-hud-expanded');
+      const minimized = document.getElementById('transfer-hud-minimized');
+      if (expanded) expanded.style.display = 'block';
+      if (minimized) minimized.style.display = 'none';
+    }, 250);
+  }
   if (transferHudDismissTimeout) {
     clearTimeout(transferHudDismissTimeout);
     transferHudDismissTimeout = null;

@@ -96,7 +96,10 @@ class MainActivity : FragmentActivity() {
 
     private val receivedFiles = mutableStateListOf<AuraDropFileItem>()
     private var transferState by mutableStateOf(AuraDropTransferState())
+    private var showTransferDialogState by mutableStateOf(false)
+    private var activeTransferJob: Job? = null
     private var isTransferMinimized by mutableStateOf(false)
+    private var lastSentUris: List<Uri> = emptyList()
     private var latestReceivedClipboard by mutableStateOf<String?>(null)
     private var isConnectedState by mutableStateOf(false)
     private var isPairedState by mutableStateOf(false)
@@ -114,6 +117,21 @@ class MainActivity : FragmentActivity() {
 
     private var autoReconnectJob: Job? = null
     private var challengeTimerJob: Job? = null
+    private var currentToast: Toast? = null
+
+    // Direct Activity-level file picker (bypasses Compose launcher — works on ALL devices)
+    private val FILE_PICKER_RC = 3001
+    private val MEDIA_PICKER_RC = 3002
+    private var pendingPickerCallback: ((List<Uri>) -> Unit)? = null
+
+    private fun showSingleToast(msg: String, duration: Int = Toast.LENGTH_SHORT) {
+        runOnUiThread {
+            try {
+                currentToast?.cancel()
+                currentToast = Toast.makeText(applicationContext, msg, duration).apply { show() }
+            } catch (_: Throwable) {}
+        }
+    }
 
     private fun getRequiredPermissionsList(): List<String> {
         val permissions = mutableListOf<String>()
@@ -262,23 +280,8 @@ class MainActivity : FragmentActivity() {
                         val isTurningOff = (state == BluetoothAdapter.STATE_TURNING_OFF || state == BluetoothAdapter.STATE_OFF)
 
                         isBluetoothEnabledState.value = isEnabled
-
-                        if (isTurningOff || !isEnabled) {
-                            // Stop active client if Bluetooth is turned off
-                            if (isConnectedState || client != null) {
-                                client?.disconnect()
-                                client = null
-                                isConnectedState = false
-                                AuraLockService.stop(this@MainActivity)
-                                statusMessageState = "🔴 Bluetooth is Off — Security Paused"
-                                Toast.makeText(this@MainActivity, "⚠️ Bluetooth turned off. AuraLock paused.", Toast.LENGTH_SHORT).show()
-                            }
-                        } else if (isEnabled) {
-                            statusMessageState = if (isConnectedState) "🟢 Linked & Armed" else if (isPairedState) "Standby — Auto-Connecting..." else "Ready to link with PC"
-                            // Auto-reconnect if paired and auto_connect enabled
-                            if (isPairedState && !isConnectedState && pcIpState.isNotBlank() && prefs.getBoolean("auto_connect", true) && !isUserManuallyDisconnected) {
-                                startAutoReconnectLoop(pcIpState, pcPortState, pcNameState)
-                            }
+                        if (isEnabled && isPairedState && !isConnectedState && pcIpState.isNotBlank() && prefs.getBoolean("auto_connect", true) && !isUserManuallyDisconnected) {
+                            startAutoReconnectLoop(pcIpState, pcPortState, pcNameState)
                         }
                     }
                 }
@@ -389,6 +392,122 @@ class MainActivity : FragmentActivity() {
         handleShareIntent(intent)
     }
 
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if ((requestCode == FILE_PICKER_RC || requestCode == MEDIA_PICKER_RC) && resultCode == RESULT_OK && data != null) {
+            val uris = mutableListOf<Uri>()
+            val clipData = data.clipData
+            if (clipData != null) {
+                for (i in 0 until clipData.itemCount) {
+                    clipData.getItemAt(i)?.uri?.let { uris.add(it) }
+                }
+            }
+            if (uris.isEmpty()) {
+                data.data?.let { uris.add(it) }
+            }
+            if (uris.isNotEmpty()) {
+                pendingPickerCallback?.invoke(uris)
+            }
+        }
+        pendingPickerCallback = null
+    }
+
+    @Suppress("DEPRECATION")
+    private fun launchFilePickerDirect() {
+        if (!isPairedState || pcIpState.isBlank()) {
+            showSingleToast("Pair with your PC first to send files", Toast.LENGTH_LONG)
+            return
+        }
+        pendingPickerCallback = { uris -> sendAuraDropFiles(uris) }
+        var launched = false
+
+        // Try ACTION_GET_CONTENT (works on all Android versions, no permission needed for system picker)
+        if (!launched) {
+            try {
+                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "*/*"
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivityForResult(Intent.createChooser(intent, "Select Files"), FILE_PICKER_RC)
+                launched = true
+            } catch (e: Throwable) { e.printStackTrace() }
+        }
+
+        // Fallback: ACTION_OPEN_DOCUMENT (SAF — always available, no permission needed)
+        if (!launched) {
+            try {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    type = "*/*"
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivityForResult(intent, FILE_PICKER_RC)
+                launched = true
+            } catch (e: Throwable) { e.printStackTrace() }
+        }
+
+        if (!launched) {
+            pendingPickerCallback = null
+            showSingleToast("Could not open file picker on this device", Toast.LENGTH_SHORT)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun launchMediaPickerDirect() {
+        if (!isPairedState || pcIpState.isBlank()) {
+            showSingleToast("Pair with your PC first to send photos", Toast.LENGTH_LONG)
+            return
+        }
+        pendingPickerCallback = { uris -> sendAuraDropFiles(uris) }
+        var launched = false
+
+        // Try Android Photo Picker (Android 13+, no permission needed)
+        if (!launched && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            try {
+                val intent = Intent(MediaStore.ACTION_PICK_IMAGES).apply {
+                    putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 50)
+                }
+                startActivityForResult(intent, MEDIA_PICKER_RC)
+                launched = true
+            } catch (e: Throwable) { e.printStackTrace() }
+        }
+
+        // Fallback: ACTION_GET_CONTENT for images+videos
+        if (!launched) {
+            try {
+                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "image/*"
+                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivityForResult(Intent.createChooser(intent, "Select Photos & Videos"), MEDIA_PICKER_RC)
+                launched = true
+            } catch (e: Throwable) { e.printStackTrace() }
+        }
+
+        // Fallback: ACTION_PICK from MediaStore
+        if (!launched) {
+            try {
+                val intent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply {
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                }
+                startActivityForResult(intent, MEDIA_PICKER_RC)
+                launched = true
+            } catch (e: Throwable) { e.printStackTrace() }
+        }
+
+        if (!launched) {
+            pendingPickerCallback = null
+            showSingleToast("Could not open photo picker on this device", Toast.LENGTH_SHORT)
+        }
+    }
+
     private fun handleShareIntent(intent: Intent?) {
         if (intent == null) return
         when (intent.action) {
@@ -455,7 +574,7 @@ class MainActivity : FragmentActivity() {
             } else {
                 Toast.makeText(this@MainActivity, "✅ All permissions granted!", Toast.LENGTH_SHORT).show()
             }
-            if (isBluetoothEnabledState.value && isPairedState && !isConnectedState && autoConnectEnabledState && pcIpState.isNotBlank()) {
+            if (isPairedState && !isConnectedState && autoConnectEnabledState && pcIpState.isNotBlank()) {
                 connectToDaemon(pcIpState, pcPortState, pcNameState) { success, msg ->
                     isConnectedState = success
                     statusMessageState = msg
@@ -491,12 +610,49 @@ class MainActivity : FragmentActivity() {
                         val settingsIntent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
                         startActivity(settingsIntent)
                     } catch (e2: Exception) {
-                        Toast.makeText(this@MainActivity, "Please turn on Bluetooth in Android settings", Toast.LENGTH_LONG).show()
+                        showSingleToast("Please turn on Bluetooth in Android settings", Toast.LENGTH_LONG)
                     }
                 }
             }
         }
 
+        // Modern Photo & Media Picker (Android 13+ Photo Picker / Google Play Services backport)
+        val photoPickerLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.PickMultipleVisualMedia()
+        ) { uris ->
+            if (uris.isNotEmpty()) {
+                sendAuraDropFiles(uris)
+            }
+        }
+
+        // Storage Access Framework Document Picker (Universal across all Android versions)
+        val openDocumentsLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenMultipleDocuments()
+        ) { uris ->
+            if (uris.isNotEmpty()) {
+                sendAuraDropFiles(uris)
+            }
+        }
+
+        // Standard GetMultipleContents Launcher
+        val getMultipleContentsLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.GetMultipleContents()
+        ) { uris ->
+            if (uris.isNotEmpty()) {
+                sendAuraDropFiles(uris)
+            }
+        }
+
+        // Single Content Fallback Launcher
+        val getSingleContentLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.GetContent()
+        ) { uri ->
+            if (uri != null) {
+                sendAuraDropFiles(listOf(uri))
+            }
+        }
+
+        // Universal Activity Result Fallback Launcher
         val universalPickerLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.StartActivityForResult()
         ) { result ->
@@ -521,114 +677,11 @@ class MainActivity : FragmentActivity() {
             }
         }
 
-        val launchSafeFilePicker: () -> Unit = {
-            if (!isConnectedState) {
-                Toast.makeText(this@MainActivity, "Connect to PC first to share files", Toast.LENGTH_SHORT).show()
-            } else {
-                var launched = false
-                // Intent A: Chooser with ACTION_GET_CONTENT + ACTION_OPEN_DOCUMENT
-                try {
-                    val getContentIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                        type = "*/*"
-                        addCategory(Intent.CATEGORY_OPENABLE)
-                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                        putExtra(Intent.EXTRA_LOCAL_ONLY, false)
-                    }
-                    val openDocIntent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                        type = "*/*"
-                        addCategory(Intent.CATEGORY_OPENABLE)
-                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                    }
-                    val chooser = Intent.createChooser(getContentIntent, "Select Files to Send").apply {
-                        putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(openDocIntent))
-                    }
-                    universalPickerLauncher.launch(chooser)
-                    launched = true
-                } catch (_: Throwable) {}
+        // Use direct Activity-level pickers (reliable on ALL devices — bypasses Compose launcher issues)
+        val launchSafeFilePicker: () -> Unit = { launchFilePickerDirect() }
+        val launchSafeMediaPicker: () -> Unit = { launchMediaPickerDirect() }
 
-                // Intent B: Fallback to standard ACTION_GET_CONTENT
-                if (!launched) {
-                    try {
-                        val simpleIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                            type = "*/*"
-                        }
-                        universalPickerLauncher.launch(Intent.createChooser(simpleIntent, "Select File"))
-                        launched = true
-                    } catch (_: Throwable) {}
-                }
 
-                // Intent C: Fallback to ACTION_PICK
-                if (!launched) {
-                    try {
-                        val pickIntent = Intent(Intent.ACTION_PICK).apply {
-                            type = "*/*"
-                        }
-                        universalPickerLauncher.launch(pickIntent)
-                        launched = true
-                    } catch (_: Throwable) {}
-                }
-
-                if (!launched) {
-                    Toast.makeText(this@MainActivity, "Please install a file manager app (e.g. Google Files)", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-
-        val launchSafeMediaPicker: () -> Unit = {
-            if (!isConnectedState) {
-                Toast.makeText(this@MainActivity, "Connect to PC first to share media", Toast.LENGTH_SHORT).show()
-            } else {
-                var launched = false
-                // Intent A: Chooser with ACTION_PICK on MediaStore & ACTION_GET_CONTENT
-                try {
-                    val pickMediaIntent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply {
-                        type = "image/*,video/*"
-                        putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
-                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                    }
-                    val getContentMedia = Intent(Intent.ACTION_GET_CONTENT).apply {
-                        type = "image/*"
-                        putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
-                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                    }
-                    val chooser = Intent.createChooser(pickMediaIntent, "Select Photos & Videos").apply {
-                        putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(getContentMedia))
-                    }
-                    universalPickerLauncher.launch(chooser)
-                    launched = true
-                } catch (_: Throwable) {}
-
-                // Intent B: Fallback to generic image/video GET_CONTENT
-                if (!launched) {
-                    try {
-                        val getContentSimple = Intent(Intent.ACTION_GET_CONTENT).apply {
-                            type = "image/*"
-                            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
-                            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                        }
-                        universalPickerLauncher.launch(Intent.createChooser(getContentSimple, "Select Media"))
-                        launched = true
-                    } catch (_: Throwable) {}
-                }
-
-                // Intent C: Fallback to ACTION_OPEN_DOCUMENT for media
-                if (!launched) {
-                    try {
-                        val pickDoc = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                            type = "*/*"
-                            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
-                            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                        }
-                        universalPickerLauncher.launch(Intent.createChooser(pickDoc, "Select Media"))
-                        launched = true
-                    } catch (_: Throwable) {}
-                }
-
-                if (!launched) {
-                    Toast.makeText(this@MainActivity, "Please install a Gallery or Photos app", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
 
         val checkBluetoothAndExecute: (() -> Unit) -> Unit = { action ->
             action()
@@ -908,6 +961,9 @@ class MainActivity : FragmentActivity() {
                         ).show()
                     },
                     onRefreshStatus = performRefreshStatus,
+                    onRequestShowTransferDialog = {
+                        showTransferDialogState = true
+                    },
                     onTestBiometrics = {
                         checkBluetoothAndExecute {
                             testBiometricsPrompt()
@@ -1058,6 +1114,30 @@ class MainActivity : FragmentActivity() {
             )
         }
 
+        // AuraDrop Transfer Animation Popup Dialog (Active during transfer, with Cancel, Retry, and Close buttons)
+        if (showTransferDialogState && (transferState.isTransferring || transferState.isCompleted || transferState.isError)) {
+            AuraDropTransferDialog(
+                transferState = transferState,
+                onCancelTransfer = {
+                    client?.cancelFileTransfer(transferState.activeFileId, transferState.activeFileName)
+                    activeTransferJob?.cancel()
+                    activeTransferJob = null
+                    transferState = AuraDropTransferState()
+                    showTransferDialogState = false
+                    AuraLockService.start(this@MainActivity, pcNameState)
+                    Toast.makeText(this@MainActivity, "Transfer cancelled", Toast.LENGTH_SHORT).show()
+                },
+                onRetryTransfer = {
+                    if (lastSentUris.isNotEmpty()) {
+                        sendAuraDropFiles(lastSentUris)
+                    }
+                },
+                onDismiss = {
+                    showTransferDialogState = false
+                }
+            )
+        }
+
         // AuraDrop Bottom Sheet
         if (showAuraDropSheet) {
             AuraDropSheet(
@@ -1165,6 +1245,7 @@ class MainActivity : FragmentActivity() {
         onToggleLockAction: () -> Unit,
         onManualToggleLockState: () -> Unit,
         onRefreshStatus: () -> Unit,
+        onRequestShowTransferDialog: () -> Unit,
         onTestBiometrics: () -> Unit
     ) {
         val pagerState = rememberPagerState(pageCount = { 2 })
@@ -1336,7 +1417,8 @@ class MainActivity : FragmentActivity() {
                             onRefreshStatus = onRefreshStatus,
                             onSwipeToAuraDrop = {
                                 coroutineScope.launch { pagerState.animateScrollToPage(1) }
-                            }
+                            },
+                            onRequestShowTransferDialog = onRequestShowTransferDialog
                         )
                         1 -> AuraDropToolsPage(
                             isConnected = isConnected,
@@ -1348,6 +1430,7 @@ class MainActivity : FragmentActivity() {
                             onRequestSendFile = onRequestSendFile,
                             onRequestSendMedia = onRequestSendMedia,
                             onSendClipboardText = onSendClipboardText,
+                            onRequestShowTransferDialog = onRequestShowTransferDialog,
                             onShowBluetoothInfo = onShowBluetoothInfo,
                             onTestBiometrics = onTestBiometrics
                         )
@@ -1380,7 +1463,8 @@ class MainActivity : FragmentActivity() {
         onToggleLockAction: () -> Unit,
         onManualToggleLockState: () -> Unit,
         onRefreshStatus: () -> Unit,
-        onSwipeToAuraDrop: () -> Unit
+        onSwipeToAuraDrop: () -> Unit,
+        onRequestShowTransferDialog: () -> Unit
     ) {
         var showUnpairConfirmDialog by remember { mutableStateOf(false) }
 
@@ -1405,27 +1489,6 @@ class MainActivity : FragmentActivity() {
                     onConnectDirect = onConnectDirect,
                     onDisconnect = onDisconnectClicked
                 )
-
-                // Active AuraDrop Transfer Card / Minimized Pill in Biometrics Dashboard
-                if (transferState.isTransferring || transferState.isCompleted) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    if (isTransferMinimized) {
-                        AuraDropMinimizedPill(
-                            transferState = transferState,
-                            onExpand = { isTransferMinimized = false },
-                            modifier = Modifier.padding(horizontal = 0.dp)
-                        )
-                    } else {
-                        AuraDropTransferCard(
-                            transferState = transferState,
-                            isMinimized = false,
-                            onToggleMinimize = { isTransferMinimized = true },
-                            onDismiss = {
-                                this@MainActivity.transferState = AuraDropTransferState()
-                            }
-                        )
-                    }
-                }
 
                 // Active Biometric Challenge 60s Countdown Banner
                 if (challengeRemainingSeconds > 0) {
@@ -1611,18 +1674,24 @@ class MainActivity : FragmentActivity() {
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Swipe Left Pill Hint
+                // Swipe Left Pill Hint / AuraDrop Access
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(20.dp))
                         .background(Color(0xFF10192A))
                         .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(20.dp))
-                        .clickable(onClick = onSwipeToAuraDrop)
+                        .clickable {
+                            if (transferState.isTransferring || transferState.isCompleted || transferState.isError) {
+                                onRequestShowTransferDialog()
+                            } else {
+                                onSwipeToAuraDrop()
+                            }
+                        }
                         .padding(horizontal = 14.dp, vertical = 5.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "Swipe for AuraDrop & Tools ⚡",
+                            text = if (transferState.isTransferring) "⚡ File Transfer Active (${(transferState.progress * 100).toInt()}%)" else "Swipe for AuraDrop & Tools ⚡",
                             color = Color(0xFF00D2FF),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
@@ -1948,6 +2017,7 @@ class MainActivity : FragmentActivity() {
         onRequestSendFile: () -> Unit,
         onRequestSendMedia: () -> Unit,
         onSendClipboardText: (String) -> Unit,
+        onRequestShowTransferDialog: () -> Unit,
         onShowBluetoothInfo: () -> Unit,
         onTestBiometrics: () -> Unit
     ) {
@@ -1960,9 +2030,15 @@ class MainActivity : FragmentActivity() {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 8.dp)
         ) {
-            // AuraDrop Title Banner
+            // AuraDrop Title Banner (Clicking reopens transfer animation popup if transfer is active or completed)
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        if (transferState.isTransferring || transferState.isCompleted || transferState.isError) {
+                            onRequestShowTransferDialog()
+                        }
+                    },
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF10192A)),
                 border = androidx.compose.foundation.BorderStroke(
@@ -1982,7 +2058,10 @@ class MainActivity : FragmentActivity() {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Box(
                             modifier = Modifier
                                 .size(42.dp)
@@ -2010,9 +2089,27 @@ class MainActivity : FragmentActivity() {
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = if (isConnected) "Connected to $pcName ($pcIp)" else "PC Disconnected • Connect to share",
-                                color = if (isConnected) Color(0xFF00FF88) else Color(0xFF94A3B8),
+                                text = if (transferState.isTransferring) "⚡ Transfer in progress (${(transferState.progress * 100).toInt()}%) • Tap to view"
+                                else if (isConnected) "Connected to $pcName ($pcIp)"
+                                else "PC Disconnected • Connect to share",
+                                color = if (transferState.isTransferring) Color(0xFF00D2FF) else if (isConnected) Color(0xFF00FF88) else Color(0xFF94A3B8),
                                 fontSize = 12.sp
+                            )
+                        }
+                    }
+
+                    if (transferState.isTransferring || transferState.isCompleted) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF00D2FF).copy(alpha = 0.15f))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "View ⚡",
+                                color = Color(0xFF00D2FF),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
@@ -2021,27 +2118,6 @@ class MainActivity : FragmentActivity() {
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Active Transfer Animated Transition & Card / Minimized Pill
-            if (transferState.isTransferring || transferState.isCompleted) {
-                if (isTransferMinimized) {
-                    AuraDropMinimizedPill(
-                        transferState = transferState,
-                        onExpand = { isTransferMinimized = false },
-                        modifier = Modifier.padding(bottom = 14.dp)
-                    )
-                } else {
-                    AuraDropTransferCard(
-                        transferState = transferState,
-                        isMinimized = false,
-                        onToggleMinimize = { isTransferMinimized = true },
-                        onDismiss = {
-                            this@MainActivity.transferState = AuraDropTransferState()
-                        },
-                        modifier = Modifier.padding(bottom = 14.dp)
-                    )
-                }
-            }
-
             // Quick File / Photo Share Action Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2049,7 +2125,13 @@ class MainActivity : FragmentActivity() {
             ) {
                 // Send File Button
                 Button(
-                    onClick = onRequestSendFile,
+                    onClick = {
+                        if (!isConnected) {
+                            Toast.makeText(context, "Connect to PC first to send files", Toast.LENGTH_SHORT).show()
+                        } else {
+                            onRequestSendFile()
+                        }
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .height(50.dp),
@@ -2066,7 +2148,13 @@ class MainActivity : FragmentActivity() {
 
                 // Send Media Button
                 Button(
-                    onClick = onRequestSendMedia,
+                    onClick = {
+                        if (!isConnected) {
+                            Toast.makeText(context, "Connect to PC first to send photos", Toast.LENGTH_SHORT).show()
+                        } else {
+                            onRequestSendMedia()
+                        }
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .height(50.dp),
@@ -2717,13 +2805,41 @@ class MainActivity : FragmentActivity() {
 
     private fun sendAuraDropFiles(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        if (!isConnectedState || client == null) {
-            Toast.makeText(this, "Connect to PC first to send file(s)", Toast.LENGTH_SHORT).show()
+        lastSentUris = uris
+        if (!isPairedState || pcIpState.isBlank()) {
+            showSingleToast("Pair with your PC first to send file(s)")
             return
         }
 
-        lifecycleScope.launch {
+        showTransferDialogState = true
+        activeTransferJob?.cancel()
+        activeTransferJob = lifecycleScope.launch {
             isTransferMinimized = false
+            if (!isConnectedState || client == null) {
+                transferState = AuraDropTransferState(
+                    isTransferring = true,
+                    activeFileName = "Connecting to $pcNameState...",
+                    isIncoming = false,
+                    progress = 0.05f
+                )
+                val newClient = AuraLockClient(pcIpState, pcPortState)
+                val connected = newClient.connect()
+                if (connected) {
+                    client = newClient
+                    isConnectedState = true
+                    AuraLockService.start(this@MainActivity, pcNameState)
+                    listenToClientEvents(newClient, pcIpState, pcPortState, pcNameState)
+                } else {
+                    transferState = AuraDropTransferState(
+                        isTransferring = false,
+                        isError = true,
+                        activeFileName = "Could not reach $pcNameState"
+                    )
+                    showSingleToast("Could not reach PC ($pcIpState). Make sure PC & phone are on the same Wi-Fi.", Toast.LENGTH_LONG)
+                    return@launch
+                }
+            }
+
             val totalFiles = uris.size
             var successCount = 0
             for ((index, uri) in uris.withIndex()) {
@@ -2742,7 +2858,7 @@ class MainActivity : FragmentActivity() {
                     }
 
                     if (inputStream == null) {
-                        Toast.makeText(this@MainActivity, "Could not open $fileName", Toast.LENGTH_SHORT).show()
+                        showSingleToast("Could not open $fileName")
                         continue
                     }
 
@@ -2795,15 +2911,16 @@ class MainActivity : FragmentActivity() {
             if (successCount == totalFiles && totalFiles > 0) {
                 transferState = transferState.copy(isTransferring = false, isCompleted = true)
                 triggerHapticFeedback()
-                Toast.makeText(this@MainActivity, if (totalFiles == 1) "✅ Sent file to PC!" else "✅ Sent all $totalFiles files to PC!", Toast.LENGTH_SHORT).show()
+                showSingleToast(if (totalFiles == 1) "✅ Sent file to PC!" else "✅ Sent all $totalFiles files to PC!")
             } else if (successCount > 0) {
                 transferState = transferState.copy(isTransferring = false, isCompleted = true)
                 triggerHapticFeedback()
-                Toast.makeText(this@MainActivity, "⚠️ Sent $successCount of $totalFiles files to PC", Toast.LENGTH_SHORT).show()
+                showSingleToast("⚠️ Sent $successCount of $totalFiles files to PC")
             } else {
                 transferState = transferState.copy(isTransferring = false, isError = true)
-                Toast.makeText(this@MainActivity, "Failed to send file(s) to PC", Toast.LENGTH_SHORT).show()
+                showSingleToast("Failed to send file(s) to PC")
             }
+            activeTransferJob = null
         }
     }
 
@@ -2892,6 +3009,7 @@ class MainActivity : FragmentActivity() {
                 onChallenge = { challenge -> handleChallenge(challenge) },
                 onIncomingFileOffer = { offer ->
                     isTransferMinimized = false
+                    showTransferDialogState = true
                     AuraLockService.updateTransfer(this@MainActivity, offer.fileName, 0.05f, isIncoming = true)
                     transferState = AuraDropTransferState(
                         isTransferring = true,
@@ -2956,6 +3074,11 @@ class MainActivity : FragmentActivity() {
                     Toast.makeText(this@MainActivity, "Device Unpaired by PC", Toast.LENGTH_LONG).show()
                 },
                 fallbackStorageDir = safeStorageDir,
+                onFileTransferCancelled = { fileId, fileName, message ->
+                    AuraLockService.start(this@MainActivity, pcNameState)
+                    transferState = transferState.copy(isTransferring = false, isError = true)
+                    Toast.makeText(this@MainActivity, "❌ Transfer cancelled: $fileName", Toast.LENGTH_SHORT).show()
+                },
                 onDisconnect = {
                     isConnectedState = false
                     isPcBluetoothEnabledState.value = false
@@ -2982,18 +3105,16 @@ class MainActivity : FragmentActivity() {
         autoReconnectJob = lifecycleScope.launch {
             statusMessageState = "🔄 Searching & auto-linking to $targetPcName..."
             while (!isConnectedState && isPairedState && !isUserManuallyDisconnected && ip.isNotBlank()) {
-                if (isBluetoothEnabledState.value) {
-                    val clientInstance = AuraLockClient(ip, port)
-                    val connected = clientInstance.connect()
-                    if (connected) {
-                        client = clientInstance
-                        isConnectedState = true
-                        AuraLockService.start(this@MainActivity, targetPcName)
-                        statusMessageState = "🟢 Linked & Armed"
-                        Toast.makeText(this@MainActivity, "⚡ Connected to $targetPcName!", Toast.LENGTH_SHORT).show()
-                        listenToClientEvents(clientInstance, ip, port, targetPcName)
-                        break
-                    }
+                val clientInstance = AuraLockClient(ip, port)
+                val connected = clientInstance.connect()
+                if (connected) {
+                    client = clientInstance
+                    isConnectedState = true
+                    AuraLockService.start(this@MainActivity, targetPcName)
+                    statusMessageState = "🟢 Linked & Armed"
+                    showSingleToast("⚡ Connected to $targetPcName!")
+                    listenToClientEvents(clientInstance, ip, port, targetPcName)
+                    break
                 }
                 delay(3000)
             }
@@ -3210,10 +3331,13 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun handleChallengeCancelled(reason: String = "") {
+        val hadActiveChallenge = challengeRemainingSecondsState > 0
         challengeTimerJob?.cancel()
         challengeRemainingSecondsState = 0
         biometricPrompt.cancelAuthentication()
-        Toast.makeText(this@MainActivity, "⌨️ Swapped to Password on PC", Toast.LENGTH_SHORT).show()
+        if (hadActiveChallenge && (reason.contains("password", ignoreCase = true) || reason.contains("swapped", ignoreCase = true) || reason.contains("pam", ignoreCase = true))) {
+            Toast.makeText(this@MainActivity, "⌨️ Swapped to Password on PC", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun triggerHapticFeedback() {
