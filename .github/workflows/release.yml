@@ -161,19 +161,31 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: auralock-linux
-          path: release-assets/
+          path: release-assets
+          merge-multiple: true
 
       - name: Download Windows Artifacts
         uses: actions/download-artifact@v4
         with:
           name: auralock-windows
-          path: release-assets/
+          path: release-assets
+          merge-multiple: true
 
       - name: Download Android Artifacts
         uses: actions/download-artifact@v4
         with:
           name: auralock-android-apk
-          path: release-assets/
+          path: release-assets
+          merge-multiple: true
+
+      - name: Prepare Final Release Assets
+        run: |
+          mkdir -p final-assets
+          find release-assets/ -type f -exec cp -v {} final-assets/ \;
+          cp -v scripts/install-pam.sh final-assets/ 2>/dev/null || true
+          cp -v scripts/auralock.service final-assets/ 2>/dev/null || true
+          echo "=== Final Release Assets ==="
+          ls -lh final-assets/
 
       - name: Determine Release Tag
         id: tag_info
@@ -189,13 +201,14 @@ jobs:
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           name: "AuraLock ${{ steps.tag_info.outputs.TAG }} (msm.movin)"
           tag_name: ${{ steps.tag_info.outputs.TAG }}
           draft: false
           prerelease: false
           generate_release_notes: true
-          files: |
-            release-assets/*
-            scripts/install-pam.sh
-            scripts/auralock.service
+          fail_on_unmatched_files: false
+          files: final-assets/*
+
