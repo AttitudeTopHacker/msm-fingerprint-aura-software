@@ -24,6 +24,7 @@ pub enum IpcRequest {
     CancelChallenge,
     SetLockState { is_locked: bool },
     GetDaemonStatus,
+    ResetVault,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -168,6 +169,12 @@ impl IpcServer {
                     paired_device: None,
                 }
             }
+            IpcRequest::ResetVault => {
+                info!("IPC received ResetVault command. Purging all credentials and paired device data...");
+                self.net_service.direct_unpair().await;
+                crate::vault::VaultManager::wipe_all_vault_locations();
+                IpcResponse::Success { message: "Vault data wiped successfully".into() }
+            }
         }
     }
 }
@@ -217,6 +224,27 @@ impl IpcClient {
         let mut buf_reader = BufReader::new(reader);
 
         let req = IpcRequest::CancelChallenge;
+        if let Ok(json_req) = serde_json::to_string(&req) {
+            let _ = writer.write_all(format!("{}\n", json_req).as_bytes()).await;
+            let mut response_line = String::new();
+            let _ = buf_reader.read_line(&mut response_line).await;
+        }
+
+        Ok(true)
+    }
+
+    #[cfg(unix)]
+    pub async fn reset_vault(socket_path: &str) -> Result<bool> {
+        use tokio::net::UnixStream;
+
+        let mut stream = match UnixStream::connect(socket_path).await {
+            Ok(s) => s,
+            Err(_) => return Ok(false),
+        };
+        let (reader, mut writer) = stream.split();
+        let mut buf_reader = BufReader::new(reader);
+
+        let req = IpcRequest::ResetVault;
         if let Ok(json_req) = serde_json::to_string(&req) {
             let _ = writer.write_all(format!("{}\n", json_req).as_bytes()).await;
             let mut response_line = String::new();

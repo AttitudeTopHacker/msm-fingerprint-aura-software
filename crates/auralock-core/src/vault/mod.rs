@@ -155,38 +155,60 @@ impl VaultManager {
         self.clear()
     }
 
-    /// Clears and removes the vault file from disk
+    /// Clears and removes the vault file from disk, as well as any other known vault paths
     pub fn clear(&self) -> Result<()> {
-        if self.exists() {
-            let _ = std::fs::remove_file(&self.vault_file_path);
-            if self.exists() {
-                if let Ok(mut vault) = self.load() {
-                    vault.paired_phone = None;
-                    if let Ok(json_str) = serde_json::to_string_pretty(&vault) {
-                        let _ = std::fs::write(&self.vault_file_path, json_str);
-                    }
-                }
-            }
-        }
+        Self::wipe_all_vault_locations();
         Ok(())
     }
 
-    /// Saves or updates a paired phone in the vault
-    pub fn save_paired_phone(&self, phone: PairedPhone) -> Result<()> {
-        let vault_data = match self.load() {
-            Ok(mut data) => {
-                data.paired_phone = Some(phone);
-                data
+    /// Completely wipes vault files across all potential system and user paths
+    pub fn wipe_all_vault_locations() {
+        let mut candidates = Vec::new();
+
+        if let Ok(val) = std::env::var("AURALOCK_VAULT_PATH") {
+            candidates.push(PathBuf::from(val));
+        }
+
+        #[cfg(unix)]
+        {
+            candidates.push(PathBuf::from("/etc/auralock/vault.json"));
+            candidates.push(PathBuf::from("/etc/auralock"));
+            if let Some(home) = std::env::var_os("HOME") {
+                candidates.push(PathBuf::from(home.clone()).join(".config").join("auralock").join("vault.json"));
+                candidates.push(PathBuf::from(home).join(".config").join("auralock"));
             }
-            Err(_) => VaultData {
-                version: 1,
-                paired_phone: Some(phone),
-                salt_hex: hex::encode(generate_nonce_32()),
-                nonce_hex: hex::encode(generate_nonce_12()),
-                encrypted_password_b64: String::new(),
-                local_part_hex: hex::encode(generate_nonce_32()),
-                security_pin: "1234".to_string(),
-            },
+        }
+
+        #[cfg(windows)]
+        {
+            if let Some(appdata) = std::env::var_os("APPDATA") {
+                candidates.push(PathBuf::from(appdata.clone()).join("auralock").join("vault.json"));
+                candidates.push(PathBuf::from(appdata).join("auralock"));
+            }
+        }
+
+        for path in candidates {
+            if path.is_file() {
+                let _ = std::fs::write(&path, "{}");
+                let _ = std::fs::remove_file(&path);
+            } else if path.is_dir() {
+                let _ = std::fs::remove_dir_all(&path);
+            }
+        }
+    }
+
+    /// Saves or updates a paired phone in the vault (clearing any old stale passwords)
+    pub fn save_paired_phone(&self, phone: PairedPhone) -> Result<()> {
+        let existing_pin = self.load().map(|v| v.security_pin).unwrap_or_else(|_| "1234".to_string());
+
+        let vault_data = VaultData {
+            version: 1,
+            paired_phone: Some(phone),
+            salt_hex: hex::encode(generate_nonce_32()),
+            nonce_hex: hex::encode(generate_nonce_12()),
+            encrypted_password_b64: String::new(),
+            local_part_hex: hex::encode(generate_nonce_32()),
+            security_pin: existing_pin,
         };
 
         if let Some(parent) = self.vault_file_path.parent() {

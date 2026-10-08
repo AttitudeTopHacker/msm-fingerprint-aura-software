@@ -52,6 +52,11 @@ enum Commands {
     TestUnlock,
     /// Display device pairing & vault status
     Status,
+    /// Completely wipe saved PC passwords, paired phone keys, and reset vault
+    Reset {
+        #[arg(short, long)]
+        force: bool,
+    },
 }
 
 fn get_default_vault_path() -> PathBuf {
@@ -273,6 +278,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  Nonce:                {}", challenge.nonce_hex);
             println!("  Timestamp:            {}", challenge.timestamp_epoch);
             println!("\n  Waiting for biometric signature from phone...");
+        }
+        Commands::Reset { force } => {
+            println!("{}", "══════════════════════════════════════════════════".red());
+            println!("{}", "  🗑️  AuraLock Vault & Security Reset".bold().red());
+            println!("{}", "══════════════════════════════════════════════════\n".red());
+
+            if !force {
+                print!("  ⚠️  Are you sure you want to completely erase saved passwords and paired devices? (y/N): ");
+                use std::io::Write;
+                let _ = std::io::stdout().flush();
+                let mut input = String::new();
+                let _ = std::io::stdin().read_line(&mut input);
+                if !input.trim().eq_ignore_ascii_case("y") {
+                    println!("  ❌ Reset aborted by user.");
+                    return Ok(());
+                }
+            }
+
+            // Wipe via IPC if daemon is running
+            #[cfg(unix)]
+            {
+                let _ = auralock_core::ipc::IpcClient::reset_vault(auralock_core::ipc::DEFAULT_UNIX_SOCKET_PATH).await;
+            }
+
+            // Wipe disk vault files across all locations
+            auralock_core::vault::VaultManager::wipe_all_vault_locations();
+
+            println!("  ✅ {}", "All saved PC passwords, encryption keys, and paired phones have been completely erased!".green().bold());
+            println!("  ℹ️  The next time you open AuraLock, it will start completely fresh.");
         }
     }
 
