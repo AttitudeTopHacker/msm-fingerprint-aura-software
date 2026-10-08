@@ -26,6 +26,13 @@ pub const PAM_TEXT_INFO: c_int = 4;
 pub const PAM_ERROR_MSG: c_int = 3;
 
 #[cfg(unix)]
+pub const PAM_PROMPT_ECHO_OFF: c_int = 1;
+#[cfg(unix)]
+pub const PAM_PROMPT_ECHO_ON: c_int = 2;
+#[cfg(unix)]
+pub const PAM_AUTHTOK: c_int = 6;
+
+#[cfg(unix)]
 #[repr(C)]
 struct PamMessage {
     msg_style: c_int,
@@ -56,6 +63,7 @@ struct PamConv {
 #[cfg(unix)]
 extern "C" {
     fn pam_get_item(pamh: *mut c_void, item_type: c_int, item: *mut *const c_void) -> c_int;
+    fn pam_set_item(pamh: *mut c_void, item_type: c_int, item: *const c_void) -> c_int;
     fn free(ptr: *mut c_void);
 }
 
@@ -88,38 +96,42 @@ fn send_pam_info(pamh: *mut c_void, message: &str, is_error: bool) {
 }
 
 #[cfg(unix)]
-async fn wait_for_user_enter_or_keypress() {
-    let mut poll_fds = [libc::pollfd {
-        fd: libc::STDIN_FILENO,
-        events: libc::POLLIN | libc::POLLPRI,
-        revents: 0,
-    }];
-
-    loop {
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-
-        let ret = unsafe { libc::poll(poll_fds.as_mut_ptr(), 1, 0) };
-        if ret > 0 && (poll_fds[0].revents & (libc::POLLIN | libc::POLLPRI)) != 0 {
-            let mut buf = [0u8; 16];
-            let n = unsafe {
-                libc::read(
-                    libc::STDIN_FILENO,
-                    buf.as_mut_ptr() as *mut libc::c_void,
-                    buf.len(),
-                )
-            };
-            if n > 0 {
-                // Key pressed (Enter '\n' or user keypress to enter password)
-                return;
+fn pam_prompt_password(pamh: *mut c_void, prompt_text: &str) -> Option<String> {
+    unsafe {
+        let mut conv_ptr: *const c_void = std::ptr::null();
+        if pam_get_item(pamh, PAM_CONV, &mut conv_ptr) != PAM_SUCCESS || conv_ptr.is_null() {
+            return None;
+        }
+        let conv_struct = &*(conv_ptr as *const PamConv);
+        if let Some(conv_fn) = conv_struct.conv {
+            if let Ok(c_msg) = CString::new(prompt_text) {
+                let msg = PamMessage {
+                    msg_style: PAM_PROMPT_ECHO_OFF,
+                    msg: c_msg.as_ptr(),
+                };
+                let mut msg_ptr: *const PamMessage = &msg;
+                let mut resp_ptr: *mut PamResponse = std::ptr::null_mut();
+                let ret = conv_fn(1, &mut msg_ptr, &mut resp_ptr, conv_struct.appdata_ptr);
+                if ret == PAM_SUCCESS && !resp_ptr.is_null() {
+                    let mut result = None;
+                    if !(*resp_ptr).resp.is_null() {
+                        let c_str = CStr::from_ptr((*resp_ptr).resp);
+                        result = Some(c_str.to_string_lossy().to_string());
+                        free((*resp_ptr).resp as *mut c_void);
+                    }
+                    free(resp_ptr as *mut c_void);
+                    return result;
+                }
             }
         }
     }
+    None
 }
 
 /// Linux PAM Authentication Hook
 ///
 /// When the screen lock, sudo, or polkit login prompt is triggered on Linux,
-/// this function communicates with the local AuraLock background daemon and displays native prompts.
+/// this function concurrently listens for Phone Biometric and Keyboard Password entry.
 #[cfg(unix)]
 #[no_mangle]
 pub extern "C" fn pam_sm_authenticate(
@@ -144,13 +156,6 @@ pub extern "C" fn pam_sm_authenticate(
         return PAM_IGNORE;
     }
 
-    // Display native UI prompt on lockscreen & terminal
-    send_pam_info(
-        pamh,
-        "📱 Tap phone fingerprint OR press Enter for password (30s)",
-        false,
-    );
-
     // Run async IPC request synchronously inside the PAM thread
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -160,19 +165,35 @@ pub extern "C" fn pam_sm_authenticate(
         Err(_) => return PAM_AUTH_ERR,
     };
 
+    let (pw_tx, mut pw_rx) = tokio::sync::mpsc::channel(1);
+    let pamh_usize = pamh as usize;
+
+    // Concurrently prompt user for password on lockscreen/terminal
+    std::thread::spawn(move || {
+        let pamh_ptr = pamh_usize as *mut c_void;
+        let entered = pam_prompt_password(pamh_ptr, "📱 Touch phone fingerprint or enter password: ");
+        let _ = pw_tx.blocking_send(entered);
+    });
+
     let auth_result = runtime.block_on(async {
         tokio::select! {
-            res = IpcClient::request_unlock(DEFAULT_UNIX_SOCKET_PATH, &username) => {
-                match res {
+            bio_res = IpcClient::request_unlock(DEFAULT_UNIX_SOCKET_PATH, &username) => {
+                match bio_res {
                     Ok(true) => {
                         // Biometric verified by phone!
                         send_pam_info(pamh, "✨ Biometric verified! Unlocking...", false);
                         PAM_SUCCESS
                     }
                     Ok(false) => {
-                        // Phone rejected or timed out; allow fallback to standard password
-                        send_pam_info(pamh, "⚠️ Timed out. Enter password:", true);
-                        PAM_AUTH_ERR
+                        // Phone timed out or rejected. Await password if user is currently typing
+                        if let Some(Some(pw)) = pw_rx.recv().await {
+                            if let Ok(c_pw) = CString::new(pw) {
+                                unsafe {
+                                    pam_set_item(pamh, PAM_AUTHTOK, c_pw.as_ptr() as *const c_void);
+                                }
+                            }
+                        }
+                        PAM_IGNORE
                     }
                     Err(_) => {
                         // Socket or IPC error; ignore so standard password auth takes over
@@ -180,10 +201,16 @@ pub extern "C" fn pam_sm_authenticate(
                     }
                 }
             }
-            _ = wait_for_user_enter_or_keypress() => {
-                // User pressed Enter on PC keyboard! Immediately cancel challenge on daemon & phone
+            user_input = pw_rx.recv() => {
+                // User entered password and submitted via keyboard! Immediately cancel challenge on phone
                 let _ = IpcClient::cancel_unlock(DEFAULT_UNIX_SOCKET_PATH).await;
-                send_pam_info(pamh, "⌨️ Swapped to Password mode", false);
+                if let Some(Some(pw)) = user_input {
+                    if let Ok(c_pw) = CString::new(pw) {
+                        unsafe {
+                            pam_set_item(pamh, PAM_AUTHTOK, c_pw.as_ptr() as *const c_void);
+                        }
+                    }
+                }
                 PAM_IGNORE
             }
         }
