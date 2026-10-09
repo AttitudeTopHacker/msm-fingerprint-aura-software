@@ -7,7 +7,7 @@ use auralock_core::crypto::generate_x25519_keypair;
 use auralock_core::network::NetworkService;
 use auralock_core::protocol::DEFAULT_AURALOCK_PORT;
 use auralock_core::state::{SessionLockState, StateManager};
-use auralock_core::vault::{PairedPhone, SecretBytes, VaultManager};
+use auralock_core::vault::VaultManager;
 use auralock_core::web::{start_web_server, DEFAULT_AURALOCK_WEB_PORT};
 use clap::{Parser, Subcommand};
 use colored::*;
@@ -188,7 +188,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::Pair { port } => {
             println!("{}", "══════════════════════════════════════════════════".cyan());
-            println!("{}", "  📱 AuraLock Device Pairing Setup".bold().green());
+            println!("{}", "  📱 MsmConnect Device Pairing Setup".bold().green());
             println!("{}", "══════════════════════════════════════════════════\n".cyan());
 
             let (_, ephem_pub) = generate_x25519_keypair();
@@ -196,7 +196,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let hostname = hostname::get()
                 .map(|h| h.to_string_lossy().to_string())
-                .unwrap_or_else(|_| "AuraLock-PC".to_string());
+                .unwrap_or_else(|_| "MsmConnect-PC".to_string());
 
             let state_mgr = StateManager::new(None);
             let net_service = Arc::new(NetworkService::new(
@@ -212,14 +212,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let qr_data = net_service.generate_qr_payload(&local_ip, &ephem_pub_hex).await;
             let qr_json = serde_json::to_string(&qr_data)?;
 
-            println!("Scan this QR Code in the {} on your Android Phone:\n", "AuraLock App".bold().yellow());
+            println!("Scan this QR Code in the {} on your Android Phone:\n", "MsmConnect App".bold().yellow());
             qr2term::print_qr(&qr_json).unwrap_or_else(|_| {
                 println!("QR Data: {}", qr_json);
             });
 
             println!("\n  🔑 Pairing PIN: {}", qr_data.pin.bold().green());
             println!("  📡 Listening on: {}:{}", local_ip, port);
-            println!("\nWaiting for phone connection...");
+            println!("\nWaiting for phone connection & biometric handshake...");
+
+            let mut rx = net_service.subscribe_events();
 
             // Run network listener in background while waiting for pairing
             let svc_clone = Arc::clone(&net_service);
@@ -227,22 +229,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = svc_clone.run_listener().await;
             });
 
-            // Wait for user interaction or save password
-            println!("\nEnter your PC Login Password (saved securely into Split-Key Vault):");
-            let password = rpassword::read_password()?;
-
-            // Save test vault entry
-            let dummy_phone = PairedPhone {
-                device_name: "Android Device".to_string(),
-                public_key_hex: hex::encode([0u8; 32]),
-                pairing_id: format!("pair_{:08x}", rand::random::<u32>()),
-                paired_at_epoch: chrono::Utc::now().timestamp(),
-            };
-
-            let dummy_secret = [1u8; 32];
-            vault_mgr.save_new_vault(dummy_phone, &dummy_secret, &SecretBytes::new(password.into_bytes()))?;
-
-            println!("\n{}", "✅ Vault encrypted and saved successfully!".bold().green());
+            while let Ok(event) = rx.recv().await {
+                if let auralock_core::network::WebEvent::PairingSuccess { phone_name, pairing_id } = event {
+                    println!("\n{}", "══════════════════════════════════════════════════".green());
+                    println!("  ✨ Phone {} paired successfully!", phone_name.bold().yellow());
+                    println!("  🆔 Pairing ID: {}", pairing_id.green());
+                    println!("{}", "══════════════════════════════════════════════════\n".green());
+                    println!("  You can now start the background daemon with:");
+                    println!("  {}", "auralock daemon".bold().cyan());
+                    break;
+                }
+            }
         }
         Commands::Status => {
             println!("{}", "══════════════════════════════════════════════════".cyan());

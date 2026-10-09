@@ -60,12 +60,12 @@ impl IpcServer {
         let listener = UnixListener::bind(socket_path)?;
         info!("AuraLock IPC server listening on Unix socket: {}", socket_path);
 
-        // Set permissions so PAM and Display Manager (GDM/LightDM/SDDM) can communicate
+        // Set permissions (0o660: owner + group) to restrict world access
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let mut perms = std::fs::metadata(socket_path)?.permissions();
-            perms.set_mode(0o666);
+            perms.set_mode(0o660);
             std::fs::set_permissions(socket_path, perms)?;
         }
 
@@ -88,6 +88,8 @@ impl IpcServer {
 
     #[cfg(unix)]
     async fn handle_unix_client(&self, mut stream: tokio::net::UnixStream) -> Result<()> {
+        let peer_cred = stream.peer_cred().ok();
+        let peer_uid = peer_cred.as_ref().map(|c| c.uid());
         let (reader, mut writer) = stream.split();
         let mut buf_reader = BufReader::new(reader);
         let mut line = String::new();
@@ -108,7 +110,7 @@ impl IpcServer {
                 }
             };
 
-            let resp = self.process_ipc_request(req).await;
+            let resp = self.process_ipc_request(req, peer_uid).await;
             let json = serde_json::to_string(&resp)?;
             writer.write_all(format!("{}\n", json).as_bytes()).await?;
             line.clear();
@@ -117,7 +119,7 @@ impl IpcServer {
         Ok(())
     }
 
-    async fn process_ipc_request(&self, req: IpcRequest) -> IpcResponse {
+    async fn process_ipc_request(&self, req: IpcRequest, peer_uid: Option<u32>) -> IpcResponse {
         match req {
             IpcRequest::TriggerUnlockRequest { username } => {
                 info!("IPC received unlock trigger for user '{}'", username);
@@ -170,6 +172,21 @@ impl IpcServer {
                 }
             }
             IpcRequest::ResetVault => {
+                #[cfg(unix)]
+                let is_authorized = match peer_uid {
+                    Some(uid) => uid == 0 || uid == unsafe { libc::getuid() },
+                    None => true,
+                };
+                #[cfg(not(unix))]
+                let is_authorized = true;
+
+                if !is_authorized {
+                    warn!("Unauthorized IPC ResetVault attempt from peer UID {:?}", peer_uid);
+                    return IpcResponse::Error {
+                        error: "Permission denied: caller must be root or active session owner".into(),
+                    };
+                }
+
                 info!("IPC received ResetVault command. Purging all credentials and paired device data...");
                 self.net_service.direct_unpair().await;
                 crate::vault::VaultManager::wipe_all_vault_locations();

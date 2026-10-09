@@ -9,7 +9,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "1.5.5"
+version = "1.6.0"
 authors = ["msm.movin <contact@msm.movin>"]
 edition = "2021"
 license = "Proprietary"
@@ -45,3 +45,4 @@ axum = { version = "0.7", features = ["multipart", "ws"] }
 tower-http = { version = "0.5", features = ["cors", "fs"] }
 open = "5.1"
 winreg = "0.52"
+libc = "0.2"

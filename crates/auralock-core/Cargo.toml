@@ -29,3 +29,4 @@ axum = { workspace = true }
 tower-http = { workspace = true }
 open = { workspace = true }
 local-ip-address = { workspace = true }
+libc = { workspace = true }

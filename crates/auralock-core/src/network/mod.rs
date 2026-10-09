@@ -729,15 +729,17 @@ impl NetworkService {
                 let recent_pins_clean: Vec<String> = recent_pins.iter().map(|p| p.chars().filter(|c| c.is_ascii_digit()).collect()).collect();
                 let qr_pin_clean: Option<String> = latest_qr_pin.as_ref().map(|q| q.chars().filter(|c| c.is_ascii_digit()).collect());
 
-                let pin_matches = if let Some(ref p) = active_pin_clean {
+                let pin_matches = if req_pin.is_empty() {
+                    false
+                } else if let Some(ref p) = active_pin_clean {
                     p == &req_pin || recent_pins_clean.contains(&req_pin) || qr_pin_clean.as_ref() == Some(&req_pin) || req.pin.trim() == p
                 } else if !recent_pins_clean.is_empty() {
                     recent_pins_clean.contains(&req_pin) || recent_pins.contains(&req.pin)
                 } else if let Some(ref qp) = qr_pin_clean {
                     qp == &req_pin || latest_qr_pin.as_ref() == Some(&req.pin)
                 } else {
-                    // No PIN was generated yet on PC
-                    true
+                    // Fail closed: No active QR pairing session exists on PC
+                    false
                 };
 
                 if pin_matches {
@@ -854,6 +856,21 @@ impl NetworkService {
                 }
             }
             ProtocolMessage::FileOffer(offer) => {
+                let is_paired = self.vault_mgr.is_paired();
+                let is_authorized = *self.transfer_authorized.lock().await;
+                if !is_paired && !is_authorized {
+                    warn!("Rejected FileOffer from unauthorized sender: {}", offer.sender_name);
+                    let reject = ProtocolMessage::FileAccept(FileTransferAccept {
+                        file_id: offer.file_id,
+                        accepted: false,
+                        message: Some("Device not paired or transfer not authorized with PIN".into()),
+                    });
+                    if let Some(tx) = &*self.active_client.lock().await {
+                        let _ = tx.send(reject).await;
+                    }
+                    return Ok(());
+                }
+
                 info!("Incoming AuraDrop file offer from {}: {} ({} bytes)", offer.sender_name, offer.file_name, offer.file_size);
                 let downloads_dir = get_default_downloads_dir();
                 
@@ -1031,6 +1048,13 @@ impl NetworkService {
                 }
             }
             ProtocolMessage::Clipboard(clip) => {
+                let is_paired = self.vault_mgr.is_paired();
+                let is_authorized = *self.transfer_authorized.lock().await;
+                if !is_paired && !is_authorized {
+                    warn!("Rejected Clipboard from unauthorized sender: {}", clip.sender_name);
+                    return Ok(());
+                }
+
                 info!("Received shared clipboard from phone: '{}'", clip.text);
                 {
                     let mut guard = self.latest_clipboard.lock().await;
@@ -1056,7 +1080,19 @@ impl NetworkService {
             }
             ProtocolMessage::UnpairReq(req) => {
                 info!("Received direct unpair request from phone: {}", req.phone_name);
-                self.direct_unpair().await;
+                if let Ok(vault) = self.vault_mgr.load() {
+                    if let Some(paired) = vault.paired_phone {
+                        if paired.device_name == req.phone_name || paired.pairing_id == req.phone_name {
+                            self.direct_unpair().await;
+                        } else {
+                            warn!("Rejected UnpairReq from non-paired device: {}", req.phone_name);
+                        }
+                    } else {
+                        self.direct_unpair().await;
+                    }
+                } else {
+                    self.direct_unpair().await;
+                }
             }
             ProtocolMessage::TransferAuthReq(req) => {
                 info!("Received transfer session auth request from phone");

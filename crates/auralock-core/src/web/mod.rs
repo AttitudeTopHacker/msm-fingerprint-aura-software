@@ -21,7 +21,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use tracing::{error, info};
 
 pub const DEFAULT_AURALOCK_WEB_PORT: u16 = 47891;
@@ -88,9 +88,19 @@ pub async fn start_web_server(net_service: Arc<NetworkService>, port: u16) -> Re
     let state = AppState { net_service };
 
     let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_origin(tower_http::cors::AllowOrigin::predicate(|origin, _| {
+            if let Ok(s) = origin.to_str() {
+                s.starts_with("http://127.0.0.1")
+                    || s.starts_with("http://localhost")
+                    || s.starts_with("tauri://")
+                    || s.starts_with("https://tauri.localhost")
+                    || s.starts_with("http://tauri.localhost")
+            } else {
+                false
+            }
+        }))
+        .allow_methods(tower_http::cors::Any)
+        .allow_headers(tower_http::cors::Any);
 
     let app = Router::new()
         .route("/", get(serve_dashboard))
@@ -118,8 +128,8 @@ pub async fn start_web_server(net_service: Arc<NetworkService>, port: u16) -> Re
         .layer(cors)
         .with_state(state);
 
-    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
-    info!("AuraLock Desktop Control Center UI running at http://127.0.0.1:{}", port);
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    info!("MsmConnect Desktop Control Center UI running at http://127.0.0.1:{}", port);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tokio::spawn(async move {
@@ -451,7 +461,24 @@ async fn open_folder() -> Json<ApiResponse> {
 }
 
 async fn download_file(Path(filename): Path<String>) -> Response {
-    let p = get_default_downloads_dir().join(&filename);
+    let safe_name = std::path::Path::new(&filename)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    if safe_name.is_empty() || safe_name.starts_with('.') {
+        return (StatusCode::BAD_REQUEST, "Invalid file name").into_response();
+    }
+
+    let downloads_dir = get_default_downloads_dir();
+    let p = downloads_dir.join(&safe_name);
+
+    if let (Ok(canonical_dir), Ok(canonical_path)) = (downloads_dir.canonicalize(), p.canonicalize()) {
+        if !canonical_path.starts_with(&canonical_dir) {
+            return (StatusCode::FORBIDDEN, "Access denied").into_response();
+        }
+    }
+
     if let Ok(bytes) = tokio::fs::read(&p).await {
         let mime = "application/octet-stream";
         (
@@ -459,7 +486,7 @@ async fn download_file(Path(filename): Path<String>) -> Response {
                 ("Content-Type", mime),
                 (
                     "Content-Disposition",
-                    &format!("attachment; filename=\"{filename}\""),
+                    &format!("attachment; filename=\"{safe_name}\""),
                 ),
             ],
             bytes,

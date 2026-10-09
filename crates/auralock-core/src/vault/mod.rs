@@ -72,7 +72,8 @@ pub struct VaultData {
 }
 
 fn default_security_pin() -> String {
-    "1234".to_string()
+    let pin: u32 = rand::random::<u32>() % 900000 + 100000;
+    format!("{:06}", pin)
 }
 
 pub fn get_default_vault_path() -> PathBuf {
@@ -139,18 +140,25 @@ impl VaultManager {
         Ok(vault)
     }
 
-    /// Verifies 4-digit security PIN
+    /// Verifies security PIN (fail-closed, never accepts hardcoded defaults)
     pub fn verify_security_pin(&self, pin: &str) -> bool {
+        let input_pin = pin.trim();
+        if input_pin.is_empty() {
+            return false;
+        }
         match self.load() {
-            Ok(vault) => vault.security_pin == pin,
-            Err(_) => pin == "1234",
+            Ok(vault) => {
+                let stored = vault.security_pin.trim();
+                !stored.is_empty() && stored == input_pin
+            }
+            Err(_) => false,
         }
     }
 
-    /// Unpairs device only if 4-digit PIN matches
+    /// Unpairs device only if security PIN matches
     pub fn unpair_with_pin(&self, pin: &str) -> Result<()> {
         if !self.verify_security_pin(pin) {
-            return Err(AuraLockError::VaultError("Invalid 4-digit Security PIN".into()));
+            return Err(AuraLockError::VaultError("Invalid Security PIN".into()));
         }
         self.clear()
     }

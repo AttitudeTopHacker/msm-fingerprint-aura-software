@@ -60,16 +60,9 @@ class CryptoManager {
                 kpg.initialize(specBuilder.build())
                 return kpg.generateKeyPair()
             } catch (e: Exception) {
-                // If device has no enrolled fingerprints, fallback without biometric requirement for initialization
-                val fallbackBuilder = KeyGenParameterSpec.Builder(
-                    KEY_ALIAS,
-                    KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
-                )
-                    .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
-                    .setDigests(KeyProperties.DIGEST_SHA256)
-                    .setUserAuthenticationRequired(false)
-                kpg.initialize(fallbackBuilder.build())
-                return kpg.generateKeyPair()
+                // If device keystore initialization fails (e.g. no enrolled biometrics),
+                // throw a descriptive exception to enforce security requirements
+                throw IllegalStateException("Hardware biometric initialization failed: ${e.message}. Please ensure fingerprint/biometrics are set up in Android Settings.", e)
             }
         }
 

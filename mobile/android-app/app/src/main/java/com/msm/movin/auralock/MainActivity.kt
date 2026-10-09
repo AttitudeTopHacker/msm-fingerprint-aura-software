@@ -119,6 +119,7 @@ class MainActivity : FragmentActivity() {
 
     private var autoReconnectJob: Job? = null
     private var challengeTimerJob: Job? = null
+    private var activeChallengeEvent: ChallengeEvent? = null
     private var currentToast: Toast? = null
 
     // Direct Activity-level file picker (bypasses Compose launcher — works on ALL devices)
@@ -864,6 +865,14 @@ class MainActivity : FragmentActivity() {
                             return@launch
                         }
 
+                        // If a challenge is already waiting/active, immediately re-trigger biometric prompt on tap!
+                        val pendingChallenge = activeChallengeEvent
+                        if (challengeRemainingSecondsState > 0 && pendingChallenge != null) {
+                            isRefreshingStatusState = false
+                            handleChallenge(pendingChallenge)
+                            return@launch
+                        }
+
                         isUserManuallyDisconnected = false
                         val targetName = if (pcNameState.isNotBlank()) pcNameState else "PC"
 
@@ -886,7 +895,7 @@ class MainActivity : FragmentActivity() {
                             }
                         } else {
                             val start = System.currentTimeMillis()
-                            // Query actual PC desktop state (Locked or Unlocked)
+                            // Query actual PC desktop state (Locked or Unlocked) & fetch pending challenges
                             activeClient.sendPing()
                             delay(300)
                             val latency = (System.currentTimeMillis() - start - 300).coerceAtLeast(1)
@@ -3277,6 +3286,7 @@ class MainActivity : FragmentActivity() {
 
     private fun handleChallenge(challenge: ChallengeEvent) {
         try {
+            activeChallengeEvent = challenge
             isPcLockedState = true
             prefs.edit().putBoolean("is_pc_locked", true).apply()
 
@@ -3289,6 +3299,7 @@ class MainActivity : FragmentActivity() {
                     challengeRemainingSecondsState--
                 }
                 if (challengeRemainingSecondsState <= 0) {
+                    activeChallengeEvent = null
                     Toast.makeText(this@MainActivity, "⏱️ Challenge Expired (60s)", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -3300,6 +3311,7 @@ class MainActivity : FragmentActivity() {
                 onSuccess = { authedSig ->
                     challengeTimerJob?.cancel()
                     challengeRemainingSecondsState = 0
+                    activeChallengeEvent = null
                     lifecycleScope.launch {
                         val signablePayload =
                             "auralock:v1:${challenge.challengeId}:${challenge.nonceHex}:${challenge.timestampEpoch}".toByteArray()
@@ -3320,12 +3332,14 @@ class MainActivity : FragmentActivity() {
                 onError = { err ->
                     challengeTimerJob?.cancel()
                     challengeRemainingSecondsState = 0
+                    activeChallengeEvent = null
                     Toast.makeText(this@MainActivity, "Biometric failed: $err", Toast.LENGTH_SHORT).show()
                 }
             )
         } catch (e: Exception) {
             challengeTimerJob?.cancel()
             challengeRemainingSecondsState = 0
+            activeChallengeEvent = null
             e.printStackTrace()
             Toast.makeText(this, "Biometric Error: ${e.message}", Toast.LENGTH_LONG).show()
         }
@@ -3335,6 +3349,7 @@ class MainActivity : FragmentActivity() {
         val hadActiveChallenge = challengeRemainingSecondsState > 0
         challengeTimerJob?.cancel()
         challengeRemainingSecondsState = 0
+        activeChallengeEvent = null
         biometricPrompt.cancelAuthentication()
         if (hadActiveChallenge && (reason.contains("password", ignoreCase = true) || reason.contains("swapped", ignoreCase = true) || reason.contains("pam", ignoreCase = true))) {
             Toast.makeText(this@MainActivity, "⌨️ Swapped to Password on PC", Toast.LENGTH_SHORT).show()
