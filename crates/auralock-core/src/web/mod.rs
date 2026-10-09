@@ -209,7 +209,7 @@ async fn auth_middleware(
             Json(serde_json::json!({
                 "status": "online",
                 "app": "MsmConnect Control Center",
-                "version": "1.6.0",
+                "version": "1.6.1",
                 "authenticated": false
             })),
         )
