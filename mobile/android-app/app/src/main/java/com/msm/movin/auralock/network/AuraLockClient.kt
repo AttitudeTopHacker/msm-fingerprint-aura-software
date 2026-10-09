@@ -717,6 +717,25 @@ class AuraLockClient(
         }
     }
 
+    suspend fun measurePing(): Long = withContext(Dispatchers.IO) {
+        val start = System.currentTimeMillis()
+        try {
+            val sock = java.net.Socket()
+            sock.connect(java.net.InetSocketAddress(host, port), 1200)
+            sock.soTimeout = 1200
+            val w = java.io.PrintWriter(sock.getOutputStream(), true)
+            val r = java.io.BufferedReader(java.io.InputStreamReader(sock.getInputStream()))
+            val pingMsg = JSONObject().apply { put("type", "Ping") }
+            w.println(pingMsg.toString())
+            val line = r.readLine()
+            val rtt = System.currentTimeMillis() - start
+            sock.close()
+            if (line != null) rtt else -1L
+        } catch (e: Exception) {
+            -1L
+        }
+    }
+
     suspend fun sendRemoteLock(reason: String = "user_manual_lock"): Boolean = withContext(Dispatchers.IO) {
         try {
             val json = JSONObject().apply {

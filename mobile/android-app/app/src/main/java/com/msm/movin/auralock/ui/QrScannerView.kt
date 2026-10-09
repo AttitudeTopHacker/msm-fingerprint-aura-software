@@ -128,7 +128,7 @@ fun QrScannerView(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "AuraLock requires camera permission to scan your PC's pairing QR code from the terminal or desktop app.",
+                    text = "MsmConnect requires camera permission to scan your PC's pairing QR code from the terminal or desktop app.",
                     color = Color(0xFF94A3B8),
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center
@@ -162,7 +162,7 @@ fun QrScannerView(
                             }
                             context.startActivity(intent)
                         } catch (e: Throwable) {
-                            android.widget.Toast.makeText(context, "Open Settings -> Apps -> AuraLock -> Permissions", android.widget.Toast.LENGTH_LONG).show()
+                            android.widget.Toast.makeText(context, "Open Settings -> Apps -> MsmConnect -> Permissions", android.widget.Toast.LENGTH_LONG).show()
                         }
                     }
                 ) {
@@ -518,7 +518,7 @@ private fun CameraPreviewWithScanner(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "AuraLock Scanner",
+                    text = "MsmConnect Scanner",
                     color = Color.White,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp

@@ -74,9 +74,11 @@ import com.msm.movin.auralock.network.AuraLockClient
 import com.msm.movin.auralock.network.ChallengeEvent
 import com.msm.movin.auralock.service.AuraLockService
 import com.msm.movin.auralock.ui.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 enum class ScreenState {
@@ -1003,7 +1005,7 @@ class MainActivity : FragmentActivity() {
                         }
                         startActivity(intent)
                     } catch (e: Throwable) {
-                        Toast.makeText(this@MainActivity, "Open Settings -> Apps -> AuraLock -> Permissions", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this@MainActivity, "Open Settings -> Apps -> MsmConnect -> Permissions", Toast.LENGTH_LONG).show()
                     }
                 },
                 onDismiss = {
@@ -1033,7 +1035,7 @@ class MainActivity : FragmentActivity() {
                 },
                 text = {
                     Text(
-                        text = "AuraLock requires Bluetooth (BLE) to detect PC proximity and establish secure hardware verification. Please turn on Bluetooth to proceed.",
+                        text = "MsmConnect requires Bluetooth (BLE) to detect PC proximity and establish secure hardware verification. Please turn on Bluetooth to proceed.",
                         fontSize = 13.sp,
                         color = Color(0xFF94A3B8),
                         lineHeight = 18.sp
@@ -1199,12 +1201,11 @@ class MainActivity : FragmentActivity() {
                     prefs.edit().putBoolean("haptics_enabled", enabled).apply()
                 },
                 onTestPing = { onResult ->
-                    lifecycleScope.launch {
-                        val start = System.currentTimeMillis()
-                        client?.sendPing()
-                        delay(20)
-                        val latency = System.currentTimeMillis() - start
-                        onResult(latency)
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        val latency = client?.measurePing() ?: -1L
+                        withContext(Dispatchers.Main) {
+                            onResult(if (latency >= 0) latency else -1L)
+                        }
                     }
                 },
                 onUnpairClicked = performUnpair,
@@ -2519,7 +2520,7 @@ class MainActivity : FragmentActivity() {
                 ) {
                     Icon(
                         imageVector = Icons.Default.Lock,
-                        contentDescription = "AuraLock Logo",
+                        contentDescription = "MsmConnect Logo",
                         tint = Color(0xFF070A13),
                         modifier = Modifier.size(18.dp)
                     )
@@ -2529,7 +2530,7 @@ class MainActivity : FragmentActivity() {
 
                 Column {
                     Text(
-                        text = "AuraLock",
+                        text = "MsmConnect",
                         color = Color.White,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold
@@ -3405,7 +3406,7 @@ class MainActivity : FragmentActivity() {
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = "Welcome to AuraLock",
+                            text = "Welcome to MsmConnect",
                             fontWeight = FontWeight.Bold,
                             fontSize = 17.sp,
                             color = Color.White
@@ -3426,7 +3427,7 @@ class MainActivity : FragmentActivity() {
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "To pair with your PC and enable biometric unlock & wireless file transfer, AuraLock requires the following permissions:",
+                        text = "To pair with your PC and enable biometric unlock & wireless file transfer, MsmConnect requires the following permissions:",
                         fontSize = 13.sp,
                         color = Color(0xFF94A3B8),
                         lineHeight = 18.sp

@@ -110,6 +110,7 @@ pub async fn start_web_server(net_service: Arc<NetworkService>, port: u16) -> Re
         .route("/api/auradrop/auth", post(auth_transfer_endpoint))
         .route("/api/auradrop/send-file", post(send_file))
         .route("/api/auradrop/send-text", post(send_text))
+        .route("/api/auradrop/clipboard", get(get_latest_clipboard))
         .route("/api/auradrop/files", get(get_received_files))
         .route("/api/auradrop/open-folder", post(open_folder))
         .route("/api/auradrop/download/:filename", get(download_file))
@@ -428,6 +429,11 @@ async fn send_text(
             message: e.to_string(),
         }),
     }
+}
+
+async fn get_latest_clipboard(State(state): State<AppState>) -> Json<Option<crate::protocol::ClipboardSync>> {
+    let clip = state.net_service.latest_clipboard.lock().await.clone();
+    Json(clip)
 }
 
 async fn get_received_files(State(state): State<AppState>) -> Json<Vec<AuraDropReceivedFile>> {

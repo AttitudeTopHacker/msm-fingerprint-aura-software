@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AuraLock",
-  "version": "1.5.2",
-  "identifier": "com.msm.auralock",
+  "productName": "MsmConnect",
+  "version": "1.5.5",
+  "identifier": "com.msm.msmconnect",
   "build": {
     "frontendDist": "../ui_dist"
   },
@@ -10,7 +10,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "AuraLock • Biometric Security & AuraDrop",
+        "title": "MsmConnect • Biometric Security & AuraDrop",
         "width": 1180,
         "height": 800,
         "minWidth": 900,

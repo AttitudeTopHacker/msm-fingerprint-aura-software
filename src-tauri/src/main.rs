@@ -288,6 +288,12 @@ async fn send_auradrop_text(text: String, state: State<'_, AppStateWrapper>) -> 
 }
 
 #[tauri::command]
+async fn get_latest_clipboard(state: State<'_, AppStateWrapper>) -> Result<Option<auralock_core::protocol::ClipboardSync>, String> {
+    let clip = state.net_service.latest_clipboard.lock().await.clone();
+    Ok(clip)
+}
+
+#[tauri::command]
 async fn get_received_files(state: State<'_, AppStateWrapper>) -> Result<Vec<AuraDropReceivedFile>, String> {
     let files = state.net_service.received_files.lock().await.clone();
     Ok(files)
@@ -373,6 +379,7 @@ fn main() {
             toggle_transfer_channel,
             authorize_transfer_pin,
             send_auradrop_text,
+            get_latest_clipboard,
             get_received_files,
             open_downloads_folder
         ])

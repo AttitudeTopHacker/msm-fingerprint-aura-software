@@ -499,6 +499,129 @@ window.sendClipboard = async function () {
   }
 };
 
+// RECEIVED CLIPBOARD STATE & ACTIONS
+let receivedClipboardHistory = [];
+
+window.copyReceivedClipboard = function (customText) {
+  const textEl = document.getElementById('received-clipboard-text');
+  const text = customText || (textEl ? textEl.innerText : '');
+  if (!text) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      const btnText = document.getElementById('copy-btn-text');
+      const btnIcon = document.getElementById('copy-btn-icon');
+      if (btnText && btnIcon) {
+        btnText.innerText = "Copied!";
+        btnIcon.innerText = "✅";
+        setTimeout(() => {
+          btnText.innerText = "Copy to Clipboard";
+          btnIcon.innerText = "📋";
+        }, 2000);
+      }
+      showToast("Copied to PC clipboard!", "📋");
+    }).catch(err => {
+      console.warn("Clipboard copy error:", err);
+    });
+  }
+};
+
+window.clearReceivedClipboard = function () {
+  const empty = document.getElementById('received-clipboard-empty');
+  const box = document.getElementById('received-clipboard-content-box');
+  const sender = document.getElementById('received-clipboard-sender');
+  if (empty) empty.style.display = 'block';
+  if (box) box.style.display = 'none';
+  if (sender) sender.innerText = 'Waiting for text...';
+};
+
+window.clearAllReceivedTexts = function () {
+  receivedClipboardHistory = [];
+  renderReceivedTextHistory();
+  window.clearReceivedClipboard();
+  showToast("Received text history cleared", "🗑️");
+};
+
+function handleReceivedClipboard(text, senderName, timestampEpoch) {
+  if (!text) return;
+  
+  // Try automatic clipboard copy
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).catch(e => console.warn("Auto-copy blocked:", e));
+  }
+  
+  const timeStr = timestampEpoch ? new Date(timestampEpoch * 1000).toLocaleTimeString() : new Date().toLocaleTimeString();
+  const sender = senderName || 'Phone';
+
+  // Update active view card
+  const empty = document.getElementById('received-clipboard-empty');
+  const box = document.getElementById('received-clipboard-content-box');
+  const textEl = document.getElementById('received-clipboard-text');
+  const senderEl = document.getElementById('received-clipboard-sender');
+  
+  if (empty) empty.style.display = 'none';
+  if (box) box.style.display = 'block';
+  if (textEl) textEl.innerText = text;
+  if (senderEl) senderEl.innerText = `From: ${sender} • ${timeStr}`;
+
+  // Add to history (avoid duplicates at the top)
+  if (receivedClipboardHistory.length === 0 || receivedClipboardHistory[0].text !== text) {
+    receivedClipboardHistory.unshift({ text, sender, time: timeStr, timestamp: Date.now() });
+    if (receivedClipboardHistory.length > 20) receivedClipboardHistory.pop();
+  }
+  renderReceivedTextHistory();
+}
+
+function renderReceivedTextHistory() {
+  const container = document.getElementById('received-texts-history-list');
+  if (!container) return;
+  
+  if (receivedClipboardHistory.length === 0) {
+    container.innerHTML = `<p style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No text received yet. Text sent from your phone will show up here automatically.</p>`;
+    return;
+  }
+
+  container.innerHTML = receivedClipboardHistory.map((item) => `
+    <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px 16px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+      <div style="flex: 1; min-width: 0;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+          <span style="font-size: 0.75rem; color: var(--accent-cyan); font-weight: 600;">📱 ${item.sender}</span>
+          <span style="font-size: 0.75rem; color: var(--text-muted);">• ${item.time}</span>
+        </div>
+        <div style="font-family: var(--font-mono); font-size: 0.85rem; color: #E2E8F0; white-space: pre-wrap; word-break: break-word; max-height: 60px; overflow-y: auto;">${item.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+      </div>
+      <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.8rem; white-space: nowrap;" onclick="window.copyTextItem(${JSON.stringify(item.text).replace(/"/g, '&quot;')})">
+        <span>📋</span> Copy
+      </button>
+    </div>
+  `).join('');
+}
+
+window.copyTextItem = function (text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast("Copied to PC clipboard!", "📋");
+    });
+  }
+};
+
+async function fetchLatestClipboard() {
+  try {
+    let clip = null;
+    try {
+      const res = await fetch('http://127.0.0.1:47891/api/auradrop/clipboard');
+      if (res.ok) clip = await res.json();
+    } catch (_) {}
+
+    if (!clip && checkIsTauri()) {
+      clip = await invokeCommand('get_latest_clipboard');
+    }
+
+    if (clip && clip.text) {
+      handleReceivedClipboard(clip.text, clip.sender_name, clip.timestamp_epoch);
+    }
+  } catch (e) {}
+}
+
 // SEND FILE (Supports multi-file queue)
 window.handleFileSelected = async function (files) {
   if (!files || files.length === 0) return;
@@ -573,7 +696,7 @@ async function fetchReceivedFiles() {
 
     if (!list) return;
     if (files.length === 0) {
-      list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 2rem;">No files received yet. Share files from your phone\'s AuraLock app!</p>';
+      list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 2rem;">No files received yet. Share files from your phone\'s MsmConnect app!</p>';
       return;
     }
 
@@ -689,8 +812,11 @@ function setupWebSocket() {
           showToast(`Transfer failed: ${ev.data.message || 'Error'}`, "❌");
         }
       } else if (ev.type === 'ClipboardReceived') {
-        log(`Received clipboard from phone: "${ev.data.text}"`, "info");
-        showToast("Clipboard text received from phone!", "📋");
+        const text = ev.data.text || '';
+        const sender = ev.data.sender_name || 'Phone';
+        log(`Received clipboard from ${sender}: "${text}"`, "info");
+        handleReceivedClipboard(text, sender, ev.data.timestamp_epoch);
+        showToast(`Received text from ${sender}! (Copied to Clipboard)`, "📋");
       } else if (ev.type === 'PhoneUnpairRequested') {
         log(`Incoming unpair request from phone: ${ev.data.phone_name} (PIN: ${ev.data.pin})`, "warn");
         const pinDisp = document.getElementById('phone-unpair-pin-display');
@@ -1003,5 +1129,6 @@ window.addEventListener('keydown', (e) => {
 // INITIALIZATION
 fetchStatus();
 fetchReceivedFiles();
+fetchLatestClipboard();
 setupWebSocket();
 setInterval(fetchStatus, 2000);

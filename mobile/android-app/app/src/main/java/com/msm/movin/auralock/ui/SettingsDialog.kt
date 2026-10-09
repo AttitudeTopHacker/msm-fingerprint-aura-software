@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 @Composable
 fun SettingsDialog(
@@ -48,12 +49,19 @@ fun SettingsDialog(
     var isTestingPing by remember { mutableStateOf(false) }
     var showUnpairConfirm by remember { mutableStateOf(false) }
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
+        )
+    ) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(4.dp),
-            shape = RoundedCornerShape(20.dp),
+                .padding(horizontal = 16.dp, vertical = 20.dp),
+            shape = RoundedCornerShape(22.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
             border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155))
         ) {
@@ -87,7 +95,7 @@ fun SettingsDialog(
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "AuraLock Settings",
+                            text = "MsmConnect Settings",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
@@ -110,7 +118,68 @@ fun SettingsDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Paired PC Status Card
+                if (isPaired) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isConnected) Color(0xFF064E3B).copy(alpha = 0.3f) else Color(0xFF1E293B)
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (isConnected) Color(0xFF059669).copy(alpha = 0.4f) else Color(0xFF334155)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = pcName.ifBlank { "Linked PC" },
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "$pcIp:$pcPort",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(
+                                        if (isConnected) Color(0xFF10B981).copy(alpha = 0.2f)
+                                        else Color(0xFFEF4444).copy(alpha = 0.2f)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isConnected) Color(0xFF10B981).copy(alpha = 0.4f)
+                                        else Color(0xFFEF4444).copy(alpha = 0.4f),
+                                        RoundedCornerShape(6.dp)
+                                    )
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = if (isConnected) "🟢 Live Connected" else "🔴 Offline / Standby",
+                                    color = if (isConnected) Color(0xFF34D399) else Color(0xFFFCA5A5),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
 
                 // Section 1: Connection & Automation
                 Text(
@@ -278,7 +347,7 @@ fun SettingsDialog(
 
                 // Section 4: About & Organization
                 Text(
-                    text = "AuraLock v${com.msm.movin.auralock.BuildConfig.VERSION_NAME} (Release)\nmsm.movin • Copyright (c) 2022. All rights reserved.",
+                    text = "MsmConnect v${com.msm.movin.auralock.BuildConfig.VERSION_NAME} (Release)\nmsm.movin • Copyright (c) 2022. All rights reserved.",
                     color = Color(0xFF475569),
                     fontSize = 11.sp,
                     textAlign = TextAlign.Center,
