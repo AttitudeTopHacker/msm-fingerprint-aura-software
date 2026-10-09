@@ -9,7 +9,27 @@ use crate::crypto::{
 use crate::error::{AuraLockError, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use zeroize::{Zeroize, ZeroizeOnDrop};
+
+static FAILED_VAULT_PIN_ATTEMPTS: AtomicU32 = AtomicU32::new(0);
+static VAULT_LOCKOUT_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
+const MAX_FAILED_PIN_ATTEMPTS: u32 = 5;
+const PIN_LOCKOUT_DURATION: Duration = Duration::from_secs(60);
+
+/// Constant-time slice comparison to prevent timing attacks on PIN verification
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
 
 /// A memory-safe zeroizing container for plaintext credentials
 #[derive(Debug, Clone, Zeroize, ZeroizeOnDrop)]
@@ -140,16 +160,54 @@ impl VaultManager {
         Ok(vault)
     }
 
-    /// Verifies security PIN (fail-closed, never accepts hardcoded defaults)
+    /// Verifies security PIN with constant-time comparison and brute-force lockout
     pub fn verify_security_pin(&self, pin: &str) -> bool {
         let input_pin = pin.trim();
         if input_pin.is_empty() {
             return false;
         }
+
+        // 1. Check if locked out due to prior brute force attempts
+        if let Ok(mut lockout_guard) = VAULT_LOCKOUT_UNTIL.lock() {
+            if let Some(until) = *lockout_guard {
+                if Instant::now() < until {
+                    tracing::warn!("Vault PIN verification rejected: Locked out due to too many failed attempts");
+                    return false;
+                } else {
+                    *lockout_guard = None;
+                    FAILED_VAULT_PIN_ATTEMPTS.store(0, Ordering::SeqCst);
+                }
+            }
+        }
+
         match self.load() {
             Ok(vault) => {
                 let stored = vault.security_pin.trim();
-                !stored.is_empty() && stored == input_pin
+                if stored.is_empty() {
+                    return false;
+                }
+
+                if constant_time_eq(stored.as_bytes(), input_pin.as_bytes()) {
+                    // Reset failure counter on success
+                    FAILED_VAULT_PIN_ATTEMPTS.store(0, Ordering::SeqCst);
+                    if let Ok(mut lockout_guard) = VAULT_LOCKOUT_UNTIL.lock() {
+                        *lockout_guard = None;
+                    }
+                    true
+                } else {
+                    // Record failure and check for lockout
+                    let failed = FAILED_VAULT_PIN_ATTEMPTS.fetch_add(1, Ordering::SeqCst) + 1;
+                    tracing::warn!("Failed Vault PIN attempt ({}/{})", failed, MAX_FAILED_PIN_ATTEMPTS);
+                    if failed >= MAX_FAILED_PIN_ATTEMPTS {
+                        if let Ok(mut lockout_guard) = VAULT_LOCKOUT_UNTIL.lock() {
+                            *lockout_guard = Some(Instant::now() + PIN_LOCKOUT_DURATION);
+                            tracing::warn!("Max Vault PIN attempts exceeded. Locking out for {}s", PIN_LOCKOUT_DURATION.as_secs());
+                        }
+                    }
+                    // Add micro throttle against tight-loop brute force
+                    std::thread::sleep(Duration::from_millis(50));
+                    false
+                }
             }
             Err(_) => false,
         }
@@ -207,7 +265,7 @@ impl VaultManager {
 
     /// Saves or updates a paired phone in the vault (clearing any old stale passwords)
     pub fn save_paired_phone(&self, phone: PairedPhone) -> Result<()> {
-        let existing_pin = self.load().map(|v| v.security_pin).unwrap_or_else(|_| "1234".to_string());
+        let existing_pin = self.load().map(|v| v.security_pin).unwrap_or_else(|_| default_security_pin());
 
         let vault_data = VaultData {
             version: 1,
@@ -271,7 +329,7 @@ impl VaultManager {
         // Zeroize key from memory
         key32.zeroize();
 
-        let existing_pin = self.load().map(|v| v.security_pin).unwrap_or_else(|_| "1234".to_string());
+        let existing_pin = self.load().map(|v| v.security_pin).unwrap_or_else(|_| default_security_pin());
 
         let vault_data = VaultData {
             version: 1,

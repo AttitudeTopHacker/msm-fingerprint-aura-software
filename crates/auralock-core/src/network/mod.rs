@@ -720,6 +720,23 @@ impl NetworkService {
             ProtocolMessage::PairingReq(req) => {
                 info!("Received pairing request from phone: {}", req.phone_name);
 
+                // 1. Validate Phone Public Key format (must be valid 32 bytes / 64 hex characters)
+                let pubkey_bytes = match hex::decode(&req.phone_ed25519_pub_hex) {
+                    Ok(b) if b.len() == 32 => b,
+                    _ => {
+                        warn!("Rejected pairing request with invalid public key format from {}", req.phone_name);
+                        let resp = ProtocolMessage::PairingResp(PairingResponse {
+                            success: false,
+                            pairing_id: String::new(),
+                            message: "Invalid cryptographic public key provided. Please regenerate keys.".into(),
+                        });
+                        if let Some(tx) = &*self.active_client.lock().await {
+                            let _ = tx.send(resp).await;
+                        }
+                        return Ok(());
+                    }
+                };
+
                 let active_pin = self.active_pairing_pin.lock().await.clone();
                 let recent_pins = self.recent_pairing_pins.lock().await.clone();
                 let latest_qr_pin = self.latest_qr_data.lock().await.as_ref().map(|q| q.pin.clone());
@@ -747,14 +764,24 @@ impl NetworkService {
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
                         .as_secs() as i64;
+                    let safe_phone_name: String = req.phone_name.chars()
+                        .filter(|c| !c.is_control())
+                        .take(64)
+                        .collect();
+                    let safe_phone_name = if safe_phone_name.trim().is_empty() {
+                        "Android Phone".to_string()
+                    } else {
+                        safe_phone_name
+                    };
+
                     let paired_phone = PairedPhone {
-                        device_name: req.phone_name.clone(),
-                        public_key_hex: req.phone_ed25519_pub_hex,
+                        device_name: safe_phone_name.clone(),
+                        public_key_hex: hex::encode(pubkey_bytes),
                         pairing_id: format!("pair_{:08x}", rand::random::<u32>()),
                         paired_at_epoch: now,
                     };
 
-                    info!("Phone {} successfully paired with ID {}", req.phone_name, paired_phone.pairing_id);
+                    info!("Phone {} successfully paired with ID {}", safe_phone_name, paired_phone.pairing_id);
 
                     // Persist pairing in vault and state manager
                     let _ = self.vault_mgr.save_paired_phone(paired_phone.clone());
@@ -871,14 +898,35 @@ impl NetworkService {
                     return Ok(());
                 }
 
+                // Enforce max file size limit (50 GB)
+                if offer.file_size > 50 * 1024 * 1024 * 1024 {
+                    warn!("Rejected FileOffer exceeding size limit: {} bytes", offer.file_size);
+                    let reject = ProtocolMessage::FileAccept(FileTransferAccept {
+                        file_id: offer.file_id,
+                        accepted: false,
+                        message: Some("File size exceeds 50 GB maximum limit".into()),
+                    });
+                    if let Some(tx) = &*self.active_client.lock().await {
+                        let _ = tx.send(reject).await;
+                    }
+                    return Ok(());
+                }
+
                 info!("Incoming AuraDrop file offer from {}: {} ({} bytes)", offer.sender_name, offer.file_name, offer.file_size);
                 let downloads_dir = get_default_downloads_dir();
                 
-                // Sanitize and ensure conflict-free file name
-                let safe_base_name = PathBuf::from(&offer.file_name)
+                // Sanitize and ensure conflict-free file name (strips path separators & null characters)
+                let cleaned_name = offer.file_name.replace(['/', '\\', '\0', '\r', '\n'], "_");
+                let safe_base_name = PathBuf::from(&cleaned_name)
                     .file_name()
                     .map(|f| f.to_string_lossy().to_string())
                     .unwrap_or_else(|| "downloaded_file.bin".to_string());
+                let safe_base_name = safe_base_name.trim_start_matches('.').to_string();
+                let safe_base_name = if safe_base_name.is_empty() {
+                    "downloaded_file.bin".to_string()
+                } else {
+                    safe_base_name
+                };
                 
                 let (safe_name, target_path) = get_unique_target_path(&downloads_dir, &safe_base_name);
                 

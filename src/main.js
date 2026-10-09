@@ -2,6 +2,7 @@ let currentPin = "";
 let pairingQrObj = null;
 let isPairedState = false;
 let isPhoneConnectedState = false;
+let apiAuthToken = window.__MSMCONNECT_SESSION_TOKEN__ || "";
 
 // Helper to check if Tauri API is available
 function checkIsTauri() {
@@ -32,6 +33,39 @@ async function invokeCommand(cmd, args = {}) {
   return null;
 }
 
+async function getAuthToken() {
+  if (!apiAuthToken && checkIsTauri()) {
+    try {
+      const tok = await invokeCommand('get_api_auth_token');
+      if (tok) {
+        apiAuthToken = tok;
+        window.__MSMCONNECT_SESSION_TOKEN__ = tok;
+      }
+    } catch (_) {}
+  }
+  return apiAuthToken || window.__MSMCONNECT_SESSION_TOKEN__ || "";
+}
+
+// Global fetch interceptor to inject X-MsmConnect-Auth header
+(function setupApiAuthInterceptor() {
+  const originalFetch = window.fetch;
+  window.fetch = async function(resource, init = {}) {
+    const url = typeof resource === 'string' ? resource : (resource?.url || '');
+    if (url.includes('/api/')) {
+      const token = await getAuthToken();
+      if (token) {
+        init = init || {};
+        const headers = new Headers(init.headers || {});
+        if (!headers.has('X-MsmConnect-Auth')) {
+          headers.set('X-MsmConnect-Auth', token);
+        }
+        init.headers = headers;
+      }
+    }
+    return originalFetch(resource, init);
+  };
+})();
+
 window.switchTab = function (tabId) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -42,6 +76,16 @@ window.switchTab = function (tabId) {
   const content = document.getElementById('tab-' + tabId);
   if (content) content.classList.add('active');
 };
+
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 function showToast(msg, icon = "✅") {
   const toast = document.getElementById('toast');
@@ -60,7 +104,7 @@ function log(msg, type = "info") {
   const time = new Date().toLocaleTimeString();
   const div = document.createElement('div');
   div.className = 'log-entry';
-  div.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-${type}">${msg}</span>`;
+  div.innerHTML = `<span class="log-time">[${escapeHtml(time)}]</span> <span class="log-${escapeHtml(type)}">${escapeHtml(msg)}</span>`;
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
 }
@@ -584,10 +628,10 @@ function renderReceivedTextHistory() {
     <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px 16px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
       <div style="flex: 1; min-width: 0;">
         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-          <span style="font-size: 0.75rem; color: var(--accent-cyan); font-weight: 600;">📱 ${item.sender}</span>
-          <span style="font-size: 0.75rem; color: var(--text-muted);">• ${item.time}</span>
+          <span style="font-size: 0.75rem; color: var(--accent-cyan); font-weight: 600;">📱 ${escapeHtml(item.sender)}</span>
+          <span style="font-size: 0.75rem; color: var(--text-muted);">• ${escapeHtml(item.time)}</span>
         </div>
-        <div style="font-family: var(--font-mono); font-size: 0.85rem; color: #E2E8F0; white-space: pre-wrap; word-break: break-word; max-height: 60px; overflow-y: auto;">${item.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+        <div style="font-family: var(--font-mono); font-size: 0.85rem; color: #E2E8F0; white-space: pre-wrap; word-break: break-word; max-height: 60px; overflow-y: auto;">${escapeHtml(item.text)}</div>
       </div>
       <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.8rem; white-space: nowrap;" onclick="window.copyTextItem(${JSON.stringify(item.text).replace(/"/g, '&quot;')})">
         <span>📋</span> Copy
@@ -705,11 +749,11 @@ async function fetchReceivedFiles() {
         <div class="file-info">
           <div class="file-icon">📄</div>
           <div class="file-details">
-            <h4>${f.file_name}</h4>
-            <p>${(f.file_size / 1024 / 1024).toFixed(2)} MB • From ${f.sender_name || 'Phone'}</p>
+            <h4>${escapeHtml(f.file_name)}</h4>
+            <p>${(f.file_size / 1024 / 1024).toFixed(2)} MB • From ${escapeHtml(f.sender_name || 'Phone')}</p>
           </div>
         </div>
-        <a href="http://127.0.0.1:47891/api/auradrop/download/${encodeURIComponent(f.file_name)}" class="btn btn-secondary" style="padding: 6px 12px; text-decoration: none;" download>
+        <a href="http://127.0.0.1:47891/api/auradrop/download/${encodeURIComponent(f.file_name)}?token=${encodeURIComponent(apiAuthToken || window.__MSMCONNECT_SESSION_TOKEN__ || '')}" class="btn btn-secondary" style="padding: 6px 12px; text-decoration: none;" download>
           ⬇️ Save
         </a>
       </div>

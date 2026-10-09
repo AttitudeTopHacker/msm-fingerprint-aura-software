@@ -12,19 +12,163 @@ use crate::vault::{PairedPhone, SecretBytes};
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Multipart, Path, State,
+        Multipart, Path, Request, State,
     },
     http::StatusCode,
+    middleware::{self, Next},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, OnceLock};
 use tower_http::cors::CorsLayer;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub const DEFAULT_AURALOCK_WEB_PORT: u16 = 47891;
+
+static WEB_AUTH_TOKEN: OnceLock<String> = OnceLock::new();
+
+/// Retrieve or initialize a cryptographically random 256-bit API session token
+pub fn get_or_create_web_auth_token() -> &'static str {
+    WEB_AUTH_TOKEN.get_or_init(|| {
+        let mut bytes = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut bytes);
+        let token = hex::encode(bytes);
+        save_auth_token_to_disk(&token);
+        token
+    })
+}
+
+fn get_auth_token_file_path() -> Option<PathBuf> {
+    if let Some(runtime_dir) = std::env::var_os("XDG_RUNTIME_DIR") {
+        return Some(PathBuf::from(runtime_dir).join("msmconnect_auth_token"));
+    }
+    #[cfg(unix)]
+    {
+        if let Some(home) = std::env::var_os("HOME") {
+            let dir = PathBuf::from(home).join(".config").join("auralock");
+            let _ = std::fs::create_dir_all(&dir);
+            return Some(dir.join(".auth_token"));
+        }
+    }
+    #[cfg(windows)]
+    {
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            let dir = PathBuf::from(appdata).join("auralock");
+            let _ = std::fs::create_dir_all(&dir);
+            return Some(dir.join(".auth_token"));
+        }
+    }
+    None
+}
+
+fn save_auth_token_to_disk(token: &str) {
+    if let Some(path) = get_auth_token_file_path() {
+        #[cfg(unix)]
+        {
+            use std::fs::OpenOptions;
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            if let Ok(mut file) = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&path)
+            {
+                let _ = file.write_all(token.as_bytes());
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = std::fs::write(&path, token.as_bytes());
+        }
+    }
+}
+
+pub fn read_auth_token_from_disk() -> Option<String> {
+    if let Some(path) = get_auth_token_file_path() {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            let tok = content.trim().to_string();
+            if !tok.is_empty() {
+                return Some(tok);
+            }
+        }
+    }
+    None
+}
+
+/// Constant-time slice comparison to prevent timing attacks on token verification
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+/// Axum Authentication Middleware
+/// Rejects unauthenticated requests to sensitive endpoints (e.g. /api/unlock, /api/lock, /api/vault/*)
+async fn auth_middleware(
+    req: Request,
+    next: Next,
+) -> Response {
+    let path = req.uri().path();
+
+    // Whitelist public endpoints: root dashboard UI, basic status check, and websocket stream
+    if path == "/" || path == "/api/status" || path == "/api/events" {
+        return next.run(req).await;
+    }
+
+    let expected_token = get_or_create_web_auth_token();
+
+    // 1. Check custom auth header 'X-MsmConnect-Auth' or 'X-AuraLock-Auth'
+    let headers = req.headers();
+    if let Some(auth_hdr) = headers.get("x-msmconnect-auth").or_else(|| headers.get("x-auralock-auth")) {
+        if let Ok(token_str) = auth_hdr.to_str() {
+            if constant_time_eq(token_str.trim().as_bytes(), expected_token.as_bytes()) {
+                return next.run(req).await;
+            }
+        }
+    }
+
+    // 2. Check standard 'Authorization: Bearer <token>'
+    if let Some(auth_hdr) = headers.get("authorization") {
+        if let Ok(token_str) = auth_hdr.to_str() {
+            if let Some(bearer_token) = token_str.strip_prefix("Bearer ") {
+                if constant_time_eq(bearer_token.trim().as_bytes(), expected_token.as_bytes()) {
+                    return next.run(req).await;
+                }
+            }
+        }
+    }
+
+    // 3. Check query param 'token=<token>' (for downloads/links)
+    if let Some(query) = req.uri().query() {
+        for pair in query.split('&') {
+            if let Some((k, v)) = pair.split_once('=') {
+                if (k == "token" || k == "auth_token") && constant_time_eq(v.trim().as_bytes(), expected_token.as_bytes()) {
+                    return next.run(req).await;
+                }
+            }
+        }
+    }
+
+    warn!("Blocked unauthorized access attempt to endpoint: {}", path);
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(serde_json::json!({
+            "success": false,
+            "message": "Unauthorized: Missing or invalid MsmConnect API session authentication token"
+        })),
+    )
+        .into_response()
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -42,7 +186,6 @@ pub struct StatusResponse {
     pub paired_phone: Option<String>,
     pub vault_exists: bool,
     pub transfer_enabled: bool,
-    pub transfer_pin: String,
     pub transfer_authorized: bool,
     pub is_bluetooth_active: bool,
 }
@@ -78,6 +221,14 @@ pub struct SendTextRequest {
     pub text: String,
 }
 
+#[derive(Deserialize)]
+pub struct VerifyUnlockRequest {
+    pub challenge_id: String,
+    pub signature_hex: String,
+    pub biometric_type: Option<String>,
+    pub timestamp_epoch: Option<i64>,
+}
+
 #[derive(Serialize)]
 pub struct ApiResponse {
     pub success: bool,
@@ -85,6 +236,8 @@ pub struct ApiResponse {
 }
 
 pub async fn start_web_server(net_service: Arc<NetworkService>, port: u16) -> Result<()> {
+    // Initialize session authentication token
+    let _ = get_or_create_web_auth_token();
     let state = AppState { net_service };
 
     let cors = CorsLayer::new()
@@ -109,6 +262,7 @@ pub async fn start_web_server(net_service: Arc<NetworkService>, port: u16) -> Re
         .route("/api/pair/refresh", post(refresh_pairing))
         .route("/api/unlock/test", post(test_unlock))
         .route("/api/unlock/cancel", post(cancel_unlock_endpoint))
+        .route("/api/unlock/verify", post(verify_unlock_endpoint))
         .route("/api/lock", post(lock_endpoint))
         .route("/api/unlock", post(unlock_endpoint))
         .route("/api/vault/password", post(save_password))
@@ -125,6 +279,7 @@ pub async fn start_web_server(net_service: Arc<NetworkService>, port: u16) -> Re
         .route("/api/auradrop/open-folder", post(open_folder))
         .route("/api/auradrop/download/:filename", get(download_file))
         .route("/api/events", get(ws_handler))
+        .layer(middleware::from_fn(auth_middleware))
         .layer(cors)
         .with_state(state);
 
@@ -141,8 +296,11 @@ pub async fn start_web_server(net_service: Arc<NetworkService>, port: u16) -> Re
     Ok(())
 }
 
-async fn serve_dashboard() -> Html<&'static str> {
-    Html(ui::DASHBOARD_HTML)
+async fn serve_dashboard() -> Html<String> {
+    let token = get_or_create_web_auth_token();
+    let injection = format!("<script>window.__MSMCONNECT_SESSION_TOKEN__ = \"{}\";</script>\n</head>", token);
+    let html = ui::DASHBOARD_HTML.replace("</head>", &injection);
+    Html(html)
 }
 
 async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
@@ -155,7 +313,6 @@ async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
     let is_connected = state.net_service.is_phone_connected().await;
     let connected_phone = state.net_service.get_connected_phone_name().await;
     let transfer_enabled = *state.net_service.transfer_enabled.lock().await;
-    let transfer_pin = state.net_service.transfer_session_pin.lock().await.clone();
     let transfer_authorized = *state.net_service.transfer_authorized.lock().await;
 
     Json(StatusResponse {
@@ -168,7 +325,6 @@ async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
         paired_phone: paired_phone_name,
         vault_exists: state.net_service.vault_mgr.exists(),
         transfer_enabled,
-        transfer_pin,
         transfer_authorized,
         is_bluetooth_active: state.net_service.is_pc_bluetooth_active(),
     })
@@ -220,15 +376,21 @@ async fn test_unlock(State(state): State<AppState>) -> Json<ApiResponse> {
                 success: true,
                 message: "Biometric challenge pushed to phone".into(),
             }),
-            Err(e) => Json(ApiResponse {
-                success: false,
-                message: e.to_string(),
-            }),
+            Err(e) => {
+                error!("Test unlock failed to push challenge: {e}");
+                Json(ApiResponse {
+                    success: false,
+                    message: "Failed to communicate with paired device".into(),
+                })
+            }
         },
-        Err(e) => Json(ApiResponse {
-            success: false,
-            message: format!("Failed to create challenge: {e}"),
-        }),
+        Err(e) => {
+            error!("Test unlock failed to create challenge: {e}");
+            Json(ApiResponse {
+                success: false,
+                message: "Failed to create biometric challenge".into(),
+            })
+        }
     }
 }
 
@@ -252,16 +414,100 @@ async fn lock_endpoint(State(state): State<AppState>) -> Json<ApiResponse> {
     })
 }
 
-async fn unlock_endpoint(State(state): State<AppState>) -> Json<ApiResponse> {
-    state.net_service.state_mgr.set_lock_state(crate::state::SessionLockState::Unlocked).await;
-    crate::network::unlock_pc_screen();
-    if let Some(tx) = &*state.net_service.active_client.lock().await {
-        let _ = tx.send(crate::protocol::ProtocolMessage::LockStateChanged { is_locked: false }).await;
+async fn unlock_endpoint(State(state): State<AppState>) -> (StatusCode, Json<ApiResponse>) {
+    // Direct arbitrary unlock without cryptographic biometric verification is strictly prevented.
+    // Initiates a real cryptographic biometric challenge and pushes to the enrolled phone.
+    match state
+        .net_service
+        .state_mgr
+        .create_challenge(&state.net_service.pc_name)
+        .await
+    {
+        Ok((challenge, _)) => match state.net_service.push_challenge(challenge).await {
+            Ok(_) => (
+                StatusCode::OK,
+                Json(ApiResponse {
+                    success: true,
+                    message: "Biometric challenge initiated. Please authenticate on your phone.".into(),
+                }),
+            ),
+            Err(e) => {
+                error!("Unlock request failed to push challenge: {e}");
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiResponse {
+                        success: false,
+                        message: "Failed to communicate with paired device".into(),
+                    }),
+                )
+            }
+        },
+        Err(e) => {
+            error!("Unlock request failed to create challenge: {e}");
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiResponse {
+                    success: false,
+                    message: "Failed to create biometric challenge".into(),
+                }),
+            )
+        }
     }
-    Json(ApiResponse {
-        success: true,
-        message: "PC Screen Unlocked successfully".into(),
-    })
+}
+
+async fn verify_unlock_endpoint(
+    State(state): State<AppState>,
+    Json(payload): Json<VerifyUnlockRequest>,
+) -> (StatusCode, Json<ApiResponse>) {
+    let now = chrono::Utc::now().timestamp();
+    let unlock_resp = crate::protocol::UnlockResponse {
+        challenge_id: payload.challenge_id,
+        signature_hex: payload.signature_hex,
+        biometric_type: payload.biometric_type.unwrap_or_else(|| "fingerprint".to_string()),
+        timestamp_epoch: payload.timestamp_epoch.unwrap_or(now),
+    };
+
+    match state.net_service.state_mgr.verify_unlock_response(unlock_resp).await {
+        Ok(res) => {
+            if res.success {
+                state.net_service.state_mgr.set_lock_state(crate::state::SessionLockState::Unlocked).await;
+                crate::network::unlock_pc_screen();
+                state.net_service.broadcast_event(crate::network::WebEvent::UnlockEvent {
+                    success: true,
+                    message: "Biometric signature verified. PC Screen Unlocked.".into(),
+                });
+                if let Some(tx) = &*state.net_service.active_client.lock().await {
+                    let _ = tx.send(crate::protocol::ProtocolMessage::LockStateChanged { is_locked: false }).await;
+                }
+                (
+                    StatusCode::OK,
+                    Json(ApiResponse {
+                        success: true,
+                        message: "Biometric signature verified. PC Screen Unlocked.".into(),
+                    }),
+                )
+            } else {
+                warn!("Biometric verification rejected: {}", res.message);
+                (
+                    StatusCode::UNAUTHORIZED,
+                    Json(ApiResponse {
+                        success: false,
+                        message: "Biometric verification failed".into(),
+                    }),
+                )
+            }
+        }
+        Err(e) => {
+            error!("Biometric verification error: {e}");
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(ApiResponse {
+                    success: false,
+                    message: "Biometric verification failed".into(),
+                }),
+            )
+        }
+    }
 }
 
 async fn save_password(
@@ -287,10 +533,13 @@ async fn save_password(
             success: true,
             message: "Password encrypted and saved into split-key vault".into(),
         }),
-        Err(e) => Json(ApiResponse {
-            success: false,
-            message: format!("Vault error: {e}"),
-        }),
+        Err(e) => {
+            error!("Vault save error: {e}");
+            Json(ApiResponse {
+                success: false,
+                message: "Failed to securely save password to vault".into(),
+            })
+        }
     }
 }
 
@@ -394,22 +643,24 @@ async fn send_file(
                         );
                     }
                     Err(e) => {
+                        error!("Send file error: {e}");
                         return (
                             StatusCode::BAD_REQUEST,
                             Json(ApiResponse {
                                 success: false,
-                                message: e.to_string(),
+                                message: "Failed to send file to phone".into(),
                             }),
                         );
                     }
                 }
             }
             Err(e) => {
+                error!("Multipart read file bytes error: {e}");
                 return (
                     StatusCode::BAD_REQUEST,
                     Json(ApiResponse {
                         success: false,
-                        message: format!("Failed to read file bytes: {e}"),
+                        message: "Failed to read file content".into(),
                     }),
                 );
             }
@@ -434,10 +685,13 @@ async fn send_text(
             success: true,
             message: "Text sent to phone".into(),
         }),
-        Err(e) => Json(ApiResponse {
-            success: false,
-            message: e.to_string(),
-        }),
+        Err(e) => {
+            error!("Send clipboard text error: {e}");
+            Json(ApiResponse {
+                success: false,
+                message: "Failed to send text to phone".into(),
+            })
+        }
     }
 }
 
@@ -456,7 +710,7 @@ async fn open_folder() -> Json<ApiResponse> {
     let _ = open::that(&p);
     Json(ApiResponse {
         success: true,
-        message: format!("Opened folder: {}", p.display()),
+        message: "Opened downloads folder".into(),
     })
 }
 

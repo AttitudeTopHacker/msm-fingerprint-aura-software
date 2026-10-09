@@ -31,7 +31,6 @@ pub struct DaemonStatus {
     pub paired_phone: Option<String>,
     pub vault_exists: bool,
     pub transfer_enabled: bool,
-    pub transfer_pin: String,
     pub transfer_authorized: bool,
     pub is_bluetooth_active: bool,
 }
@@ -63,7 +62,6 @@ async fn get_daemon_status(state: State<'_, AppStateWrapper>) -> Result<DaemonSt
     let is_connected = state.net_service.is_phone_connected().await;
     let connected_phone = state.net_service.get_connected_phone_name().await;
     let transfer_enabled = *state.net_service.transfer_enabled.lock().await;
-    let transfer_pin = state.net_service.transfer_session_pin.lock().await.clone();
     let transfer_authorized = *state.net_service.transfer_authorized.lock().await;
 
     Ok(DaemonStatus {
@@ -75,7 +73,6 @@ async fn get_daemon_status(state: State<'_, AppStateWrapper>) -> Result<DaemonSt
         paired_phone,
         vault_exists: state.vault_mgr.exists(),
         transfer_enabled,
-        transfer_pin,
         transfer_authorized,
         is_bluetooth_active: state.net_service.is_pc_bluetooth_active(),
     })
@@ -143,15 +140,16 @@ async fn lock_pc(state: State<'_, AppStateWrapper>) -> Result<CommandResult, Str
 
 #[tauri::command]
 async fn unlock_pc(state: State<'_, AppStateWrapper>) -> Result<CommandResult, String> {
-    state.net_service.state_mgr.set_lock_state(auralock_core::state::SessionLockState::Unlocked).await;
-    auralock_core::network::unlock_pc_screen();
-    if let Some(tx) = &*state.net_service.active_client.lock().await {
-        let _ = tx.send(auralock_core::protocol::ProtocolMessage::LockStateChanged { is_locked: false }).await;
+    match state.net_service.state_mgr.create_challenge(&state.net_service.pc_name).await {
+        Ok((challenge, _)) => match state.net_service.push_challenge(challenge).await {
+            Ok(_) => Ok(CommandResult {
+                success: true,
+                message: "Biometric challenge pushed to phone".into(),
+            }),
+            Err(e) => Err(format!("Device communication failed: {e}")),
+        },
+        Err(e) => Err(format!("Failed to create challenge: {e}")),
     }
-    Ok(CommandResult {
-        success: true,
-        message: "PC Screen Unlocked".into(),
-    })
 }
 
 #[tauri::command]
@@ -300,6 +298,11 @@ async fn get_received_files(state: State<'_, AppStateWrapper>) -> Result<Vec<Aur
 }
 
 #[tauri::command]
+fn get_api_auth_token() -> String {
+    auralock_core::web::get_or_create_web_auth_token().to_string()
+}
+
+#[tauri::command]
 async fn open_downloads_folder() -> Result<CommandResult, String> {
     let p = get_default_downloads_dir();
     let _ = open::that(&p);
@@ -365,6 +368,7 @@ fn main() {
             vault_mgr: Arc::clone(&vault_mgr),
         })
         .invoke_handler(tauri::generate_handler![
+            get_api_auth_token,
             get_daemon_status,
             get_pairing_qr,
             trigger_test_unlock,
