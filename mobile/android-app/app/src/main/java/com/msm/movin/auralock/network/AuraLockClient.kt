@@ -59,6 +59,26 @@ class AuraLockClient(
     private val incomingSizes = mutableMapOf<String, Long>()
     private val incomingBytesReceived = mutableMapOf<String, Long>()
     private val incomingLastProgressTime = mutableMapOf<String, Long>()
+    private val incomingLastActivityTime = mutableMapOf<String, Long>()
+
+    private fun pruneIdleIncomingTransfers() {
+        val now = System.currentTimeMillis()
+        val expiredIds = incomingLastActivityTime.filter { now - it.value > IDLE_TRANSFER_TIMEOUT_MS }.keys
+        for (id in expiredIds) {
+            val pair = incomingFiles.remove(id)
+            incomingSizes.remove(id)
+            incomingBytesReceived.remove(id)
+            incomingLastProgressTime.remove(id)
+            incomingLastActivityTime.remove(id)
+            if (pair != null) {
+                try {
+                    pair.second.close()
+                    pair.first.delete()
+                    Log.w(TAG, "Pruned timed out idle incoming transfer: $id (${pair.first.name})")
+                } catch (_: Throwable) {}
+            }
+        }
+    }
 
     /**
      * Sanitizes incoming filename against path traversal, null bytes, and malicious characters.
@@ -105,9 +125,10 @@ class AuraLockClient(
 
     companion object {
         private const val TAG = "AuraLockClient"
-        private const val MAX_FILE_SIZE_BYTES = 50L * 1024L * 1024L * 1024L // 50 GB
+        private const val MAX_FILE_SIZE_BYTES = 5L * 1024L * 1024L * 1024L // 5 GB
         private const val MAX_CHUNK_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
-        private const val MAX_CONCURRENT_TRANSFERS = 10
+        private const val MAX_CONCURRENT_TRANSFERS = 3
+        private const val IDLE_TRANSFER_TIMEOUT_MS = 45_000L // 45s idle transfer timeout
 
         suspend fun discoverPcIp(timeoutMs: Int = 2000): Pair<String, Int>? = withContext(Dispatchers.IO) {
             try {
@@ -353,6 +374,7 @@ class AuraLockClient(
                     }
                     "FileOffer" -> {
                         try {
+                            pruneIdleIncomingTransfers()
                             val payload = json.optJSONObject("payload") ?: continue
                             val fileId = payload.optString("file_id", "file_${UUID.randomUUID().toString().take(6)}")
                             val rawFileName = payload.optString("file_name", "received_file.bin")
@@ -360,13 +382,13 @@ class AuraLockClient(
                             val mimeType = payload.optString("mime_type", "application/octet-stream")
                             val senderName = payload.optString("sender_name", "PC")
 
-                            // Validate transfer bounds
+                            // Validate transfer bounds (5 GB cap, max 3 concurrent)
                             if (fileSize < 0 || fileSize > MAX_FILE_SIZE_BYTES) {
                                 Log.w(TAG, "Rejected file offer with invalid size: $fileSize bytes")
                                 continue
                             }
                             if (incomingFiles.size >= MAX_CONCURRENT_TRANSFERS) {
-                                Log.w(TAG, "Rejected file offer: maximum concurrent transfers reached")
+                                Log.w(TAG, "Rejected file offer: maximum concurrent transfers reached (${incomingFiles.size}/$MAX_CONCURRENT_TRANSFERS)")
                                 continue
                             }
 
@@ -384,6 +406,13 @@ class AuraLockClient(
                                 try { targetDir.mkdirs() } catch (_: Throwable) {}
                             }
 
+                            // Storage quota check: verify sufficient usable disk space on device
+                            val usable = targetDir.usableSpace
+                            if (fileSize > 0 && usable > 0 && usable < (fileSize + 100L * 1024L * 1024L)) {
+                                Log.w(TAG, "Rejected file offer: insufficient storage space ($usable bytes free, required $fileSize)")
+                                continue
+                            }
+
                             val targetFile = getUniqueTargetFile(targetDir, rawFileName)
                             val bos = try {
                                 BufferedOutputStream(FileOutputStream(targetFile), 256 * 1024)
@@ -398,6 +427,7 @@ class AuraLockClient(
                             incomingSizes[fileId] = fileSize
                             incomingBytesReceived[fileId] = 0L
                             incomingLastProgressTime[fileId] = 0L
+                            incomingLastActivityTime[fileId] = System.currentTimeMillis()
 
                             withContext(Dispatchers.Main) {
                                 onIncomingFileOffer(IncomingFileOfferEvent(fileId, targetFile.name, fileSize, mimeType, senderName))
@@ -408,6 +438,7 @@ class AuraLockClient(
                     }
                     "FileChunk" -> {
                         try {
+                            pruneIdleIncomingTransfers()
                             val payload = json.optJSONObject("payload") ?: continue
                             val fileId = payload.optString("file_id")
                             val chunkIndex = payload.optInt("chunk_index", 0)
@@ -425,6 +456,7 @@ class AuraLockClient(
                                 pair.second.write(bytes)
                                 val received = (incomingBytesReceived[fileId] ?: 0L) + bytes.size
                                 incomingBytesReceived[fileId] = received
+                                incomingLastActivityTime[fileId] = System.currentTimeMillis()
                                 val totalSize = incomingSizes[fileId] ?: 1L
 
                                 // Guard against runaway file transfer size
@@ -862,6 +894,18 @@ class AuraLockClient(
     fun disconnect() {
         isRunning = false
         heartbeatJob?.cancel()
+        // Clean up and delete any partial/incomplete files on disconnect
+        for ((_, pair) in incomingFiles) {
+            try {
+                pair.second.close()
+                pair.first.delete()
+            } catch (_: Throwable) {}
+        }
+        incomingFiles.clear()
+        incomingSizes.clear()
+        incomingBytesReceived.clear()
+        incomingLastProgressTime.clear()
+        incomingLastActivityTime.clear()
         try {
             socket?.close()
         } catch (_: Exception) {}

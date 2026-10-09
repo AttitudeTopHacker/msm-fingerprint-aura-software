@@ -16,7 +16,7 @@ use axum::{
     },
     http::StatusCode,
     middleware::{self, Next},
-    response::{Html, IntoResponse, Response},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -112,51 +112,139 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     diff == 0
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TicketScope {
+    Download(String),
+    WebSocketStream,
+}
+
+pub struct TicketEntry {
+    pub scope: TicketScope,
+    pub expires_at: std::time::Instant,
+}
+
+static TICKET_STORE: OnceLock<tokio::sync::Mutex<std::collections::HashMap<String, TicketEntry>>> = OnceLock::new();
+
+fn get_ticket_store() -> &'static tokio::sync::Mutex<std::collections::HashMap<String, TicketEntry>> {
+    TICKET_STORE.get_or_init(|| tokio::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Issues a scoped, single-use ticket valid for 60 seconds
+pub async fn issue_ticket(scope: TicketScope) -> String {
+    let mut bytes = [0u8; 16];
+    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut bytes);
+    let ticket = hex::encode(bytes);
+
+    let mut store = get_ticket_store().lock().await;
+    let now = std::time::Instant::now();
+    store.retain(|_, entry| entry.expires_at > now);
+
+    store.insert(
+        ticket.clone(),
+        TicketEntry {
+            scope,
+            expires_at: now + std::time::Duration::from_secs(60),
+        },
+    );
+    ticket
+}
+
+/// Consumes a scoped single-use ticket
+pub async fn consume_ticket(ticket: &str, expected_scope: &TicketScope) -> bool {
+    let mut store = get_ticket_store().lock().await;
+    let now = std::time::Instant::now();
+    if let Some(entry) = store.remove(ticket) {
+        if entry.expires_at >= now && &entry.scope == expected_scope {
+            return true;
+        }
+    }
+    false
+}
+
+fn check_request_headers_auth(req: &Request, expected_token: &str) -> bool {
+    let headers = req.headers();
+    if let Some(auth_hdr) = headers.get("x-msmconnect-auth").or_else(|| headers.get("x-auralock-auth")) {
+        if let Ok(token_str) = auth_hdr.to_str() {
+            if constant_time_eq(token_str.trim().as_bytes(), expected_token.as_bytes()) {
+                return true;
+            }
+        }
+    }
+    if let Some(auth_hdr) = headers.get("authorization") {
+        if let Ok(token_str) = auth_hdr.to_str() {
+            if let Some(bearer_token) = token_str.strip_prefix("Bearer ") {
+                if constant_time_eq(bearer_token.trim().as_bytes(), expected_token.as_bytes()) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 /// Axum Authentication Middleware
 /// Rejects unauthenticated requests to sensitive endpoints (e.g. /api/unlock, /api/lock, /api/vault/*, /api/events)
 async fn auth_middleware(
     req: Request,
     next: Next,
 ) -> Response {
-    let path = req.uri().path();
+    let path = req.uri().path().to_string();
 
-    // Whitelist public endpoints: root dashboard UI and basic status check (read-only system metadata)
-    if path == "/" || path == "/api/status" {
+    // Whitelist public endpoints: root dashboard UI
+    if path == "/" {
         return next.run(req).await;
     }
 
     let expected_token = get_or_create_web_auth_token();
 
-    // 1. Check custom auth header 'X-MsmConnect-Auth' or 'X-AuraLock-Auth'
-    let headers = req.headers();
-    if let Some(auth_hdr) = headers.get("x-msmconnect-auth").or_else(|| headers.get("x-auralock-auth")) {
-        if let Ok(token_str) = auth_hdr.to_str() {
-            if constant_time_eq(token_str.trim().as_bytes(), expected_token.as_bytes()) {
-                return next.run(req).await;
-            }
-        }
+    // 1. Check custom auth header 'X-MsmConnect-Auth' or 'X-AuraLock-Auth' or Bearer token
+    if check_request_headers_auth(&req, expected_token) {
+        return next.run(req).await;
     }
 
-    // 2. Check standard 'Authorization: Bearer <token>'
-    if let Some(auth_hdr) = headers.get("authorization") {
-        if let Ok(token_str) = auth_hdr.to_str() {
-            if let Some(bearer_token) = token_str.strip_prefix("Bearer ") {
-                if constant_time_eq(bearer_token.trim().as_bytes(), expected_token.as_bytes()) {
-                    return next.run(req).await;
-                }
-            }
-        }
+    // 2. Status API (Medium M-03): If unauthenticated, return minimal safe status without disclosing sensitive device metadata
+    if path == "/api/status" {
+        return (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "status": "online",
+                "app": "MsmConnect Control Center",
+                "version": "1.6.0",
+                "authenticated": false
+            })),
+        )
+            .into_response();
     }
 
-    // 3. Query parameter authentication is strictly restricted (Medium Issue M-03):
-    // Only accepted for WebSocket connection handshake (/api/events) and GET file downloads (/api/auradrop/download/*).
-    // All other JSON API endpoints (e.g. /api/unlock, /api/lock, /api/vault/*) MUST use HTTP headers.
-    let is_query_token_allowed = path == "/api/events" || path.starts_with("/api/auradrop/download/");
-    if is_query_token_allowed {
+    // 3. Query parameter ticket/token for WebSocket handshake and file downloads (Medium M-01)
+    if path == "/api/events" {
         if let Some(query) = req.uri().query() {
             for pair in query.split('&') {
                 if let Some((k, v)) = pair.split_once('=') {
-                    if (k == "token" || k == "auth_token") && constant_time_eq(v.trim().as_bytes(), expected_token.as_bytes()) {
+                    if k == "ticket" {
+                        if consume_ticket(v.trim(), &TicketScope::WebSocketStream).await {
+                            return next.run(req).await;
+                        }
+                    } else if (k == "token" || k == "auth_token") && constant_time_eq(v.trim().as_bytes(), expected_token.as_bytes()) {
+                        return next.run(req).await;
+                    }
+                }
+            }
+        }
+    } else if path.starts_with("/api/auradrop/download/") {
+        let requested_filename = path.strip_prefix("/api/auradrop/download/").unwrap_or_default().to_string();
+        let safe_name = std::path::Path::new(&requested_filename)
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if let Some(query) = req.uri().query() {
+            for pair in query.split('&') {
+                if let Some((k, v)) = pair.split_once('=') {
+                    if k == "ticket" {
+                        if consume_ticket(v.trim(), &TicketScope::Download(safe_name.clone())).await {
+                            return next.run(req).await;
+                        }
+                    } else if (k == "token" || k == "auth_token") && constant_time_eq(v.trim().as_bytes(), expected_token.as_bytes()) {
                         return next.run(req).await;
                     }
                 }
@@ -202,6 +290,18 @@ pub struct QrResponse {
 }
 
 #[derive(Deserialize)]
+pub struct CreateDownloadTicketRequest {
+    pub filename: String,
+}
+
+#[derive(Serialize)]
+pub struct TicketResponse {
+    pub success: bool,
+    pub ticket: String,
+    pub expires_in_seconds: u64,
+}
+
+#[derive(Deserialize)]
 pub struct SavePasswordRequest {
     pub password: String,
 }
@@ -240,6 +340,30 @@ pub struct ApiResponse {
     pub message: String,
 }
 
+async fn create_download_ticket(
+    Json(payload): Json<CreateDownloadTicketRequest>,
+) -> Json<TicketResponse> {
+    let safe_name = std::path::Path::new(&payload.filename)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let ticket = issue_ticket(TicketScope::Download(safe_name)).await;
+    Json(TicketResponse {
+        success: true,
+        ticket,
+        expires_in_seconds: 60,
+    })
+}
+
+async fn create_ws_ticket() -> Json<TicketResponse> {
+    let ticket = issue_ticket(TicketScope::WebSocketStream).await;
+    Json(TicketResponse {
+        success: true,
+        ticket,
+        expires_in_seconds: 60,
+    })
+}
+
 pub async fn start_web_server(net_service: Arc<NetworkService>, port: u16) -> Result<()> {
     // Initialize session authentication token
     let _ = get_or_create_web_auth_token();
@@ -264,6 +388,8 @@ pub async fn start_web_server(net_service: Arc<NetworkService>, port: u16) -> Re
         .route("/", get(serve_dashboard))
         .route("/api/status", get(get_status))
         .route("/api/qr", get(get_qr))
+        .route("/api/ticket/download", post(create_download_ticket))
+        .route("/api/ticket/ws", post(create_ws_ticket))
         .route("/api/pair/refresh", post(refresh_pairing))
         .route("/api/unlock/test", post(test_unlock))
         .route("/api/unlock/cancel", post(cancel_unlock_endpoint))
@@ -301,11 +427,31 @@ pub async fn start_web_server(net_service: Arc<NetworkService>, port: u16) -> Re
     Ok(())
 }
 
-async fn serve_dashboard() -> Html<String> {
+async fn serve_dashboard() -> Response {
     let token = get_or_create_web_auth_token();
-    let injection = format!("<script>window.__MSMCONNECT_SESSION_TOKEN__ = \"{}\";</script>\n</head>", token);
+    let mut nonce_bytes = [0u8; 16];
+    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut nonce_bytes);
+    let nonce = hex::encode(nonce_bytes);
+
+    let injection = format!("<script nonce=\"{}\">window.__MSMCONNECT_SESSION_TOKEN__ = \"{}\";</script>\n</head>", nonce, token);
     let html = ui::DASHBOARD_HTML.replace("</head>", &injection);
-    Html(html)
+
+    let csp = format!(
+        "default-src 'self'; script-src 'self' 'nonce-{}' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:* tauri://localhost https://tauri.localhost ipc:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';",
+        nonce
+    );
+
+    (
+        [
+            ("Content-Type", "text/html; charset=utf-8"),
+            ("Content-Security-Policy", &csp),
+            ("X-Content-Type-Options", "nosniff"),
+            ("X-Frame-Options", "DENY"),
+            ("Referrer-Policy", "no-referrer"),
+        ],
+        html,
+    )
+        .into_response()
 }
 
 async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {

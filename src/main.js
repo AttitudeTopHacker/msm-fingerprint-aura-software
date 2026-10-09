@@ -744,24 +744,54 @@ async function fetchReceivedFiles() {
       return;
     }
 
-    list.innerHTML = files.map(f => `
-      <div class="file-item">
-        <div class="file-info">
-          <div class="file-icon">📄</div>
-          <div class="file-details">
-            <h4>${escapeHtml(f.file_name)}</h4>
-            <p>${(f.file_size / 1024 / 1024).toFixed(2)} MB • From ${escapeHtml(f.sender_name || 'Phone')}</p>
+    list.innerHTML = files.map(f => {
+      const cleanName = escapeHtml(f.file_name).replace(/'/g, "\\'");
+      return `
+        <div class="file-item">
+          <div class="file-info">
+            <div class="file-icon">📄</div>
+            <div class="file-details">
+              <h4>${escapeHtml(f.file_name)}</h4>
+              <p>${(f.file_size / 1024 / 1024).toFixed(2)} MB • From ${escapeHtml(f.sender_name || 'Phone')}</p>
+            </div>
           </div>
+          <button onclick="window.downloadFileWithTicket('${cleanName}')" class="btn btn-secondary" style="padding: 6px 12px; cursor: pointer;">
+            ⬇️ Save
+          </button>
         </div>
-        <a href="http://127.0.0.1:47891/api/auradrop/download/${encodeURIComponent(f.file_name)}?token=${encodeURIComponent(apiAuthToken || window.__MSMCONNECT_SESSION_TOKEN__ || '')}" class="btn btn-secondary" style="padding: 6px 12px; text-decoration: none;" download>
-          ⬇️ Save
-        </a>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   } catch (e) {
     console.error("Fetch files error", e);
   }
 }
+
+window.downloadFileWithTicket = async function (fileName) {
+  try {
+    const token = getApiAuthToken();
+    const res = await fetch('http://127.0.0.1:47891/api/ticket/download', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-MsmConnect-Auth': token
+      },
+      body: JSON.stringify({ filename: fileName })
+    });
+    const data = await res.json();
+    if (data && data.ticket) {
+      const a = document.createElement('a');
+      a.href = `http://127.0.0.1:47891/api/auradrop/download/${encodeURIComponent(fileName)}?ticket=${encodeURIComponent(data.ticket)}`;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } else {
+      showToast("Could not generate download ticket", "⚠️");
+    }
+  } catch (e) {
+    showToast("Download failed", "❌");
+  }
+};
 
 window.openDownloadsFolder = async function () {
   try {
@@ -797,10 +827,21 @@ if (dropzone) {
   });
 }
 
-// WEBSOCKET
-function setupWebSocket() {
-  const token = getApiAuthToken();
-  const ws = new WebSocket(`ws://127.0.0.1:47891/api/events?token=${encodeURIComponent(token)}`);
+// WEBSOCKET (Scoped Ticket Authenticated)
+async function setupWebSocket() {
+  let wsUrl = 'ws://127.0.0.1:47891/api/events';
+  try {
+    const token = getApiAuthToken();
+    const res = await fetch('http://127.0.0.1:47891/api/ticket/ws', {
+      method: 'POST',
+      headers: { 'X-MsmConnect-Auth': token }
+    });
+    const data = await res.json();
+    if (data && data.ticket) {
+      wsUrl += `?ticket=${encodeURIComponent(data.ticket)}`;
+    }
+  } catch (_) {}
+  const ws = new WebSocket(wsUrl);
 
   ws.onmessage = (event) => {
     try {

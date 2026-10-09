@@ -739,6 +739,20 @@ impl NetworkService {
             ProtocolMessage::PairingReq(req) => {
                 info!("Received pairing request from phone: {}", req.phone_name);
 
+                // Prevent rogue device pairing takeover if PC is already paired
+                if self.vault_mgr.is_paired() {
+                    warn!("Rejected pairing request: PC is already paired with a device");
+                    let resp = ProtocolMessage::PairingResp(PairingResponse {
+                        success: false,
+                        pairing_id: String::new(),
+                        message: "PC is already paired with another phone. Please unpair from PC first.".into(),
+                    });
+                    if let Some(tx) = &*self.active_client.lock().await {
+                        let _ = tx.send(resp).await;
+                    }
+                    return Ok(());
+                }
+
                 // 1. Validate Phone Public Key format (must be valid 32 bytes / 64 hex characters)
                 let pubkey_bytes = match hex::decode(&req.phone_ed25519_pub_hex) {
                     Ok(b) if b.len() == 32 => b,
@@ -1298,6 +1312,10 @@ impl NetworkService {
                 }
             }
             ProtocolMessage::RemoteLockReq(_req) => {
+                if !self.vault_mgr.is_paired() {
+                    warn!("Rejected RemoteLockReq from unpaired client");
+                    return Ok(());
+                }
                 info!("Received manual remote lock request from phone");
                 self.state_mgr.set_lock_state(crate::state::SessionLockState::Locked).await;
                 lock_pc_screen();
@@ -1308,6 +1326,10 @@ impl NetworkService {
                 }
             }
             ProtocolMessage::UnlockTriggerReq(_req) => {
+                if !self.vault_mgr.is_paired() {
+                    warn!("Rejected UnlockTriggerReq from unpaired client");
+                    return Ok(());
+                }
                 info!("Received manual unlock trigger request from phone");
                 let is_locked = is_pc_screen_locked();
                 if !is_locked {

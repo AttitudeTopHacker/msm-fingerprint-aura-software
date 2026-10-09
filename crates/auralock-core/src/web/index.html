@@ -1635,22 +1635,48 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
           return;
         }
 
-        list.innerHTML = files.map(f => `
-          <div class="file-item">
-            <div class="file-info">
-              <div class="file-icon">📄</div>
-              <div class="file-details">
-                <h4>${escapeHtml(f.file_name)}</h4>
-                <p>${(f.file_size / 1024 / 1024).toFixed(2)} MB • From ${escapeHtml(f.sender_name || 'Phone')}</p>
+        list.innerHTML = files.map(f => {
+          const cleanName = escapeHtml(f.file_name).replace(/'/g, "\\'");
+          return `
+            <div class="file-item">
+              <div class="file-info">
+                <div class="file-icon">📄</div>
+                <div class="file-details">
+                  <h4>${escapeHtml(f.file_name)}</h4>
+                  <p>${(f.file_size / 1024 / 1024).toFixed(2)} MB • From ${escapeHtml(f.sender_name || 'Phone')}</p>
+                </div>
               </div>
+              <button onclick="downloadFileWithTicket('${cleanName}')" class="btn btn-secondary" style="padding: 6px 12px; cursor: pointer;">
+                ⬇️ Save
+              </button>
             </div>
-            <a href="/api/auradrop/download/${encodeURIComponent(f.file_name)}?token=${encodeURIComponent(window.__MSMCONNECT_SESSION_TOKEN__ || '')}" class="btn btn-secondary" style="padding: 6px 12px; text-decoration: none;">
-              ⬇️ Save
-            </a>
-          </div>
-        `).join('');
+          `;
+        }).join('');
       } catch (e) {
         console.error("Fetch files error", e);
+      }
+    }
+
+    async function downloadFileWithTicket(fileName) {
+      try {
+        const res = await fetch('/api/ticket/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: fileName })
+        });
+        const data = await res.json();
+        if (data && data.ticket) {
+          const a = document.createElement('a');
+          a.href = `/api/auradrop/download/${encodeURIComponent(fileName)}?ticket=${encodeURIComponent(data.ticket)}`;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        } else {
+          showToast("Could not generate download ticket", "⚠️");
+        }
+      } catch (e) {
+        showToast("Download failed", "❌");
       }
     }
 
@@ -1678,11 +1704,17 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       }
     });
 
-    // WebSocket / Event Stream Setup
-    function setupWebSocket() {
+    // WebSocket / Event Stream Setup (Scoped Ticket Authenticated)
+    async function setupWebSocket() {
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const token = window.__MSMCONNECT_SESSION_TOKEN__ || '';
-      const wsUrl = `${protocol}//${location.host}/api/events?token=${encodeURIComponent(token)}`;
+      let wsUrl = `${protocol}//${location.host}/api/events`;
+      try {
+        const res = await fetch('/api/ticket/ws', { method: 'POST' });
+        const data = await res.json();
+        if (data && data.ticket) {
+          wsUrl += `?ticket=${encodeURIComponent(data.ticket)}`;
+        }
+      } catch (_) {}
       const ws = new WebSocket(wsUrl);
 
       ws.onmessage = (event) => {
