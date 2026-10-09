@@ -100,7 +100,21 @@ pub struct NetworkService {
     pub transfer_enabled: Arc<Mutex<bool>>,
     pub transfer_session_pin: Arc<Mutex<String>>,
     pub transfer_authorized: Arc<Mutex<bool>>,
+    pub failed_pairing_attempts: Arc<Mutex<u32>>,
+    pub pairing_lockout_until: Arc<Mutex<Option<std::time::Instant>>>,
+    pub pairing_pin_created_at: Arc<Mutex<Option<std::time::Instant>>>,
     incoming_transfers: Arc<Mutex<HashMap<String, IncomingTransfer>>>,
+}
+
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }
 
 pub fn get_default_downloads_dir() -> PathBuf {
@@ -184,6 +198,9 @@ impl NetworkService {
             transfer_enabled: Arc::new(Mutex::new(false)),
             transfer_session_pin: Arc::new(Mutex::new(default_transfer_pin)),
             transfer_authorized: Arc::new(Mutex::new(false)),
+            failed_pairing_attempts: Arc::new(Mutex::new(0)),
+            pairing_lockout_until: Arc::new(Mutex::new(None)),
+            pairing_pin_created_at: Arc::new(Mutex::new(None)),
             incoming_transfers: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -289,6 +306,8 @@ impl NetworkService {
     pub async fn set_pairing_pin(&self, pin: String) {
         let mut guard = self.active_pairing_pin.lock().await;
         *guard = Some(pin.clone());
+        let mut created_guard = self.pairing_pin_created_at.lock().await;
+        *created_guard = Some(std::time::Instant::now());
         let mut pins_guard = self.recent_pairing_pins.lock().await;
         pins_guard.push(pin);
         if pins_guard.len() > 10 {
@@ -737,6 +756,46 @@ impl NetworkService {
                     }
                 };
 
+                // Check pairing rate limit / brute-force lockout
+                {
+                    let lockout_guard = self.pairing_lockout_until.lock().await;
+                    if let Some(until) = *lockout_guard {
+                        let now = std::time::Instant::now();
+                        if now < until {
+                            let remaining = until.duration_since(now).as_secs();
+                            warn!("Rejected pairing request: rate limited / locked out for {} more seconds", remaining);
+                            let resp = ProtocolMessage::PairingResp(PairingResponse {
+                                success: false,
+                                pairing_id: String::new(),
+                                message: format!("Too many failed pairing attempts. Please wait {} seconds before trying again.", remaining),
+                            });
+                            if let Some(tx) = &*self.active_client.lock().await {
+                                let _ = tx.send(resp).await;
+                            }
+                            return Ok(());
+                        }
+                    }
+                }
+
+                // Check pairing PIN expiration (TTL 5 minutes / 300 seconds)
+                {
+                    let created_guard = self.pairing_pin_created_at.lock().await;
+                    if let Some(created) = *created_guard {
+                        if created.elapsed().as_secs() > 300 {
+                            warn!("Rejected pairing request: pairing PIN has expired (TTL 300s)");
+                            let resp = ProtocolMessage::PairingResp(PairingResponse {
+                                success: false,
+                                pairing_id: String::new(),
+                                message: "Pairing session has expired. Please refresh the QR code on your PC screen.".into(),
+                            });
+                            if let Some(tx) = &*self.active_client.lock().await {
+                                let _ = tx.send(resp).await;
+                            }
+                            return Ok(());
+                        }
+                    }
+                }
+
                 let active_pin = self.active_pairing_pin.lock().await.clone();
                 let recent_pins = self.recent_pairing_pins.lock().await.clone();
                 let latest_qr_pin = self.latest_qr_data.lock().await.as_ref().map(|q| q.pin.clone());
@@ -749,17 +808,24 @@ impl NetworkService {
                 let pin_matches = if req_pin.is_empty() {
                     false
                 } else if let Some(ref p) = active_pin_clean {
-                    p == &req_pin || recent_pins_clean.contains(&req_pin) || qr_pin_clean.as_ref() == Some(&req_pin) || req.pin.trim() == p
+                    constant_time_eq(p.as_bytes(), req_pin.as_bytes())
                 } else if !recent_pins_clean.is_empty() {
-                    recent_pins_clean.contains(&req_pin) || recent_pins.contains(&req.pin)
+                    recent_pins_clean.iter().any(|p| constant_time_eq(p.as_bytes(), req_pin.as_bytes()))
                 } else if let Some(ref qp) = qr_pin_clean {
-                    qp == &req_pin || latest_qr_pin.as_ref() == Some(&req.pin)
+                    constant_time_eq(qp.as_bytes(), req_pin.as_bytes())
                 } else {
                     // Fail closed: No active QR pairing session exists on PC
                     false
                 };
 
                 if pin_matches {
+                    // Reset failed attempt counter on successful pairing
+                    {
+                        let mut failed = self.failed_pairing_attempts.lock().await;
+                        *failed = 0;
+                        let mut lockout = self.pairing_lockout_until.lock().await;
+                        *lockout = None;
+                    }
                     let now = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
@@ -820,11 +886,23 @@ impl NetworkService {
                         phone_name: req.phone_name,
                     });
                 } else {
-                    warn!("Pairing PIN mismatch from phone (received: '{}')", req.pin);
+                    let mut failed = self.failed_pairing_attempts.lock().await;
+                    *failed += 1;
+                    let current_failed = *failed;
+                    if current_failed >= 5 {
+                        let mut lockout = self.pairing_lockout_until.lock().await;
+                        *lockout = Some(std::time::Instant::now() + std::time::Duration::from_secs(60));
+                        warn!("Max pairing PIN attempts exceeded (5). Locking out pairing for 60s");
+                    }
+                    warn!("Pairing PIN mismatch from phone (attempt {}/5)", current_failed);
                     let resp = ProtocolMessage::PairingResp(PairingResponse {
                         success: false,
                         pairing_id: String::new(),
-                        message: format!("Pairing PIN '{}' was rejected by PC. Please check the PIN on your PC screen.", req.pin),
+                        message: if current_failed >= 5 {
+                            "Too many failed pairing attempts. Locked out for 60 seconds.".into()
+                        } else {
+                            format!("Pairing PIN was rejected by PC ({}/5 attempts). Please check the PIN on your PC screen.", current_failed)
+                        },
                     });
                     if let Some(tx) = &*self.active_client.lock().await {
                         let _ = tx.send(resp).await;
@@ -912,6 +990,21 @@ impl NetworkService {
                     return Ok(());
                 }
 
+                // Enforce max concurrent active transfers limit (10)
+                let active_count = self.incoming_transfers.lock().await.len();
+                if active_count >= 10 {
+                    warn!("Rejected FileOffer: max concurrent transfers reached ({}/10)", active_count);
+                    let reject = ProtocolMessage::FileAccept(FileTransferAccept {
+                        file_id: offer.file_id,
+                        accepted: false,
+                        message: Some("Max concurrent transfers limit (10) reached. Please retry later.".into()),
+                    });
+                    if let Some(tx) = &*self.active_client.lock().await {
+                        let _ = tx.send(reject).await;
+                    }
+                    return Ok(());
+                }
+
                 info!("Incoming AuraDrop file offer from {}: {} ({} bytes)", offer.sender_name, offer.file_name, offer.file_size);
                 let downloads_dir = get_default_downloads_dir();
                 
@@ -971,45 +1064,92 @@ impl NetworkService {
                 }
             }
             ProtocolMessage::FileChunk(chunk) => {
+                // Enforce chunk payload size cap (15 MB base64 data max)
+                if chunk.data_base64.len() > 15 * 1024 * 1024 {
+                    warn!("Aborting transfer {}: incoming chunk exceeds 15 MB limit", chunk.file_id);
+                    let mut guard = self.incoming_transfers.lock().await;
+                    if let Some(transfer) = guard.remove(&chunk.file_id) {
+                        drop(transfer.file_handle);
+                        let _ = tokio::fs::remove_file(&transfer.local_path).await;
+                        self.broadcast_event(WebEvent::FileTransferCompleted {
+                            file_id: chunk.file_id.clone(),
+                            file_name: transfer.file_name,
+                            is_incoming: true,
+                            success: false,
+                            message: "Transfer aborted: chunk exceeded 15 MB limit".into(),
+                            local_path: None,
+                        });
+                    }
+                    return Ok(());
+                }
+
                 let engine = base64::engine::general_purpose::STANDARD;
                 let decoded_bytes = engine.decode(&chunk.data_base64).unwrap_or_default();
                 let mut completed_info: Option<AuraDropReceivedFile> = None;
+                let mut runaway_detected = false;
+                let mut runaway_file_name = String::new();
+                let mut runaway_path = PathBuf::new();
 
                 {
                     let mut guard = self.incoming_transfers.lock().await;
                     if let Some(transfer) = guard.get_mut(&chunk.file_id) {
-                        let _ = transfer.file_handle.write_all(&decoded_bytes).await;
-                        transfer.bytes_received += decoded_bytes.len() as u64;
+                        // Runaway transfer protection: incoming bytes exceed declared file_size + margin
+                        if transfer.bytes_received + decoded_bytes.len() as u64 > transfer.file_size + 1024 * 1024 {
+                            runaway_detected = true;
+                            runaway_file_name = transfer.file_name.clone();
+                            runaway_path = transfer.local_path.clone();
+                        } else {
+                            let _ = transfer.file_handle.write_all(&decoded_bytes).await;
+                            transfer.bytes_received += decoded_bytes.len() as u64;
 
-                        let progress = (transfer.bytes_received as f32) / (transfer.file_size.max(1) as f32);
-                        let is_final = chunk.chunk_index + 1 >= chunk.total_chunks || transfer.bytes_received >= transfer.file_size;
+                            let progress = (transfer.bytes_received as f32) / (transfer.file_size.max(1) as f32);
+                            let is_final = chunk.chunk_index + 1 >= chunk.total_chunks || transfer.bytes_received >= transfer.file_size;
 
-                        if transfer.last_broadcast_time.elapsed() >= std::time::Duration::from_millis(60) || is_final {
-                            transfer.last_broadcast_time = std::time::Instant::now();
-                            self.broadcast_event(WebEvent::FileTransferProgress {
-                                file_id: chunk.file_id.clone(),
-                                file_name: transfer.file_name.clone(),
-                                is_incoming: true,
-                                progress,
-                                bytes_transferred: transfer.bytes_received,
-                                total_bytes: transfer.file_size,
-                            });
-                        }
+                            if transfer.last_broadcast_time.elapsed() >= std::time::Duration::from_millis(60) || is_final {
+                                transfer.last_broadcast_time = std::time::Instant::now();
+                                self.broadcast_event(WebEvent::FileTransferProgress {
+                                    file_id: chunk.file_id.clone(),
+                                    file_name: transfer.file_name.clone(),
+                                    is_incoming: true,
+                                    progress,
+                                    bytes_transferred: transfer.bytes_received,
+                                    total_bytes: transfer.file_size,
+                                });
+                            }
 
-                        if is_final {
-                            let _ = transfer.file_handle.flush().await;
-                            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
-                            completed_info = Some(AuraDropReceivedFile {
-                                file_id: chunk.file_id.clone(),
-                                file_name: transfer.file_name.clone(),
-                                file_size: transfer.bytes_received,
-                                mime_type: transfer.mime_type.clone(),
-                                sender_name: transfer.sender_name.clone(),
-                                local_path: transfer.local_path.to_string_lossy().to_string(),
-                                timestamp_epoch: now,
-                            });
+                            if is_final {
+                                let _ = transfer.file_handle.flush().await;
+                                let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+                                completed_info = Some(AuraDropReceivedFile {
+                                    file_id: chunk.file_id.clone(),
+                                    file_name: transfer.file_name.clone(),
+                                    file_size: transfer.bytes_received,
+                                    mime_type: transfer.mime_type.clone(),
+                                    sender_name: transfer.sender_name.clone(),
+                                    local_path: transfer.local_path.to_string_lossy().to_string(),
+                                    timestamp_epoch: now,
+                                });
+                            }
                         }
                     }
+                }
+
+                if runaway_detected {
+                    warn!("Aborting transfer {}: received bytes exceeded declared size", chunk.file_id);
+                    let mut transfers_guard = self.incoming_transfers.lock().await;
+                    if let Some(transfer) = transfers_guard.remove(&chunk.file_id) {
+                        drop(transfer.file_handle);
+                    }
+                    let _ = tokio::fs::remove_file(&runaway_path).await;
+                    self.broadcast_event(WebEvent::FileTransferCompleted {
+                        file_id: chunk.file_id.clone(),
+                        file_name: runaway_file_name,
+                        is_incoming: true,
+                        success: false,
+                        message: "Transfer aborted: byte count exceeded declared file size".into(),
+                        local_path: None,
+                    });
+                    return Ok(());
                 }
 
                 if let Some(info) = completed_info {

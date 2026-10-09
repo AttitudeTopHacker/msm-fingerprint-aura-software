@@ -88,7 +88,7 @@ fun QrScannerView(
             try {
                 launcher.launch(Manifest.permission.CAMERA)
             } catch (e: Throwable) {
-                e.printStackTrace()
+                android.util.Log.w("QrScannerView", "Camera permission launch failed: ${e.message}")
             }
         }
     }
@@ -139,7 +139,7 @@ fun QrScannerView(
                         try {
                             launcher.launch(Manifest.permission.CAMERA)
                         } catch (e: Throwable) {
-                            e.printStackTrace()
+                            android.util.Log.w("QrScannerView", "Camera launch error: ${e.message}")
                             try {
                                 val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                                     data = android.net.Uri.fromParts("package", context.packageName, null)
@@ -197,7 +197,7 @@ private fun CameraPreviewWithScanner(
                 .build()
             BarcodeScanning.getClient(barcodeOptions)
         } catch (e: Throwable) {
-            e.printStackTrace()
+            android.util.Log.w("QrScannerView", "BarcodeScanner init error: ${e.message}")
             null
         }
     }
@@ -318,7 +318,7 @@ private fun CameraPreviewWithScanner(
                                         imageAnalysis
                                     )
                                 } catch (e: Throwable) {
-                                    e.printStackTrace()
+                                    android.util.Log.w("QrScannerView", "Camera binding error: ${e.message}")
                                     try {
                                         ContextCompat.getMainExecutor(context).execute {
                                             cameraError = "Could not initialize camera: ${e.localizedMessage ?: "Hardware busy or unavailable"}"
@@ -327,7 +327,7 @@ private fun CameraPreviewWithScanner(
                                 }
                             }, ContextCompat.getMainExecutor(ctx))
                         } catch (e: Throwable) {
-                            e.printStackTrace()
+                            android.util.Log.w("QrScannerView", "Camera provider error: ${e.message}")
                             cameraError = "Camera provider initialization failed: ${e.localizedMessage ?: "Unknown error"}"
                         }
 

@@ -44,8 +44,7 @@ data class ParsedQrData(
                 } else {
                     null
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } catch (_: Exception) {
                 null
             }
         }

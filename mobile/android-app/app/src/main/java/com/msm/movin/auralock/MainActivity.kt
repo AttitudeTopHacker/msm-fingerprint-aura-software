@@ -96,6 +96,10 @@ class MainActivity : FragmentActivity() {
         getSharedPreferences("auralock_paired_prefs", Context.MODE_PRIVATE)
     }
 
+    private val secureStorage by lazy {
+        com.msm.movin.auralock.crypto.SecureStorage(applicationContext)
+    }
+
     private val receivedFiles = mutableStateListOf<AuraDropFileItem>()
     private var transferState by mutableStateOf(AuraDropTransferState())
     private var showTransferDialogState by mutableStateOf(false)
@@ -235,12 +239,12 @@ class MainActivity : FragmentActivity() {
                         val removeBondMethod = device.javaClass.getMethod("removeBond")
                         removeBondMethod.invoke(device)
                     } catch (e: Exception) {
-                        e.printStackTrace()
+                        android.util.Log.w("MainActivity", "removeBond error: ${e.message}")
                     }
                 }
             }
         } catch (e: Throwable) {
-            e.printStackTrace()
+            android.util.Log.w("MainActivity", "Bluetooth unpair scan error: ${e.message}")
         }
     }
 
@@ -260,13 +264,11 @@ class MainActivity : FragmentActivity() {
         statusMessageState = "Ready to link with PC"
         isUserManuallyDisconnected = true
 
-        prefs.edit()
-            .putBoolean("is_paired", false)
-            .putBoolean("is_pc_locked", false)
-            .remove("pc_name")
-            .remove("pc_ip")
-            .remove("pc_port")
-            .apply()
+        secureStorage.putBoolean("is_paired", false)
+        secureStorage.putBoolean("is_pc_locked", false)
+        secureStorage.remove("pc_name")
+        secureStorage.remove("pc_ip")
+        secureStorage.remove("pc_port")
 
         AuraLockService.stop(this)
         unpairBluetoothDevices(targetName)
@@ -296,7 +298,7 @@ class MainActivity : FragmentActivity() {
                 registerReceiver(bluetoothReceiver, btFilter)
             }
         } catch (e: Throwable) {
-            e.printStackTrace()
+            android.util.Log.w("MainActivity", "Bluetooth receiver setup error: ${e.message}")
         }
 
         // Real-time Network Connectivity Callback
@@ -327,7 +329,7 @@ class MainActivity : FragmentActivity() {
             }
             networkCallback?.let { cm?.registerNetworkCallback(request, it) }
         } catch (e: Throwable) {
-            e.printStackTrace()
+            android.util.Log.w("MainActivity", "Network callback error: ${e.message}")
         }
     }
 
@@ -336,31 +338,31 @@ class MainActivity : FragmentActivity() {
             bluetoothReceiver?.let { unregisterReceiver(it) }
             bluetoothReceiver = null
         } catch (e: Throwable) {
-            e.printStackTrace()
+            android.util.Log.w("MainActivity", "Bluetooth receiver unregister error: ${e.message}")
         }
         try {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             networkCallback?.let { cm?.unregisterNetworkCallback(it) }
             networkCallback = null
         } catch (e: Throwable) {
-            e.printStackTrace()
+            android.util.Log.w("MainActivity", "Network callback unregister error: ${e.message}")
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
-            isPairedState = prefs.getBoolean("is_paired", false)
-            isPcLockedState = prefs.getBoolean("is_pc_locked", false)
-            pcNameState = prefs.getString("pc_name", "") ?: ""
-            pcIpState = prefs.getString("pc_ip", "") ?: ""
-            pcPortState = prefs.getInt("pc_port", 47890)
+            isPairedState = secureStorage.getBoolean("is_paired", false)
+            isPcLockedState = secureStorage.getBoolean("is_pc_locked", false)
+            pcNameState = secureStorage.getSecureString("pc_name", "")
+            pcIpState = secureStorage.getSecureString("pc_ip", "")
+            pcPortState = secureStorage.getInt("pc_port", 47890)
             isBluetoothEnabledState.value = isBluetoothEnabled()
             networkTransportState.value = getNetworkTransportStatus()
             biometricPrompt = BiometricAuthPrompt(this)
             setupRealtimeReceivers()
         } catch (e: Throwable) {
-            e.printStackTrace()
+            android.util.Log.w("MainActivity", "onCreate state restoration error: ${e.message}")
         }
 
         setContent {
@@ -372,7 +374,7 @@ class MainActivity : FragmentActivity() {
         try {
             handleShareIntent(intent)
         } catch (e: Throwable) {
-            e.printStackTrace()
+            android.util.Log.w("MainActivity", "handleShareIntent error: ${e.message}")
         }
     }
 
@@ -436,7 +438,7 @@ class MainActivity : FragmentActivity() {
                 }
                 startActivityForResult(Intent.createChooser(intent, "Select Files"), FILE_PICKER_RC)
                 launched = true
-            } catch (e: Throwable) { e.printStackTrace() }
+            } catch (e: Throwable) { android.util.Log.w("MainActivity", "File picker error: ${e.message}") }
         }
 
         // Fallback: ACTION_OPEN_DOCUMENT (SAF — always available, no permission needed)
@@ -450,7 +452,7 @@ class MainActivity : FragmentActivity() {
                 }
                 startActivityForResult(intent, FILE_PICKER_RC)
                 launched = true
-            } catch (e: Throwable) { e.printStackTrace() }
+            } catch (e: Throwable) { android.util.Log.w("MainActivity", "Open document error: ${e.message}") }
         }
 
         if (!launched) {
@@ -476,7 +478,7 @@ class MainActivity : FragmentActivity() {
                 }
                 startActivityForResult(intent, MEDIA_PICKER_RC)
                 launched = true
-            } catch (e: Throwable) { e.printStackTrace() }
+            } catch (e: Throwable) { android.util.Log.w("MainActivity", "Photo picker error: ${e.message}") }
         }
 
         // Fallback: ACTION_GET_CONTENT for images+videos
@@ -491,7 +493,7 @@ class MainActivity : FragmentActivity() {
                 }
                 startActivityForResult(Intent.createChooser(intent, "Select Photos & Videos"), MEDIA_PICKER_RC)
                 launched = true
-            } catch (e: Throwable) { e.printStackTrace() }
+            } catch (e: Throwable) { android.util.Log.w("MainActivity", "Get content error: ${e.message}") }
         }
 
         // Fallback: ACTION_PICK from MediaStore
@@ -502,7 +504,7 @@ class MainActivity : FragmentActivity() {
                 }
                 startActivityForResult(intent, MEDIA_PICKER_RC)
                 launched = true
-            } catch (e: Throwable) { e.printStackTrace() }
+            } catch (e: Throwable) { android.util.Log.w("MainActivity", "Pick media error: ${e.message}") }
         }
 
         if (!launched) {
@@ -513,33 +515,40 @@ class MainActivity : FragmentActivity() {
 
     private fun handleShareIntent(intent: Intent?) {
         if (intent == null) return
-        when (intent.action) {
-            Intent.ACTION_SEND -> {
-                val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableExtra(Intent.EXTRA_STREAM)
-                }
-                val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+        try {
+            when (intent.action) {
+                Intent.ACTION_SEND -> {
+                    val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                    }
+                    val text = intent.getStringExtra(Intent.EXTRA_TEXT)
 
-                if (uri != null) {
-                    sendAuraDropFiles(listOf(uri))
-                } else if (!text.isNullOrBlank()) {
-                    sendAuraDropClipboard(text)
+                    if (uri != null && (uri.scheme == "content" || uri.scheme == "file")) {
+                        sendAuraDropFiles(listOf(uri))
+                    } else if (!text.isNullOrBlank()) {
+                        sendAuraDropClipboard(text.take(1_000_000))
+                    }
+                }
+                Intent.ACTION_SEND_MULTIPLE -> {
+                    val uris = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
+                    }
+                    if (!uris.isNullOrEmpty()) {
+                        val validUris = uris.filter { it.scheme == "content" || it.scheme == "file" }.take(50)
+                        if (validUris.isNotEmpty()) {
+                            sendAuraDropFiles(validUris)
+                        }
+                    }
                 }
             }
-            Intent.ACTION_SEND_MULTIPLE -> {
-                val uris = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
-                }
-                if (!uris.isNullOrEmpty()) {
-                    sendAuraDropFiles(uris)
-                }
-            }
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "Failed to process external share intent: ${e.message}")
         }
     }
 
@@ -602,7 +611,7 @@ class MainActivity : FragmentActivity() {
                         )
                     )
                 } catch (e: Throwable) {
-                    e.printStackTrace()
+                    android.util.Log.w("MainActivity", "Bluetooth permission launch error: ${e.message}")
                 }
             } else {
                 val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
@@ -716,7 +725,7 @@ class MainActivity : FragmentActivity() {
                         client?.sendUnpairRequest()
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    android.util.Log.w("MainActivity", "Unpair request error: ${e.message}")
                 }
                 performLocalUnpairCleanUp()
                 Toast.makeText(this@MainActivity, "Device Unpaired Successfully", Toast.LENGTH_SHORT).show()
@@ -738,12 +747,10 @@ class MainActivity : FragmentActivity() {
                                 pcPortState = qrData.port
                                 statusMessageState = "Paired & Listening for Lockscreen"
 
-                                prefs.edit()
-                                    .putString("pc_name", qrData.pcName)
-                                    .putString("pc_ip", qrData.ip)
-                                    .putInt("pc_port", qrData.port)
-                                    .putBoolean("is_paired", true)
-                                    .apply()
+                                secureStorage.putSecureString("pc_name", qrData.pcName)
+                                secureStorage.putSecureString("pc_ip", qrData.ip)
+                                secureStorage.putInt("pc_port", qrData.port)
+                                secureStorage.putBoolean("is_paired", true)
                             } else if (state.errorMessage != null) {
                                 isConnectedState = false
                                 statusMessageState = state.errorMessage
@@ -993,7 +1000,7 @@ class MainActivity : FragmentActivity() {
                         try {
                             requestAllPermissionsLauncher.launch(missing.toTypedArray())
                         } catch (e: Throwable) {
-                            e.printStackTrace()
+                            android.util.Log.w("MainActivity", "Permission launch error: ${e.message}")
                             try {
                                 val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                                     data = Uri.fromParts("package", packageName, null)
@@ -1105,12 +1112,10 @@ class MainActivity : FragmentActivity() {
                             pcPortState = qrData.port
                             statusMessageState = "Paired & Listening for Lockscreen"
 
-                            prefs.edit()
-                                .putString("pc_name", qrData.pcName)
-                                .putString("pc_ip", qrData.ip)
-                                .putInt("pc_port", qrData.port)
-                                .putBoolean("is_paired", true)
-                                .apply()
+                            secureStorage.putSecureString("pc_name", qrData.pcName)
+                            secureStorage.putSecureString("pc_ip", qrData.ip)
+                            secureStorage.putInt("pc_port", qrData.port)
+                            secureStorage.putBoolean("is_paired", true)
                         } else if (state.errorMessage != null) {
                             isConnectedState = false
                             statusMessageState = state.errorMessage
@@ -2913,7 +2918,7 @@ class MainActivity : FragmentActivity() {
                         successCount++
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    android.util.Log.w("MainActivity", "Send file error: ${e.message}")
                 }
             }
 
@@ -3246,12 +3251,10 @@ class MainActivity : FragmentActivity() {
                 pcPortState = qrData.port
                 isUserManuallyDisconnected = false
 
-                prefs.edit()
-                    .putBoolean("is_paired", true)
-                    .putString("pc_name", qrData.pcName)
-                    .putString("pc_ip", qrData.ip)
-                    .putInt("pc_port", qrData.port)
-                    .apply()
+                secureStorage.putBoolean("is_paired", true)
+                secureStorage.putSecureString("pc_name", qrData.pcName)
+                secureStorage.putSecureString("pc_ip", qrData.ip)
+                secureStorage.putInt("pc_port", qrData.port)
 
                 AuraLockService.start(this@MainActivity, qrData.pcName)
                 onProgress(ConnectionProgressState(isConnecting = false, step = ConnectionStep.SECURE_TUNNEL_ACTIVE))
@@ -3340,7 +3343,7 @@ class MainActivity : FragmentActivity() {
             challengeTimerJob?.cancel()
             challengeRemainingSecondsState = 0
             activeChallengeEvent = null
-            e.printStackTrace()
+            android.util.Log.w("MainActivity", "Biometric error: ${e.message}")
             Toast.makeText(this, "Biometric Error: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }

@@ -17,6 +17,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -30,6 +31,7 @@ import com.msm.movin.auralock.MainActivity
 class AuraLockService : Service() {
 
     companion object {
+        private const val TAG = "AuraLockService"
         const val CHANNEL_ID = "auralock_service_channel"
         const val NOTIFICATION_ID = 47891
 
@@ -62,7 +64,7 @@ class AuraLockService : Service() {
                     context.startService(intent)
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.w(TAG, "Failed to start foreground service: ${e.message}")
             }
         }
 
@@ -77,7 +79,7 @@ class AuraLockService : Service() {
             try {
                 context.startService(intent)
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.w(TAG, "Failed to update transfer notification: ${e.message}")
             }
         }
 
@@ -90,7 +92,7 @@ class AuraLockService : Service() {
             try {
                 context.startService(intent)
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.w(TAG, "Failed to update status notification: ${e.message}")
             }
         }
 
@@ -181,7 +183,7 @@ class AuraLockService : Service() {
                 wakeLock?.acquire(24 * 60 * 60 * 1000L)
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "Failed to acquire wake lock: ${e.message}")
         }
 
         try {
@@ -201,7 +203,7 @@ class AuraLockService : Service() {
                 wifiLock?.acquire()
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "Failed to acquire wifi lock: ${e.message}")
         }
     }
 
@@ -212,7 +214,7 @@ class AuraLockService : Service() {
             }
             wakeLock = null
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "Failed to release wake lock: ${e.message}")
         }
 
         try {
@@ -221,7 +223,7 @@ class AuraLockService : Service() {
             }
             wifiLock = null
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "Failed to release wifi lock: ${e.message}")
         }
     }
 

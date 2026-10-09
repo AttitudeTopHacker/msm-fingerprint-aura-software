@@ -113,15 +113,15 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 /// Axum Authentication Middleware
-/// Rejects unauthenticated requests to sensitive endpoints (e.g. /api/unlock, /api/lock, /api/vault/*)
+/// Rejects unauthenticated requests to sensitive endpoints (e.g. /api/unlock, /api/lock, /api/vault/*, /api/events)
 async fn auth_middleware(
     req: Request,
     next: Next,
 ) -> Response {
     let path = req.uri().path();
 
-    // Whitelist public endpoints: root dashboard UI, basic status check, and websocket stream
-    if path == "/" || path == "/api/status" || path == "/api/events" {
+    // Whitelist public endpoints: root dashboard UI and basic status check (read-only system metadata)
+    if path == "/" || path == "/api/status" {
         return next.run(req).await;
     }
 
@@ -148,12 +148,17 @@ async fn auth_middleware(
         }
     }
 
-    // 3. Check query param 'token=<token>' (for downloads/links)
-    if let Some(query) = req.uri().query() {
-        for pair in query.split('&') {
-            if let Some((k, v)) = pair.split_once('=') {
-                if (k == "token" || k == "auth_token") && constant_time_eq(v.trim().as_bytes(), expected_token.as_bytes()) {
-                    return next.run(req).await;
+    // 3. Query parameter authentication is strictly restricted (Medium Issue M-03):
+    // Only accepted for WebSocket connection handshake (/api/events) and GET file downloads (/api/auradrop/download/*).
+    // All other JSON API endpoints (e.g. /api/unlock, /api/lock, /api/vault/*) MUST use HTTP headers.
+    let is_query_token_allowed = path == "/api/events" || path.starts_with("/api/auradrop/download/");
+    if is_query_token_allowed {
+        if let Some(query) = req.uri().query() {
+            for pair in query.split('&') {
+                if let Some((k, v)) = pair.split_once('=') {
+                    if (k == "token" || k == "auth_token") && constant_time_eq(v.trim().as_bytes(), expected_token.as_bytes()) {
+                        return next.run(req).await;
+                    }
                 }
             }
         }
@@ -751,7 +756,22 @@ async fn download_file(Path(filename): Path<String>) -> Response {
     }
 }
 
-async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
+async fn ws_handler(
+    headers: axum::http::HeaderMap,
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+) -> Response {
+    if let Some(origin_val) = headers.get("origin").and_then(|o| o.to_str().ok()) {
+        let is_allowed = origin_val.starts_with("http://127.0.0.1")
+            || origin_val.starts_with("http://localhost")
+            || origin_val.starts_with("tauri://")
+            || origin_val.starts_with("https://tauri.localhost")
+            || origin_val.starts_with("http://tauri.localhost");
+        if !is_allowed {
+            warn!("Rejected WebSocket connection from unauthorized origin: {}", origin_val);
+            return (StatusCode::FORBIDDEN, "Forbidden Origin").into_response();
+        }
+    }
     ws.on_upgrade(|socket| handle_websocket(socket, state))
 }
 

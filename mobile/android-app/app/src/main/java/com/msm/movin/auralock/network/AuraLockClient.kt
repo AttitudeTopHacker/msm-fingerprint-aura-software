@@ -8,6 +8,7 @@ package com.msm.movin.auralock.network
 import android.os.Build
 import android.os.Environment
 import android.util.Base64
+import android.util.Log
 import kotlinx.coroutines.*
 import org.json.JSONObject
 import java.io.*
@@ -59,21 +60,55 @@ class AuraLockClient(
     private val incomingBytesReceived = mutableMapOf<String, Long>()
     private val incomingLastProgressTime = mutableMapOf<String, Long>()
 
-    private fun getUniqueTargetFile(directory: File, originalName: String): File {
-        var candidate = File(directory, originalName)
+    /**
+     * Sanitizes incoming filename against path traversal, null bytes, and malicious characters.
+     */
+    private fun sanitizeFileName(name: String): String {
+        // Strip directory separators and get basename
+        var clean = name.replace("\\", "/").substringAfterLast("/")
+        // Remove null bytes and ASCII control chars
+        clean = clean.replace(Regex("[\\x00-\\x1F\\x7F]"), "")
+        // Reject path traversal sequences
+        clean = clean.replace("..", "_")
+        // Strip leading dots to prevent creating hidden files
+        clean = clean.trimStart('.', ' ', '\t')
+        // Strip illegal filesystem characters for Linux/Android/Windows
+        clean = clean.replace(Regex("[/:*?\"<>|]"), "_").trim()
+        if (clean.isBlank()) {
+            clean = "received_file_${System.currentTimeMillis()}.bin"
+        }
+        return clean.take(255)
+    }
+
+    private fun getUniqueTargetFile(directory: File, rawFileName: String): File {
+        val safeName = sanitizeFileName(rawFileName)
+        val canonicalDir = directory.canonicalFile
+        var candidate = File(canonicalDir, safeName).canonicalFile
+
+        // Strictly verify that candidate is inside target directory (path traversal check)
+        if (!candidate.path.startsWith(canonicalDir.path + File.separator) && candidate != canonicalDir) {
+            val fallbackName = "safe_file_${System.currentTimeMillis()}.bin"
+            candidate = File(canonicalDir, fallbackName).canonicalFile
+        }
+
         if (!candidate.exists()) return candidate
-        val dotIndex = originalName.lastIndexOf('.')
-        val baseName = if (dotIndex > 0) originalName.substring(0, dotIndex) else originalName
-        val extension = if (dotIndex > 0) originalName.substring(dotIndex) else ""
+        val dotIndex = safeName.lastIndexOf('.')
+        val baseName = if (dotIndex > 0) safeName.substring(0, dotIndex) else safeName
+        val extension = if (dotIndex > 0) safeName.substring(dotIndex) else ""
         var count = 1
         while (candidate.exists()) {
-            candidate = File(directory, "$baseName ($count)$extension")
+            candidate = File(canonicalDir, "$baseName ($count)$extension").canonicalFile
             count++
         }
         return candidate
     }
 
     companion object {
+        private const val TAG = "AuraLockClient"
+        private const val MAX_FILE_SIZE_BYTES = 50L * 1024L * 1024L * 1024L // 50 GB
+        private const val MAX_CHUNK_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
+        private const val MAX_CONCURRENT_TRANSFERS = 10
+
         suspend fun discoverPcIp(timeoutMs: Int = 2000): Pair<String, Int>? = withContext(Dispatchers.IO) {
             try {
                 val udpSocket = java.net.DatagramSocket()
@@ -155,7 +190,7 @@ class AuraLockClient(
 
             true
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "Connection failed: ${e.message}")
             false
         }
     }
@@ -174,7 +209,7 @@ class AuraLockClient(
             w.flush()
             !w.checkError()
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "sendRaw error: ${e.message}")
             false
         }
     }
@@ -201,7 +236,7 @@ class AuraLockClient(
             }
             sendRaw(json.toString())
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "sendIdentify error: ${e.message}")
         }
     }
 
@@ -242,7 +277,7 @@ class AuraLockClient(
             }
             PairingResult(false, "Timed out waiting for Pairing response from PC")
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "sendPairingRequest error: ${e.message}")
             PairingResult(false, "Network error: ${e.message}")
         }
     }
@@ -325,6 +360,16 @@ class AuraLockClient(
                             val mimeType = payload.optString("mime_type", "application/octet-stream")
                             val senderName = payload.optString("sender_name", "PC")
 
+                            // Validate transfer bounds
+                            if (fileSize < 0 || fileSize > MAX_FILE_SIZE_BYTES) {
+                                Log.w(TAG, "Rejected file offer with invalid size: $fileSize bytes")
+                                continue
+                            }
+                            if (incomingFiles.size >= MAX_CONCURRENT_TRANSFERS) {
+                                Log.w(TAG, "Rejected file offer: maximum concurrent transfers reached")
+                                continue
+                            }
+
                             val targetDir: File = try {
                                 val pub = File(
                                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
@@ -358,7 +403,7 @@ class AuraLockClient(
                                 onIncomingFileOffer(IncomingFileOfferEvent(fileId, targetFile.name, fileSize, mimeType, senderName))
                             }
                         } catch (e: Throwable) {
-                            e.printStackTrace()
+                            Log.w(TAG, "FileOffer handling error: ${e.message}")
                         }
                     }
                     "FileChunk" -> {
@@ -370,12 +415,29 @@ class AuraLockClient(
                             val base64Data = payload.optString("data_base64", "")
 
                             val bytes = Base64.decode(base64Data, Base64.NO_WRAP)
+                            if (bytes.size > MAX_CHUNK_SIZE_BYTES) {
+                                Log.w(TAG, "Rejected oversized chunk: ${bytes.size} bytes")
+                                continue
+                            }
+
                             val pair = incomingFiles[fileId]
                             if (pair != null) {
                                 pair.second.write(bytes)
                                 val received = (incomingBytesReceived[fileId] ?: 0L) + bytes.size
                                 incomingBytesReceived[fileId] = received
                                 val totalSize = incomingSizes[fileId] ?: 1L
+
+                                // Guard against runaway file transfer size
+                                if (totalSize > 0 && received > totalSize + (5 * 1024 * 1024)) {
+                                    Log.w(TAG, "Aborting transfer $fileId: received bytes ($received) exceeded expected size ($totalSize)")
+                                    try {
+                                        pair.second.close()
+                                        pair.first.delete()
+                                    } catch (_: Throwable) {}
+                                    incomingFiles.remove(fileId)
+                                    continue
+                                }
+
                                 val progress = (received.toFloat() / totalSize.toFloat()).coerceIn(0f, 1f)
 
                                 val now = System.currentTimeMillis()
@@ -410,7 +472,7 @@ class AuraLockClient(
                                 }
                             }
                         } catch (e: Throwable) {
-                            e.printStackTrace()
+                            Log.w(TAG, "FileChunk handling error: ${e.message}")
                         }
                     }
                     "FileComplete" -> {
@@ -446,7 +508,7 @@ class AuraLockClient(
                                 }
                             }
                         } catch (e: Throwable) {
-                            e.printStackTrace()
+                            Log.w(TAG, "FileComplete handling error: ${e.message}")
                         }
                     }
                     "Clipboard" -> {
@@ -471,7 +533,7 @@ class AuraLockClient(
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "listenForEvents error: ${e.message}")
         } finally {
             // Close any remaining open file output streams cleanly
             for ((_, pair) in incomingFiles) {
@@ -596,7 +658,7 @@ class AuraLockClient(
             }
             throw e
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "sendFileStreamToPc error: ${e.message}")
             withContext(NonCancellable + Dispatchers.IO) {
                 try {
                     val cancelJson = JSONObject().apply {
@@ -648,7 +710,7 @@ class AuraLockClient(
             }
             sendRaw(json.toString())
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "cancelFileTransfer error: ${e.message}")
         }
     }
 
@@ -680,7 +742,7 @@ class AuraLockClient(
             writer?.println(json.toString())
             true
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "sendClipboardToPc error: ${e.message}")
             false
         }
     }
@@ -702,7 +764,7 @@ class AuraLockClient(
             }
             sendRaw(json.toString())
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "sendUnlockResponse error: ${e.message}")
         }
     }
 
@@ -713,7 +775,7 @@ class AuraLockClient(
             }
             sendRaw(json.toString())
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "sendPing error: ${e.message}")
         }
     }
 
@@ -754,7 +816,7 @@ class AuraLockClient(
             }
             ok
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "sendRemoteLock error: ${e.message}")
             false
         }
     }
@@ -776,7 +838,7 @@ class AuraLockClient(
             }
             ok
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "sendUnlockTrigger error: ${e.message}")
             false
         }
     }
@@ -792,7 +854,7 @@ class AuraLockClient(
             }
             sendRaw(json.toString())
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "sendUnpairRequest error: ${e.message}")
             false
         }
     }

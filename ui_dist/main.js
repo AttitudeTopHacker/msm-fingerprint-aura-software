@@ -799,7 +799,8 @@ if (dropzone) {
 
 // WEBSOCKET
 function setupWebSocket() {
-  const ws = new WebSocket('ws://127.0.0.1:47891/api/events');
+  const token = getApiAuthToken();
+  const ws = new WebSocket(`ws://127.0.0.1:47891/api/events?token=${encodeURIComponent(token)}`);
 
   ws.onmessage = (event) => {
     try {
