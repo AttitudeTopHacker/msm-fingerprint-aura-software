@@ -739,13 +739,22 @@ impl NetworkService {
             ProtocolMessage::PairingReq(req) => {
                 info!("Received pairing request from phone: {}", req.phone_name);
 
-                // Prevent rogue device pairing takeover if PC is already paired
-                if self.vault_mgr.is_paired() {
-                    warn!("Rejected pairing request: PC is already paired with a device");
+                let active_pin = self.active_pairing_pin.lock().await.clone();
+                let recent_pins = self.recent_pairing_pins.lock().await.clone();
+                let latest_qr_pin = self.latest_qr_data.lock().await.as_ref().map(|q| q.pin.clone());
+
+                let req_pin: String = req.pin.chars().filter(|c| c.is_ascii_digit()).collect();
+                let active_pin_clean: Option<String> = active_pin.as_ref().map(|p| p.chars().filter(|c| c.is_ascii_digit()).collect());
+                let recent_pins_clean: Vec<String> = recent_pins.iter().map(|p| p.chars().filter(|c| c.is_ascii_digit()).collect()).collect();
+                let qr_pin_clean: Option<String> = latest_qr_pin.as_ref().map(|q| q.chars().filter(|c| c.is_ascii_digit()).collect());
+
+                // Prevent rogue device pairing takeover if PC is already paired and NOT currently in active pairing setup mode
+                if self.vault_mgr.is_paired() && active_pin_clean.is_none() && qr_pin_clean.is_none() {
+                    warn!("Rejected pairing request: PC is already paired and not in pairing setup mode");
                     let resp = ProtocolMessage::PairingResp(PairingResponse {
                         success: false,
                         pairing_id: String::new(),
-                        message: "PC is already paired with another phone. Please unpair from PC first.".into(),
+                        message: "PC is already paired with another device. Please unpair from PC first.".into(),
                     });
                     if let Some(tx) = &*self.active_client.lock().await {
                         let _ = tx.send(resp).await;
@@ -810,27 +819,29 @@ impl NetworkService {
                     }
                 }
 
-                let active_pin = self.active_pairing_pin.lock().await.clone();
-                let recent_pins = self.recent_pairing_pins.lock().await.clone();
-                let latest_qr_pin = self.latest_qr_data.lock().await.as_ref().map(|q| q.pin.clone());
-
-                let req_pin: String = req.pin.chars().filter(|c| c.is_ascii_digit()).collect();
-                let active_pin_clean: Option<String> = active_pin.as_ref().map(|p| p.chars().filter(|c| c.is_ascii_digit()).collect());
-                let recent_pins_clean: Vec<String> = recent_pins.iter().map(|p| p.chars().filter(|c| c.is_ascii_digit()).collect()).collect();
-                let qr_pin_clean: Option<String> = latest_qr_pin.as_ref().map(|q| q.chars().filter(|c| c.is_ascii_digit()).collect());
-
-                let pin_matches = if req_pin.is_empty() {
-                    false
-                } else if let Some(ref p) = active_pin_clean {
-                    constant_time_eq(p.as_bytes(), req_pin.as_bytes())
-                } else if !recent_pins_clean.is_empty() {
-                    recent_pins_clean.iter().any(|p| constant_time_eq(p.as_bytes(), req_pin.as_bytes()))
-                } else if let Some(ref qp) = qr_pin_clean {
-                    constant_time_eq(qp.as_bytes(), req_pin.as_bytes())
-                } else {
-                    // Fail closed: No active QR pairing session exists on PC
-                    false
-                };
+                let mut pin_matches = false;
+                if !req_pin.is_empty() {
+                    // Check active PIN on PC screen
+                    if let Some(ref p) = active_pin_clean {
+                        if constant_time_eq(p.as_bytes(), req_pin.as_bytes()) {
+                            pin_matches = true;
+                        }
+                    }
+                    // Check recent PINs in case session was refreshed
+                    if !pin_matches && !recent_pins_clean.is_empty() {
+                        if recent_pins_clean.iter().any(|p| constant_time_eq(p.as_bytes(), req_pin.as_bytes())) {
+                            pin_matches = true;
+                        }
+                    }
+                    // Check latest QR payload PIN
+                    if !pin_matches {
+                        if let Some(ref qp) = qr_pin_clean {
+                            if constant_time_eq(qp.as_bytes(), req_pin.as_bytes()) {
+                                pin_matches = true;
+                            }
+                        }
+                    }
+                }
 
                 if pin_matches {
                     // Reset failed attempt counter on successful pairing
@@ -1439,8 +1450,23 @@ pub fn get_best_local_ip() -> String {
         }
     }
 
-    // 2. Iterate network interfaces excluding virtual/docker bridges
-    if let Ok(interfaces) = local_ip_address::list_afinet_netifas() {
+    // 2. Iterate network interfaces prioritizing Wi-Fi and Ethernet, excluding virtual/docker bridges
+    if let Ok(mut interfaces) = local_ip_address::list_afinet_netifas() {
+        // Sort prioritizing Wi-Fi (wl) and Ethernet (en, eth)
+        interfaces.sort_by(|(name_a, _), (name_b, _)| {
+            let prio = |name: &str| {
+                let l = name.to_lowercase();
+                if l.starts_with("wl") || l.starts_with("wlan") || l.starts_with("wifi") {
+                    1
+                } else if l.starts_with("en") || l.starts_with("eth") {
+                    2
+                } else {
+                    3
+                }
+            };
+            prio(name_a).cmp(&prio(name_b))
+        });
+
         for (name, ip) in interfaces {
             let lower = name.to_lowercase();
             if lower.starts_with("lo")
@@ -1449,6 +1475,8 @@ pub fn get_best_local_ip() -> String {
                 || lower.starts_with("veth")
                 || lower.starts_with("virbr")
                 || lower.starts_with("vmnet")
+                || lower.starts_with("tun")
+                || lower.starts_with("tap")
             {
                 continue;
             }

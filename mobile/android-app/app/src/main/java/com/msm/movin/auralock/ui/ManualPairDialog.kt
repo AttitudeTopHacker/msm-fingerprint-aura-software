@@ -115,7 +115,7 @@ fun ManualPairDialog(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Enter your PC's IP and the 6-digit PIN shown in terminal or Desktop Control Center.",
+                    text = "Enter the PC Wi-Fi IP and 6-digit PIN shown on your PC screen under '📡 PC Wi-Fi IP'.",
                     color = Color(0xFF94A3B8),
                     fontSize = 12.sp,
                     textAlign = TextAlign.Center

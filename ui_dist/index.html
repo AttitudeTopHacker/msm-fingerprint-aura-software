@@ -70,6 +70,17 @@
           <div style="text-align: center;">
             <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px;">6-DIGIT PAIRING PIN</p>
             <div id="pin-display" class="pin-badge" onclick="copyPin()">------</div>
+
+            <!-- Manual Wi-Fi IP & Port Display for Phone -->
+            <div class="manual-ip-card" style="margin-top: 12px; padding: 10px 14px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 12px; text-align: center;">
+              <p style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;">📡 PC Wi-Fi IP Address (Manual Pairing)</p>
+              <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                <span id="pc-ip-display" style="font-family: var(--font-mono); font-size: 1.05rem; font-weight: 700; color: #38BDF8; letter-spacing: 0.5px;">Detecting Wi-Fi IP...</span>
+                <button class="btn btn-secondary" onclick="copyPcIp()" style="padding: 3px 8px; font-size: 0.75rem; cursor: pointer;">📋 Copy</button>
+              </div>
+              <p style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; margin-bottom: 0;">Port: <span id="pc-port-display" style="color: #FACC15; font-family: var(--font-mono); font-weight: 600;">47890</span></p>
+            </div>
+
             <button class="btn btn-secondary" onclick="refreshPairing()" style="width: 100%; margin-top: 10px;">
               <span>🔄</span> Refresh Pairing Session
             </button>

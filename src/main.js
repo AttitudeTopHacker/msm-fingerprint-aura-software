@@ -377,6 +377,16 @@ async function fetchQr() {
         correctLevel: QRCode.CorrectLevel.M
       });
     }
+
+    if (data.qr_data) {
+      const pcIp = data.qr_data.ip || '127.0.0.1';
+      const pcPort = data.qr_data.port || 47890;
+      window.__PC_LOCAL_IP__ = pcIp;
+      const ipDisp = document.getElementById('pc-ip-display');
+      if (ipDisp) ipDisp.innerText = pcIp;
+      const portDisp = document.getElementById('pc-port-display');
+      if (portDisp) portDisp.innerText = pcPort;
+    }
   } catch (e) {
     console.error("QR fetch error", e);
   }
@@ -400,6 +410,13 @@ window.copyPin = function () {
   if (!currentPin) return;
   navigator.clipboard.writeText(currentPin);
   showToast("PIN " + currentPin + " copied!", "📋");
+};
+
+window.copyPcIp = function () {
+  const ip = window.__PC_LOCAL_IP__;
+  if (!ip) return;
+  navigator.clipboard.writeText(ip);
+  showToast("PC Wi-Fi IP " + ip + " copied!", "📋");
 };
 
 // TRANSFER TOGGLE & MANAGEMENT

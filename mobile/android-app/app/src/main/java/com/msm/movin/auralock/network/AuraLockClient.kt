@@ -266,7 +266,12 @@ class AuraLockClient(
         pubKeyHex: String,
         pin: String
     ): PairingResult = withContext(Dispatchers.IO) {
+        val sock = socket ?: return@withContext PairingResult(false, "Socket is not connected to PC")
+        val prevTimeout = try { sock.soTimeout } catch (_: Throwable) { 0 }
         try {
+            // Set 12-second socket read timeout for pairing handshake so it never hangs indefinitely
+            try { sock.soTimeout = 12000 } catch (_: Throwable) {}
+
             val json = JSONObject().apply {
                 put("type", "PairingReq")
                 put("payload", JSONObject().apply {
@@ -276,15 +281,18 @@ class AuraLockClient(
                     put("pin", pin)
                 })
             }
-            sendRaw(json.toString())
+            val sent = sendRaw(json.toString())
+            if (!sent) {
+                return@withContext PairingResult(false, "Failed to send pairing request over socket")
+            }
             
             var attempts = 0
-            while (attempts < 25) {
+            while (attempts < 30) {
                 attempts++
-                val respLine = reader?.readLine() ?: return@withContext PairingResult(false, "No response from PC socket")
+                val respLine = reader?.readLine() ?: return@withContext PairingResult(false, "PC closed connection during pairing handshake")
                 if (respLine.isBlank()) continue
                 
-                val respJson = JSONObject(respLine)
+                val respJson = try { JSONObject(respLine) } catch (_: Throwable) { continue }
                 val type = respJson.optString("type")
                 if (type == "PairingResp") {
                     val payload = respJson.optJSONObject("payload")
@@ -297,9 +305,14 @@ class AuraLockClient(
                 }
             }
             PairingResult(false, "Timed out waiting for Pairing response from PC")
+        } catch (e: java.net.SocketTimeoutException) {
+            Log.w(TAG, "sendPairingRequest timeout: ${e.message}")
+            PairingResult(false, "Pairing handshake timed out (12s). Verify that PC and Phone are on the same Wi-Fi and 6-digit PIN matches.")
         } catch (e: Exception) {
             Log.w(TAG, "sendPairingRequest error: ${e.message}")
-            PairingResult(false, "Network error: ${e.message}")
+            PairingResult(false, "Handshake error: ${e.message}")
+        } finally {
+            try { sock.soTimeout = prevTimeout } catch (_: Throwable) {}
         }
     }
 
