@@ -1856,33 +1856,7 @@ pub fn lock_pc_screen() {
 
     #[cfg(target_os = "linux")]
     {
-        // 1. System-wide D-Bus signal to systemd-logind (Root level)
-        let _ = std::process::Command::new("dbus-send")
-            .args([
-                "--system",
-                "--type=method_call",
-                "--dest=org.freedesktop.login1",
-                "/org/freedesktop/login1",
-                "org.freedesktop.login1.Manager.LockSessions",
-            ])
-            .spawn();
-
-        let _ = std::process::Command::new("gdbus")
-            .args([
-                "call",
-                "--system",
-                "--dest", "org.freedesktop.login1",
-                "--object-path", "/org/freedesktop/login1",
-                "--method", "org.freedesktop.login1.Manager.LockSessions",
-            ])
-            .spawn();
-
-        // 2. Systemd loginctl lock-sessions (plural: locks all active graphical sessions)
-        let _ = std::process::Command::new("loginctl")
-            .args(["lock-sessions", "--no-ask-password"])
-            .spawn();
-
-        // 3. Lock individual active logind sessions discovered on the system
+        // 1. Systemd loginctl lock-session for active graphical sessions
         for session_id in get_active_logind_sessions() {
             let _ = std::process::Command::new("loginctl")
                 .args(["lock-session", &session_id, "--no-ask-password"])
@@ -1890,46 +1864,28 @@ pub fn lock_pc_screen() {
         }
 
         let _ = std::process::Command::new("loginctl")
-            .args(["lock-session", "--no-ask-password"])
+            .args(["lock-sessions", "--no-ask-password"])
             .spawn();
 
-        // 4. Trigger desktop-specific screensavers inside user session context (drops root to user UID)
+        // 2. Trigger desktop-specific screensaver cleanly per user session
         let sessions = get_linux_user_sessions();
         for session in &sessions {
-            // Cinnamon ScreenSaver DBus
-            spawn_in_user_session(session, "dbus-send", &["--session", "--type=method_call", "--dest=org.cinnamon.ScreenSaver", "/org/cinnamon/ScreenSaver", "org.cinnamon.ScreenSaver.Lock"]);
-
-            // GNOME ScreenSaver DBus
-            spawn_in_user_session(session, "dbus-send", &["--session", "--type=method_call", "--dest=org.gnome.ScreenSaver", "/org/gnome/ScreenSaver", "org.gnome.ScreenSaver.Lock"]);
-
-            // FreeDesktop ScreenSaver DBus
-            spawn_in_user_session(session, "dbus-send", &["--session", "--type=method_call", "--dest=org.freedesktop.ScreenSaver", "/org/freedesktop/ScreenSaver", "org.freedesktop.ScreenSaver.Lock"]);
-
-            // KDE Plasma ScreenLocker
-            spawn_in_user_session(session, "dbus-send", &["--session", "--type=method_call", "--dest=org.kde.kscreenlocker", "/MainApplication", "org.kde.KScreenLocker.lock"]);
-
-            // MATE ScreenSaver DBus
-            spawn_in_user_session(session, "dbus-send", &["--session", "--type=method_call", "--dest=org.mate.ScreenSaver", "/org/mate/ScreenSaver", "org.mate.ScreenSaver.Lock"]);
-
-            // Cinnamon screensaver commands
-            spawn_in_user_session(session, "cinnamon-screensaver-command", &["-l"]);
-            spawn_in_user_session(session, "cinnamon-screensaver-command", &["--lock"]);
-
-            // GNOME screensaver command
-            spawn_in_user_session(session, "gnome-screensaver-command", &["-l"]);
-
-            // MATE screensaver command
-            spawn_in_user_session(session, "mate-screensaver-command", &["-l"]);
-
-            // XDG screensaver command
-            spawn_in_user_session(session, "xdg-screensaver", &["lock"]);
-
-            // KDE qdbus commands
-            spawn_in_user_session(session, "qdbus", &["org.freedesktop.ScreenSaver", "/ScreenSaver", "Lock"]);
-            spawn_in_user_session(session, "qdbus", &["org.kde.kscreenlocker", "/MainApplication", "lock"]);
-
-            // XFCE screen lock
-            spawn_in_user_session(session, "xflock4", &[]);
+            let de = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_lowercase();
+            if de.contains("cinnamon") {
+                spawn_in_user_session(session, "cinnamon-screensaver-command", &["--lock"]);
+            } else if de.contains("gnome") {
+                spawn_in_user_session(session, "gnome-screensaver-command", &["-l"]);
+            } else if de.contains("mate") {
+                spawn_in_user_session(session, "mate-screensaver-command", &["-l"]);
+            } else if de.contains("kde") {
+                spawn_in_user_session(session, "qdbus", &["org.freedesktop.ScreenSaver", "/ScreenSaver", "Lock"]);
+            } else if de.contains("xfce") {
+                spawn_in_user_session(session, "xflock4", &[]);
+            } else {
+                // Fallback: try cinnamon screensaver then xdg-screensaver
+                spawn_in_user_session(session, "cinnamon-screensaver-command", &["--lock"]);
+                spawn_in_user_session(session, "xdg-screensaver", &["lock"]);
+            }
         }
     }
 

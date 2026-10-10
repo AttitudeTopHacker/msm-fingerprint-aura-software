@@ -59,6 +59,12 @@ impl StateManager {
         }
     }
 
+    /// Returns true if the PC session is currently locked
+    pub async fn is_locked(&self) -> bool {
+        let state = self.inner.lock().await;
+        state.lock_state == SessionLockState::Locked
+    }
+
     /// Sets the PC lock state (called by system hook / logind / Winlogon)
     pub async fn set_lock_state(&self, new_state: SessionLockState) {
         let mut state = self.inner.lock().await;

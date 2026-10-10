@@ -46,12 +46,17 @@ if [ -f "/etc/pam.d/common-auth" ]; then
 fi
 
 if [ -f "/etc/pam.d/sudo" ]; then
-    if ! grep -q "pam_auralock.so" /etc/pam.d/sudo; then
+    if grep -q "@include common-auth" /etc/pam.d/sudo; then
+        # Sudo already inherits common-auth; remove any duplicate direct pam_auralock entry
+        if grep -q "pam_auralock.so" /etc/pam.d/sudo; then
+            echo "🔧 Cleaning redundant pam_auralock entry in /etc/pam.d/sudo (inherited via common-auth)..."
+            sudo sed -i '/pam_auralock.so/d' /etc/pam.d/sudo || true
+        fi
+        echo "   ✅ Sudo biometric enabled cleanly via common-auth."
+    elif ! grep -q "pam_auralock.so" /etc/pam.d/sudo; then
         echo "🔒 5/5. Configuring /etc/pam.d/sudo for instant biometric sudo..."
         sudo sed -i '1s/^/auth sufficient pam_auralock.so\n/' /etc/pam.d/sudo
         echo "   ✅ Sudo biometric enabled safely."
-    else
-        echo "   ℹ️ /etc/pam.d/sudo already configured."
     fi
 fi
 

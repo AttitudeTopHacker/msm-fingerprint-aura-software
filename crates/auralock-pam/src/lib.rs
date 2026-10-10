@@ -150,9 +150,9 @@ pub extern "C" fn pam_sm_authenticate(
         std::env::var("USER").unwrap_or_else(|_| "user".to_string())
     };
 
-    // Check if the AuraLock Unix socket is active
+    // Check if the AuraLock Unix socket exists
     if !std::path::Path::new(DEFAULT_UNIX_SOCKET_PATH).exists() {
-        // Daemon is not running, fall back gracefully to password prompt
+        // Daemon is not running, fall back gracefully to standard password prompt
         return PAM_IGNORE;
     }
 
@@ -164,6 +164,36 @@ pub extern "C" fn pam_sm_authenticate(
         Ok(rt) => rt,
         Err(_) => return PAM_AUTH_ERR,
     };
+
+    // Check if daemon is responsive and has a paired phone ready for biometric unlock.
+    // If no phone is paired or socket is inaccessible, exit immediately WITHOUT prompting.
+    // This allows standard pam_unix to prompt cleanly with zero duplicate prompts or delays.
+    let is_daemon_ready = runtime.block_on(async {
+        use tokio::net::UnixStream;
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        if let Ok(mut stream) = UnixStream::connect(DEFAULT_UNIX_SOCKET_PATH).await {
+            let req = auralock_core::ipc::IpcRequest::GetDaemonStatus;
+            if let Ok(json) = serde_json::to_string(&req) {
+                if stream.write_all(format!("{}\n", json).as_bytes()).await.is_ok() {
+                    let (reader, _) = stream.split();
+                    let mut buf_reader = BufReader::new(reader);
+                    let mut line = String::new();
+                    if buf_reader.read_line(&mut line).await.unwrap_or(0) > 0 {
+                        if let Ok(auralock_core::ipc::IpcResponse::DaemonStatus { paired_device, .. }) = serde_json::from_str(line.trim()) {
+                            return paired_device.is_some();
+                        }
+                    }
+                }
+            }
+        }
+        false
+    });
+
+    if !is_daemon_ready {
+        // No phone paired or daemon unreachable; do NOT prompt.
+        // Hand off cleanly to standard unix password authentication.
+        return PAM_IGNORE;
+    }
 
     let (pw_tx, mut pw_rx) = tokio::sync::mpsc::channel(1);
     let pamh_usize = pamh as usize;
@@ -184,19 +214,18 @@ pub extern "C" fn pam_sm_authenticate(
                         send_pam_info(pamh, "✨ Biometric verified! Unlocking...", false);
                         PAM_SUCCESS
                     }
-                    Ok(false) => {
-                        // Phone timed out or rejected. Await password if user is currently typing
+                    _ => {
+                        // Phone timed out, rejected, or socket dropped.
+                        // Await keyboard password from the prompt already visible to the user
+                        // so they are not asked for their password a second time:
                         if let Some(Some(pw)) = pw_rx.recv().await {
-                            if let Ok(c_pw) = CString::new(pw) {
+                            let clean_pw = pw.trim_end_matches(&['\r', '\n'][..]);
+                            if let Ok(c_pw) = CString::new(clean_pw) {
                                 unsafe {
                                     pam_set_item(pamh, PAM_AUTHTOK, c_pw.as_ptr() as *const c_void);
                                 }
                             }
                         }
-                        PAM_IGNORE
-                    }
-                    Err(_) => {
-                        // Socket or IPC error; ignore so standard password auth takes over
                         PAM_IGNORE
                     }
                 }
@@ -205,7 +234,8 @@ pub extern "C" fn pam_sm_authenticate(
                 // User entered password and submitted via keyboard! Immediately cancel challenge on phone
                 let _ = IpcClient::cancel_unlock(DEFAULT_UNIX_SOCKET_PATH).await;
                 if let Some(Some(pw)) = user_input {
-                    if let Ok(c_pw) = CString::new(pw) {
+                    let clean_pw = pw.trim_end_matches(&['\r', '\n'][..]);
+                    if let Ok(c_pw) = CString::new(clean_pw) {
                         unsafe {
                             pam_set_item(pamh, PAM_AUTHTOK, c_pw.as_ptr() as *const c_void);
                         }

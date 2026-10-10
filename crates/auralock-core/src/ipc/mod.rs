@@ -60,12 +60,12 @@ impl IpcServer {
         let listener = UnixListener::bind(socket_path)?;
         info!("AuraLock IPC server listening on Unix socket: {}", socket_path);
 
-        // Set permissions (0o660: owner + group) to restrict world access
+        // Set permissions (0o666: world read/write) so desktop users and screen lockers can connect
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let mut perms = std::fs::metadata(socket_path)?.permissions();
-            perms.set_mode(0o660);
+            perms.set_mode(0o666);
             std::fs::set_permissions(socket_path, perms)?;
         }
 
@@ -123,6 +123,9 @@ impl IpcServer {
         match req {
             IpcRequest::TriggerUnlockRequest { username } => {
                 info!("IPC received unlock trigger for user '{}'", username);
+                if !self.net_service.vault_mgr.is_paired() {
+                    return IpcResponse::UnlockDenied { reason: "No phone paired with this PC".into() };
+                }
                 match self.state_mgr.create_challenge(&self.pc_name).await {
                     Ok((challenge, rx)) => {
                         if let Err(e) = self.net_service.push_challenge(challenge).await {
@@ -166,9 +169,15 @@ impl IpcServer {
                 IpcResponse::Success { message: "Lock state updated".into() }
             }
             IpcRequest::GetDaemonStatus => {
+                let is_paired = self.net_service.vault_mgr.is_paired();
+                let paired_device = if is_paired {
+                    self.net_service.vault_mgr.load().ok().and_then(|v| v.paired_phone.map(|p| p.device_name))
+                } else {
+                    None
+                };
                 IpcResponse::DaemonStatus {
-                    is_locked: false,
-                    paired_device: None,
+                    is_locked: self.state_mgr.is_locked().await,
+                    paired_device,
                 }
             }
             IpcRequest::ResetVault => {
