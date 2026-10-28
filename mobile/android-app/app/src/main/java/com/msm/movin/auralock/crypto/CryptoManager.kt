@@ -71,14 +71,38 @@ class CryptoManager {
     }
 
     /**
+     * Force-regenerates a fresh cryptographic keypair inside Android KeyStore / TEE StrongBox.
+     * Useful when biometric enrollment changes or keys need to be refreshed.
+     */
+    fun regenerateBiometricKeyPair(): KeyPair {
+        try {
+            if (keyStore.containsAlias(KEY_ALIAS)) {
+                keyStore.deleteEntry(KEY_ALIAS)
+            }
+        } catch (_: Exception) {}
+        return getOrCreateBiometricKeyPair()
+    }
+
+    /**
      * Initializes the signature object to be passed to BiometricPrompt.CryptoObject
      */
     fun getInitializedSignature(): Signature {
-        val entry = keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.PrivateKeyEntry
-            ?: throw IllegalStateException("Biometric key not found. Please register first.")
+        var entry = keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.PrivateKeyEntry
+        if (entry == null) {
+            getOrCreateBiometricKeyPair()
+            entry = keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.PrivateKeyEntry
+                ?: throw IllegalStateException("Biometric key not found. Please register first.")
+        }
 
         val signature = Signature.getInstance(SIGNATURE_ALGORITHM)
-        signature.initSign(entry.privateKey)
+        try {
+            signature.initSign(entry.privateKey)
+        } catch (e: android.security.keystore.KeyPermanentlyInvalidatedException) {
+            // Fingerprint database changed in Android Settings, regenerate hardware key cleanly
+            regenerateBiometricKeyPair()
+            val freshEntry = keyStore.getEntry(KEY_ALIAS, null) as KeyStore.PrivateKeyEntry
+            signature.initSign(freshEntry.privateKey)
+        }
         return signature
     }
 

@@ -1,7 +1,7 @@
 [package]
 name = "auralock-desktop"
-version = "1.6.2"
-description = "AuraLock Biometric Security & AuraDrop Desktop App"
+version = "1.6.3"
+description = "Msm Connect Biometric Security & AuraDrop Desktop App"
 authors = ["msm.movin"]
 license = "Proprietary"
 repository = "https://github.com/AttitudeTopHacker/msm-fingerprint-aura-software"

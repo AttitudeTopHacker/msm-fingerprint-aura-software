@@ -208,8 +208,8 @@ async fn auth_middleware(
             StatusCode::OK,
             Json(serde_json::json!({
                 "status": "online",
-                "app": "MsmConnect Control Center",
-                "version": "1.6.2",
+                "app": "Msm Connect Control Center",
+                "version": "1.6.3",
                 "authenticated": false
             })),
         )
@@ -415,7 +415,7 @@ pub async fn start_web_server(net_service: Arc<NetworkService>, port: u16) -> Re
         .with_state(state);
 
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
-    info!("MsmConnect Desktop Control Center UI running at http://127.0.0.1:{}", port);
+    info!("Msm Connect Desktop Control Center UI running at http://127.0.0.1:{}", port);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tokio::spawn(async move {

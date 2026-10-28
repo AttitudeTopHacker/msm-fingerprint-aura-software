@@ -93,6 +93,24 @@ pub fn verify_biometric_signature(
     verify_p256_ecdsa_signature(public_key_bytes, message, signature_bytes)
 }
 
+/// Validates whether a public key is either a valid Ed25519 public key or a valid P-256 ECDSA public key (DER or SEC1 format)
+pub fn is_valid_public_key(bytes: &[u8]) -> bool {
+    if bytes.len() == 32 {
+        if let Ok(pk) = <&[u8; 32]>::try_from(bytes) {
+            if VerifyingKey::from_bytes(pk).is_ok() {
+                return true;
+            }
+        }
+    }
+    if P256VerifyingKey::from_public_key_der(bytes).is_ok() {
+        return true;
+    }
+    if P256VerifyingKey::from_sec1_bytes(bytes).is_ok() {
+        return true;
+    }
+    false
+}
+
 /// Generates a new ephemeral X25519 keypair for key exchange
 pub fn generate_x25519_keypair() -> (X25519StaticSecret, X25519PublicKey) {
     let secret = X25519StaticSecret::random_from_rng(OsRng);
@@ -198,4 +216,29 @@ mod tests {
 
         assert_eq!(decrypted, secret_data);
     }
+
+    #[test]
+    fn test_is_valid_public_key_and_p256_verification() {
+        use p256::ecdsa::SigningKey as P256SigningKey;
+        use p256::pkcs8::EncodePublicKey;
+
+        // 1. Ed25519
+        let ed_sk = SigningKey::generate(&mut OsRng);
+        let ed_pk = ed_sk.verifying_key();
+        assert!(is_valid_public_key(ed_pk.as_bytes()));
+
+        // 2. P-256 ECDSA (DER & SEC1)
+        let p256_sk = P256SigningKey::random(&mut OsRng);
+        let p256_pk = p256_sk.verifying_key();
+        let der = p256_pk.to_public_key_der().unwrap();
+        assert!(is_valid_public_key(der.as_ref()));
+
+        let sec1 = p256_pk.to_sec1_bytes();
+        assert!(is_valid_public_key(&sec1));
+
+        // 3. Invalid
+        assert!(!is_valid_public_key(b"invalid_short_key"));
+        assert!(!is_valid_public_key(&[0u8; 91]));
+    }
 }
+

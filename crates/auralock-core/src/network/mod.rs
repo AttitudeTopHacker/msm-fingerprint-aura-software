@@ -317,8 +317,12 @@ impl NetworkService {
 
     /// Gets existing QR data if available, or generates a new one
     pub async fn get_or_create_qr_payload(&self, local_ip: &str, ephem_pub_hex: &str) -> PairingQRData {
-        let qr_guard = self.latest_qr_data.lock().await;
-        if let Some(existing) = &*qr_guard {
+        let mut qr_guard = self.latest_qr_data.lock().await;
+        if let Some(ref mut existing) = *qr_guard {
+            // If local IP resolved to a reachable non-loopback IP and the cached payload has loopback or outdated IP, update it
+            if local_ip != "127.0.0.1" && existing.ip != local_ip {
+                existing.ip = local_ip.to_string();
+            }
             return existing.clone();
         }
         drop(qr_guard);
@@ -530,10 +534,12 @@ impl NetworkService {
                         let query = String::from_utf8_lossy(&buf[..len]);
                         if query.contains("Discover") || query.contains("auralock") || query.contains("ping") {
                             let is_paired = is_paired_check.is_paired();
+                            let current_ip = get_best_local_ip();
                             let resp = serde_json::json!({
                                 "type": "AuraLockBeacon",
                                 "pc_name": pc_name_udp,
                                 "pc_id": pc_id_udp,
+                                "ip": current_ip,
                                 "port": tcp_port,
                                 "is_paired": is_paired
                             });
@@ -762,11 +768,12 @@ impl NetworkService {
                     return Ok(());
                 }
 
-                // 1. Validate Phone Public Key format (must be valid 32 bytes / 64 hex characters)
-                let pubkey_bytes = match hex::decode(&req.phone_ed25519_pub_hex) {
-                    Ok(b) if b.len() == 32 => b,
+                // 1. Validate Phone Public Key format (must be valid Ed25519 32-byte or Android KeyStore P-256 ECDSA DER / SEC1)
+                let clean_pub_hex = req.phone_ed25519_pub_hex.trim();
+                let pubkey_bytes = match hex::decode(clean_pub_hex) {
+                    Ok(b) if crate::crypto::is_valid_public_key(&b) => b,
                     _ => {
-                        warn!("Rejected pairing request with invalid public key format from {}", req.phone_name);
+                        warn!("Rejected pairing request with invalid public key format from {} (hex_len={})", req.phone_name, clean_pub_hex.len());
                         let resp = ProtocolMessage::PairingResp(PairingResponse {
                             success: false,
                             pairing_id: String::new(),

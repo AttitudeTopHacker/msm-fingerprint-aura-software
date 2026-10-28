@@ -130,32 +130,70 @@ class AuraLockClient(
         private const val MAX_CONCURRENT_TRANSFERS = 3
         private const val IDLE_TRANSFER_TIMEOUT_MS = 45_000L // 45s idle transfer timeout
 
-        suspend fun discoverPcIp(timeoutMs: Int = 2000): Pair<String, Int>? = withContext(Dispatchers.IO) {
+        suspend fun discoverPcIp(timeoutMs: Int = 2500): Pair<String, Int>? = withContext(Dispatchers.IO) {
+            var udpSocket: java.net.DatagramSocket? = null
             try {
-                val udpSocket = java.net.DatagramSocket()
+                udpSocket = java.net.DatagramSocket()
                 udpSocket.broadcast = true
-                udpSocket.soTimeout = timeoutMs
 
                 val query = "{\"type\":\"Discover\"}".toByteArray()
-                val broadcastAddr = java.net.InetAddress.getByName("255.255.255.255")
-                val packet = java.net.DatagramPacket(query, query.size, broadcastAddr, 47892)
-                udpSocket.send(packet)
 
-                val buf = ByteArray(1024)
-                val recvPacket = java.net.DatagramPacket(buf, buf.size)
-                udpSocket.receive(recvPacket)
-                val respStr = String(recvPacket.data, 0, recvPacket.length)
-                val json = JSONObject(respStr)
-                if (json.optString("type") == "AuraLockBeacon") {
-                    val pcIp = recvPacket.address.hostAddress ?: "127.0.0.1"
-                    val port = json.optInt("port", 47890)
-                    udpSocket.close()
-                    return@withContext Pair(pcIp, port)
+                // Collect global broadcast and all active local subnet broadcast addresses
+                val broadcastTargets = mutableListOf<java.net.InetAddress>()
+                try {
+                    broadcastTargets.add(java.net.InetAddress.getByName("255.255.255.255"))
+                } catch (_: Throwable) {}
+
+                try {
+                    val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+                    while (interfaces.hasMoreElements()) {
+                        val netIf = interfaces.nextElement()
+                        if (netIf.isLoopback || !netIf.isUp) continue
+                        for (ifAddr in netIf.interfaceAddresses) {
+                            val bcast = ifAddr.broadcast
+                            if (bcast != null && !broadcastTargets.contains(bcast)) {
+                                broadcastTargets.add(bcast)
+                            }
+                        }
+                    }
+                } catch (_: Throwable) {}
+
+                // Send beacon query to all targets on UDP 47892
+                for (dest in broadcastTargets) {
+                    try {
+                        val packet = java.net.DatagramPacket(query, query.size, dest, 47892)
+                        udpSocket.send(packet)
+                    } catch (_: Throwable) {}
                 }
-                udpSocket.close()
+
+                // Loop receiving packets until timeout
+                val endTime = System.currentTimeMillis() + timeoutMs
+                val buf = ByteArray(2048)
+                while (System.currentTimeMillis() < endTime) {
+                    val remaining = (endTime - System.currentTimeMillis()).toInt().coerceAtLeast(100)
+                    udpSocket.soTimeout = remaining
+                    val recvPacket = java.net.DatagramPacket(buf, buf.size)
+                    try {
+                        udpSocket.receive(recvPacket)
+                    } catch (_: java.net.SocketTimeoutException) {
+                        break
+                    }
+                    val respStr = String(recvPacket.data, 0, recvPacket.length)
+                    val json = try { JSONObject(respStr) } catch (_: Throwable) { null }
+                    if (json?.optString("type") == "AuraLockBeacon") {
+                        val beaconIp = json.optString("ip").takeIf { !it.isNullOrBlank() }
+                        val senderIp = recvPacket.address.hostAddress
+                        val pcIp = beaconIp ?: senderIp ?: "127.0.0.1"
+                        val port = json.optInt("port", 47890)
+                        return@withContext Pair(pcIp, port)
+                    }
+                }
                 null
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.w(TAG, "discoverPcIp error: ${e.message}")
                 null
+            } finally {
+                try { udpSocket?.close() } catch (_: Throwable) {}
             }
         }
     }

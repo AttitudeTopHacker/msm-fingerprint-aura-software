@@ -11,13 +11,13 @@ set -e
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
-TARGET_VER="1.6.2"
+TARGET_VER="1.6.3"
 if [ -f "$PROJECT_ROOT/VERSION" ]; then
     TARGET_VER=$(cat "$PROJECT_ROOT/VERSION" | tr -d '[:space:]')
 fi
 
 echo "════════════════════════════════════════════════════════════"
-echo "  🌟 AuraLock Setup & Launcher v$TARGET_VER (msm.movin)"
+echo "  🌟 Msm Connect Setup & Launcher v$TARGET_VER (msm.movin)"
 echo "════════════════════════════════════════════════════════════"
 
 # Detect if an existing installation exists on the system
@@ -161,6 +161,16 @@ if [ -f "scripts/auralock.service" ]; then
     sudo systemctl daemon-reload 2>/dev/null || true
     sudo systemctl enable auralock.service 2>/dev/null || true
     sudo systemctl restart auralock.service 2>/dev/null || true
+fi
+
+# Configure UFW firewall rules if active
+if command -v ufw >/dev/null 2>&1; then
+    if sudo ufw status 2>/dev/null | grep -q "Status: active"; then
+        echo "🛡️  Configuring UFW firewall rules for AuraLock Wi-Fi communication..."
+        sudo ufw allow 47890/tcp comment "AuraLock Mobile TCP" >/dev/null 2>&1 || true
+        sudo ufw allow 47892/udp comment "AuraLock Auto-Discovery Beacon UDP" >/dev/null 2>&1 || true
+        echo "   ✅ Firewall rules added (TCP 47890, UDP 47892)."
+    fi
 fi
 
 echo ""

@@ -757,7 +757,7 @@ async function fetchReceivedFiles() {
 
     if (!list) return;
     if (files.length === 0) {
-      list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 2rem;">No files received yet. Share files from your phone\'s MsmConnect app!</p>';
+      list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 2rem;">No files received yet. Share files from your phone\'s Msm Connect app!</p>';
       return;
     }
 
