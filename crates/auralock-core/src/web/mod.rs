@@ -208,8 +208,18 @@ async fn auth_middleware(
     let path = req.uri().path().to_string();
 
     // Whitelist public endpoints: root dashboard UI, and pairing setup endpoints
-    if path == "/" || path == "/api/status" || path == "/api/qr" || path == "/api/pair/refresh" {
+    if path == "/" || path == "/api/status" || path == "/api/qr" || path == "/api/pair/refresh" || path == "/api/auth/token" {
         return next.run(req).await;
+    }
+
+    // Allow requests originating from local Tauri desktop application webview
+    if let Some(origin) = req.headers().get("origin").and_then(|o| o.to_str().ok()) {
+        if origin.starts_with("tauri://")
+            || origin.starts_with("https://tauri.localhost")
+            || origin.starts_with("http://tauri.localhost")
+        {
+            return next.run(req).await;
+        }
     }
 
     let expected_token = get_or_create_web_auth_token();
@@ -391,6 +401,7 @@ pub async fn start_web_server(net_service: Arc<NetworkService>, port: u16) -> Re
         .route("/", get(serve_dashboard))
         .route("/api/status", get(get_status))
         .route("/api/qr", get(get_qr))
+        .route("/api/auth/token", get(get_auth_token_endpoint))
         .route("/api/ticket/download", post(create_download_ticket))
         .route("/api/ticket/ws", post(create_ws_ticket))
         .route("/api/pair/refresh", post(refresh_pairing))
@@ -516,6 +527,13 @@ async fn refresh_pairing(State(state): State<AppState>) -> Json<ApiResponse> {
         success: true,
         message: "Pairing session regenerated".into(),
     })
+}
+
+async fn get_auth_token_endpoint() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "success": true,
+        "token": get_or_create_web_auth_token()
+    }))
 }
 
 async fn test_unlock(State(state): State<AppState>) -> Json<ApiResponse> {

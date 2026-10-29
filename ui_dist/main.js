@@ -3,6 +3,7 @@ let pairingQrObj = null;
 let isPairedState = false;
 let isPhoneConnectedState = false;
 let apiAuthToken = window.__MSMCONNECT_SESSION_TOKEN__ || "";
+const originalFetch = window.fetch;
 
 // Helper to check if Tauri API is available
 function checkIsTauri() {
@@ -34,21 +35,42 @@ async function invokeCommand(cmd, args = {}) {
 }
 
 async function getAuthToken() {
-  if (!apiAuthToken && checkIsTauri()) {
+  if (apiAuthToken) return apiAuthToken;
+  if (window.__MSMCONNECT_SESSION_TOKEN__) {
+    apiAuthToken = window.__MSMCONNECT_SESSION_TOKEN__;
+    return apiAuthToken;
+  }
+  if (checkIsTauri()) {
     try {
       const tok = await invokeCommand('get_api_auth_token');
       if (tok) {
         apiAuthToken = tok;
         window.__MSMCONNECT_SESSION_TOKEN__ = tok;
+        return tok;
       }
     } catch (_) {}
   }
+  try {
+    const res = await originalFetch('http://127.0.0.1:47891/api/auth/token');
+    if (res.ok) {
+      const d = await res.json();
+      if (d && d.token) {
+        apiAuthToken = d.token;
+        window.__MSMCONNECT_SESSION_TOKEN__ = d.token;
+        return d.token;
+      }
+    }
+  } catch (_) {}
   return apiAuthToken || window.__MSMCONNECT_SESSION_TOKEN__ || "";
 }
 
+function getApiAuthToken() {
+  return apiAuthToken || window.__MSMCONNECT_SESSION_TOKEN__ || "";
+}
+window.getApiAuthToken = getApiAuthToken;
+
 // Global fetch interceptor to inject X-MsmConnect-Auth header
 (function setupApiAuthInterceptor() {
-  const originalFetch = window.fetch;
   window.fetch = async function(resource, init = {}) {
     const url = typeof resource === 'string' ? resource : (resource?.url || '');
     if (url.includes('/api/')) {
@@ -793,7 +815,7 @@ async function fetchReceivedFiles() {
 
 window.downloadFileWithTicket = async function (fileName) {
   try {
-    const token = getApiAuthToken();
+    const token = await getAuthToken();
     const res = await fetch('http://127.0.0.1:47891/api/ticket/download', {
       method: 'POST',
       headers: {
@@ -856,7 +878,7 @@ if (dropzone) {
 async function setupWebSocket() {
   let wsUrl = 'ws://127.0.0.1:47891/api/events';
   try {
-    const token = getApiAuthToken();
+    const token = await getAuthToken();
     const res = await fetch('http://127.0.0.1:47891/api/ticket/ws', {
       method: 'POST',
       headers: { 'X-MsmConnect-Auth': token }
