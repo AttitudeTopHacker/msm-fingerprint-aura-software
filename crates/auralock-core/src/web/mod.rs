@@ -443,16 +443,11 @@ pub async fn start_web_server(net_service: Arc<NetworkService>, port: u16) -> Re
 
 async fn serve_dashboard() -> Response {
     let token = get_or_create_web_auth_token();
-    let mut nonce_bytes = [0u8; 16];
-    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut nonce_bytes);
-    let nonce = hex::encode(nonce_bytes);
-
-    let injection = format!("<script nonce=\"{}\">window.__MSMCONNECT_SESSION_TOKEN__ = \"{}\";</script>\n</head>", nonce, token);
+    let injection = format!("<script>window.__MSMCONNECT_SESSION_TOKEN__ = \"{}\";</script>\n</head>", token);
     let html = ui::DASHBOARD_HTML.replace("</head>", &injection);
 
     let csp = format!(
-        "default-src 'self'; script-src 'self' 'nonce-{}' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:47891 ws://127.0.0.1:47891 http://localhost:47891 ws://localhost:47891 http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:* tauri://localhost https://tauri.localhost ipc:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';",
-        nonce
+        "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:47891 ws://127.0.0.1:47891 http://localhost:47891 ws://localhost:47891 http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:* tauri://localhost https://tauri.localhost ipc:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
     );
 
     (

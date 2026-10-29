@@ -33,6 +33,8 @@ body {
   flex-direction: column;
   overflow-x: hidden;
   user-select: none;
+  touch-action: pan-x pan-y;
+  overscroll-behavior: none;
 }
 
 header {
@@ -599,10 +601,12 @@ input:checked + .slider:before {
   display: none;
   align-items: center;
   justify-content: center;
+  pointer-events: none;
 }
 
 .modal-overlay.show {
   display: flex;
+  pointer-events: auto;
 }
 
 .modal-card {
@@ -676,6 +680,7 @@ input:checked + .slider:before {
   opacity: 0;
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   z-index: 2000;
+  pointer-events: none;
 }
 
 #toast.show {

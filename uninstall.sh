@@ -41,6 +41,11 @@ sudo rm -f /usr/lib/security/pam_auralock.so
 sudo rm -f /tmp/auralock_daemon.sock
 sudo rm -f /tmp/msmconnect_auth_token
 
+sudo rm -rf /etc/auralock
+sudo rm -f /etc/systemd/system/default.target.wants/auralock.service
+sudo rm -rf /home/*/.config/auralock 2>/dev/null || true
+sudo rm -rf /home/*/.local/share/com.msm.* 2>/dev/null || true
+
 # Remove Desktop entries & launcher icons
 sudo rm -f /usr/share/applications/auralock.desktop
 sudo rm -f /usr/share/applications/msmconnect.desktop

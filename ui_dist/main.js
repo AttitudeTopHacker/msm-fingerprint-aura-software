@@ -1,3 +1,122 @@
+console.log("🚀 Msm Connect GUI initialized");
+
+// Prevent default browser zoom via Ctrl/Meta + wheel & gestures
+window.addEventListener('wheel', (e) => {
+  if (e.ctrlKey || e.metaKey) e.preventDefault();
+}, { passive: false });
+
+window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && ['+', '-', '=', '0'].includes(e.key)) {
+    e.preventDefault();
+  }
+});
+
+// Suppress default WebKit browser context menu (Back, Forward, Stop, Reload)
+document.addEventListener('contextmenu', (e) => {
+  if (!e.ctrlKey && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+    e.preventDefault();
+  }
+});
+
+// Universal CSP Interceptor: Prevents browser inline script blocking and executes the handler in safe JS scope
+document.addEventListener('click', (e) => {
+  const targetDesc = e.target.id ? ('#' + e.target.id) : (e.target.className ? ('.' + e.target.className) : e.target.tagName);
+  console.log("🖱️ [UI Click]", targetDesc, e.target);
+
+  const el = e.target.closest('[onclick]');
+  if (el) {
+    const rawCode = el.getAttribute('onclick');
+    if (rawCode) {
+      // Prevent browser's default inline handler which gets blocked by CSP
+      e.preventDefault();
+      try {
+        const clean = rawCode.trim().replace(/;$/, '');
+        const match = clean.match(/^([a-zA-Z0-9_$.]+)\((.*)\)$/);
+        if (match) {
+          const fnPath = match[1];
+          const rawArgs = match[2].trim();
+          let args = [];
+          if (rawArgs.length > 0) {
+            args = rawArgs.split(',').map(a => {
+              const t = a.trim();
+              if ((t.startsWith("'") && t.endsWith("'")) || (t.startsWith('"') && t.endsWith('"'))) {
+                return t.slice(1, -1);
+              }
+              if (t === 'true') return true;
+              if (t === 'false') return false;
+              if (!isNaN(t)) return Number(t);
+              return t;
+            });
+          }
+          let fn = window[fnPath];
+          if (typeof fn === 'function') {
+            console.log("⚡ [CSP Intercept Executed]:", fnPath, args);
+            fn.apply(el, args);
+            return;
+          }
+        }
+        // Fallback for custom code expressions
+        new Function(clean).call(el);
+      } catch (err) {
+        console.error("Error executing handler for:", rawCode, err);
+      }
+    }
+  }
+}, true);
+
+// Clean event listener attachment to avoid any inline handlers
+window.addEventListener('DOMContentLoaded', () => {
+  // Navigation tabs
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    const code = btn.getAttribute('onclick') || '';
+    const match = code.match(/switchTab\('([^']+)'\)/);
+    if (match) {
+      const tabId = match[1];
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        window.switchTab(tabId);
+      });
+    }
+  });
+
+  // Auto clean all buttons with onclick
+  document.querySelectorAll('[onclick]').forEach(el => {
+    const code = el.getAttribute('onclick') || '';
+    if (!code) return;
+    el.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      try {
+        const clean = code.trim().replace(/;$/, '');
+        const match = clean.match(/^([a-zA-Z0-9_$.]+)\((.*)\)$/);
+        if (match && typeof window[match[1]] === 'function') {
+          const rawArgs = match[2].trim();
+          let args = [];
+          if (rawArgs.length > 0) {
+            args = rawArgs.split(',').map(a => {
+              const t = a.trim();
+              if ((t.startsWith("'") && t.endsWith("'")) || (t.startsWith('"') && t.endsWith('"'))) return t.slice(1, -1);
+              if (t === 'true') return true;
+              if (t === 'false') return false;
+              if (!isNaN(t)) return Number(t);
+              return t;
+            });
+          }
+          window[match[1]](...args);
+        } else {
+          new Function(clean).call(el);
+        }
+      } catch (e) {
+        console.error("Handler error:", e);
+      }
+    });
+  });
+});
+
+// Global JS error listener
+window.addEventListener('error', (e) => {
+  console.error("💥 [UI Error]:", e.message, "at", e.filename, ":", e.lineno);
+});
+
 let currentPin = "";
 let pairingQrObj = null;
 let isPairedState = false;
