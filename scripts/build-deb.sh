@@ -168,9 +168,9 @@ exit 0
 EOF
 chmod 755 "$BUILD_DIR/DEBIAN/prerm"
 
-# Build the .deb package
-echo "📦 Packaging with dpkg-deb..."
-dpkg-deb --build --root-owner-group "$BUILD_DIR" "dist/$DEB_NAME"
+# Build the .deb package with universal xz compression
+echo "📦 Packaging with dpkg-deb (universal xz compression)..."
+dpkg-deb -Zxz --build --root-owner-group "$BUILD_DIR" "dist/$DEB_NAME"
 
 echo ""
 echo "✅ .deb package created successfully at: dist/$DEB_NAME"
