@@ -159,14 +159,29 @@ if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
     if [ -f "/etc/pam.d/sudo" ]; then
         sed -i '/pam_auralock.so/d' /etc/pam.d/sudo || true
     fi
-
-    if command -v update-desktop-database > /dev/null 2>&1; then
-        update-desktop-database -q /usr/share/applications || true
-    fi
 fi
 exit 0
 EOF
 chmod 755 "$BUILD_DIR/DEBIAN/prerm"
+
+# Create DEBIAN/postrm (Runs after removal)
+cat << 'EOF' > "$BUILD_DIR/DEBIAN/postrm"
+#!/bin/sh
+set -e
+
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+    rm -f /usr/share/applications/auralock.desktop 2>/dev/null || true
+    rm -f /usr/share/applications/msmconnect.desktop 2>/dev/null || true
+    if command -v update-desktop-database > /dev/null 2>&1; then
+        update-desktop-database -q /usr/share/applications || true
+    fi
+    if command -v gtk-update-icon-cache > /dev/null 2>&1; then
+        gtk-update-icon-cache -q /usr/share/icons/hicolor || true
+    fi
+fi
+exit 0
+EOF
+chmod 755 "$BUILD_DIR/DEBIAN/postrm"
 
 # Build the .deb package with universal xz compression
 echo "📦 Packaging with dpkg-deb (universal xz compression)..."

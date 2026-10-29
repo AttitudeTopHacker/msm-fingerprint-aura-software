@@ -451,7 +451,7 @@ async fn serve_dashboard() -> Response {
     let html = ui::DASHBOARD_HTML.replace("</head>", &injection);
 
     let csp = format!(
-        "default-src 'self'; script-src 'self' 'nonce-{}' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:* tauri://localhost https://tauri.localhost ipc:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';",
+        "default-src 'self'; script-src 'self' 'nonce-{}' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:47891 ws://127.0.0.1:47891 http://localhost:47891 ws://localhost:47891 http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:* tauri://localhost https://tauri.localhost ipc:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';",
         nonce
     );
 
