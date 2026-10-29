@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Msm Connect
+GenericName=Biometric Security & File Transfer
+Comment=Instant Remote Biometric Unlock & AuraDrop for Linux
+Exec=auralock
+Icon=msmconnect
+Terminal=false
+Type=Application
+Categories=Utility;Security;System;
+StartupNotify=true
+Keywords=fingerprint;biometric;security;lock;unlock;msm;connect;auradrop;

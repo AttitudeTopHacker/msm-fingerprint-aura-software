@@ -52,28 +52,36 @@ cp scripts/auralock.service "$BUILD_DIR/etc/systemd/system/auralock.service"
 chmod 644 "$BUILD_DIR/etc/systemd/system/auralock.service"
 
 # Copy App Icons
+mkdir -p "$BUILD_DIR/usr/share/pixmaps"
+mkdir -p "$BUILD_DIR/usr/share/icons/hicolor/128x128/apps"
+mkdir -p "$BUILD_DIR/usr/share/icons/hicolor/512x512/apps"
+mkdir -p "$BUILD_DIR/usr/share/applications"
+
 if [ -f "src-tauri/icons/icon.png" ]; then
+    cp "src-tauri/icons/icon.png" "$BUILD_DIR/usr/share/pixmaps/msmconnect.png"
     cp "src-tauri/icons/icon.png" "$BUILD_DIR/usr/share/pixmaps/auralock.png"
+    cp "src-tauri/icons/icon.png" "$BUILD_DIR/usr/share/icons/hicolor/512x512/apps/msmconnect.png"
 fi
 if [ -f "src-tauri/icons/128x128.png" ]; then
+    cp "src-tauri/icons/128x128.png" "$BUILD_DIR/usr/share/icons/hicolor/128x128/apps/msmconnect.png"
     cp "src-tauri/icons/128x128.png" "$BUILD_DIR/usr/share/icons/hicolor/128x128/apps/auralock.png"
 fi
 
 # Create Desktop Entry (Native Standalone Desktop Application)
-cat << 'EOF' > "$BUILD_DIR/usr/share/applications/auralock.desktop"
+cat << 'EOF' > "$BUILD_DIR/usr/share/applications/msmconnect.desktop"
 [Desktop Entry]
-Name=AuraLock
-GenericName=Biometric Security & AuraDrop
+Name=Msm Connect
+GenericName=Biometric Security & File Transfer
 Comment=Instant Remote Biometric Unlock & AuraDrop for Linux
 Exec=auralock
-Icon=auralock
+Icon=msmconnect
 Terminal=false
 Type=Application
 Categories=Utility;Security;System;
 StartupNotify=true
-Keywords=fingerprint;biometric;security;lock;unlock;auradrop;
+Keywords=fingerprint;biometric;security;lock;unlock;msm;connect;auradrop;
 EOF
-chmod 644 "$BUILD_DIR/usr/share/applications/auralock.desktop"
+chmod 644 "$BUILD_DIR/usr/share/applications/msmconnect.desktop"
 
 # Create DEBIAN/control
 cat << EOF > "$BUILD_DIR/DEBIAN/control"
@@ -114,6 +122,9 @@ if [ "$1" = "configure" ]; then
         fi
     fi
 
+    # Clean up legacy desktop entry if present
+    rm -f /usr/share/applications/auralock.desktop 2>/dev/null || true
+
     if command -v update-desktop-database > /dev/null 2>&1; then
         update-desktop-database -q /usr/share/applications || true
     fi
@@ -123,8 +134,8 @@ if [ "$1" = "configure" ]; then
 
     echo ""
     echo "=================================================="
-    echo "  🎉 AuraLock installed successfully!"
-    echo "  Open 'AuraLock' from your Application Menu or run 'auralock gui'."
+    echo "  🎉 Msm Connect installed successfully!"
+    echo "  Open 'Msm Connect' from your Application Menu or run 'auralock'."
     echo "=================================================="
 fi
 exit 0

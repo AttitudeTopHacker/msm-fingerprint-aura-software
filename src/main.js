@@ -394,14 +394,22 @@ async function fetchQr() {
 
 window.refreshPairing = async function () {
   try {
+    let refreshed = false;
     try {
-      await fetch('http://127.0.0.1:47891/api/pair/refresh', { method: 'POST' });
+      const res = await fetch('http://127.0.0.1:47891/api/pair/refresh', { method: 'POST' });
+      if (res.ok) refreshed = true;
     } catch (_) {}
+
+    if (!refreshed && checkIsTauri()) {
+      await invokeCommand('refresh_pairing_session');
+    }
+
     pairingQrObj = null;
     await fetchQr();
     showToast("Generated new pairing session & PIN", "🔄");
     log("Generated fresh pairing QR & 6-digit PIN", "info");
   } catch (e) {
+    console.error("Refresh pairing error", e);
     showToast("Failed to refresh pairing", "❌");
   }
 };

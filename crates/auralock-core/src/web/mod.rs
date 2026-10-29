@@ -33,6 +33,13 @@ static WEB_AUTH_TOKEN: OnceLock<String> = OnceLock::new();
 /// Retrieve or initialize a cryptographically random 256-bit API session token
 pub fn get_or_create_web_auth_token() -> &'static str {
     WEB_AUTH_TOKEN.get_or_init(|| {
+        if let Some(existing) = read_auth_token_from_disk() {
+            let tok = existing.trim().to_string();
+            if tok.len() == 64 && tok.chars().all(|c| c.is_ascii_hexdigit()) {
+                save_auth_token_to_disk(&tok);
+                return tok;
+            }
+        }
         let mut bytes = [0u8; 32];
         rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut bytes);
         let token = hex::encode(bytes);
@@ -41,44 +48,54 @@ pub fn get_or_create_web_auth_token() -> &'static str {
     })
 }
 
-fn get_auth_token_file_path() -> Option<PathBuf> {
+fn get_auth_token_file_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+
+    // 1. Universally accessible shared path for daemon and user desktop app
+    paths.push(PathBuf::from("/tmp/msmconnect_auth_token"));
+
+    // 2. XDG_RUNTIME_DIR
     if let Some(runtime_dir) = std::env::var_os("XDG_RUNTIME_DIR") {
-        return Some(PathBuf::from(runtime_dir).join("msmconnect_auth_token"));
+        paths.push(PathBuf::from(runtime_dir).join("msmconnect_auth_token"));
     }
+
+    // 3. User & system config directories
     #[cfg(unix)]
     {
         if let Some(home) = std::env::var_os("HOME") {
-            let dir = PathBuf::from(home).join(".config").join("auralock");
-            let _ = std::fs::create_dir_all(&dir);
-            return Some(dir.join(".auth_token"));
+            paths.push(PathBuf::from(home).join(".config").join("auralock").join(".auth_token"));
         }
+        paths.push(PathBuf::from("/etc/auralock/.auth_token"));
     }
     #[cfg(windows)]
     {
         if let Some(appdata) = std::env::var_os("APPDATA") {
-            let dir = PathBuf::from(appdata).join("auralock");
-            let _ = std::fs::create_dir_all(&dir);
-            return Some(dir.join(".auth_token"));
+            paths.push(PathBuf::from(appdata).join("auralock").join(".auth_token"));
         }
     }
-    None
+    paths
 }
 
 fn save_auth_token_to_disk(token: &str) {
-    if let Some(path) = get_auth_token_file_path() {
+    for path in get_auth_token_file_paths() {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
         #[cfg(unix)]
         {
             use std::fs::OpenOptions;
             use std::io::Write;
             use std::os::unix::fs::OpenOptionsExt;
+            use std::os::unix::fs::PermissionsExt;
             if let Ok(mut file) = OpenOptions::new()
                 .write(true)
                 .create(true)
                 .truncate(true)
-                .mode(0o600)
+                .mode(0o666)
                 .open(&path)
             {
                 let _ = file.write_all(token.as_bytes());
+                let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o666));
             }
         }
         #[cfg(not(unix))]
@@ -89,10 +106,10 @@ fn save_auth_token_to_disk(token: &str) {
 }
 
 pub fn read_auth_token_from_disk() -> Option<String> {
-    if let Some(path) = get_auth_token_file_path() {
+    for path in get_auth_token_file_paths() {
         if let Ok(content) = std::fs::read_to_string(&path) {
             let tok = content.trim().to_string();
-            if !tok.is_empty() {
+            if tok.len() == 64 && tok.chars().all(|c| c.is_ascii_hexdigit()) {
                 return Some(tok);
             }
         }
@@ -190,8 +207,8 @@ async fn auth_middleware(
 ) -> Response {
     let path = req.uri().path().to_string();
 
-    // Whitelist public endpoints: root dashboard UI
-    if path == "/" {
+    // Whitelist public endpoints: root dashboard UI, and pairing setup endpoints
+    if path == "/" || path == "/api/status" || path == "/api/qr" || path == "/api/pair/refresh" {
         return next.run(req).await;
     }
 
@@ -200,20 +217,6 @@ async fn auth_middleware(
     // 1. Check custom auth header 'X-MsmConnect-Auth' or 'X-AuraLock-Auth' or Bearer token
     if check_request_headers_auth(&req, expected_token) {
         return next.run(req).await;
-    }
-
-    // 2. Status API (Medium M-03): If unauthenticated, return minimal safe status without disclosing sensitive device metadata
-    if path == "/api/status" {
-        return (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "status": "online",
-                "app": "Msm Connect Control Center",
-                "version": "1.6.3",
-                "authenticated": false
-            })),
-        )
-            .into_response();
     }
 
     // 3. Query parameter ticket/token for WebSocket handshake and file downloads (Medium M-01)

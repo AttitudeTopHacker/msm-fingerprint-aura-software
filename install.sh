@@ -11,7 +11,7 @@ set -e
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
-TARGET_VER="1.6.3"
+TARGET_VER="1.6.4"
 if [ -f "$PROJECT_ROOT/VERSION" ]; then
     TARGET_VER=$(cat "$PROJECT_ROOT/VERSION" | tr -d '[:space:]')
 fi
@@ -171,6 +171,39 @@ if command -v ufw >/dev/null 2>&1; then
         sudo ufw allow 47892/udp comment "AuraLock Auto-Discovery Beacon UDP" >/dev/null 2>&1 || true
         echo "   ✅ Firewall rules added (TCP 47890, UDP 47892)."
     fi
+fi
+
+# Install Desktop Entry and Application Icons for Linux Application Launcher
+echo "🖥️  Installing Msm Connect Desktop entry & icons..."
+sudo mkdir -p /usr/share/applications /usr/share/pixmaps /usr/share/icons/hicolor/128x128/apps /usr/share/icons/hicolor/512x512/apps 2>/dev/null || true
+mkdir -p "$HOME/.local/share/applications" "$HOME/.local/share/icons" 2>/dev/null || true
+
+# Copy icons
+if [ -f "src-tauri/icons/icon.png" ]; then
+    sudo cp src-tauri/icons/icon.png /usr/share/pixmaps/msmconnect.png 2>/dev/null || true
+    sudo cp src-tauri/icons/icon.png /usr/share/pixmaps/auralock.png 2>/dev/null || true
+    sudo cp src-tauri/icons/icon.png /usr/share/icons/hicolor/512x512/apps/msmconnect.png 2>/dev/null || true
+    cp src-tauri/icons/icon.png "$HOME/.local/share/icons/msmconnect.png" 2>/dev/null || true
+fi
+if [ -f "src-tauri/icons/128x128.png" ]; then
+    sudo cp src-tauri/icons/128x128.png /usr/share/icons/hicolor/128x128/apps/msmconnect.png 2>/dev/null || true
+fi
+
+# Install msmconnect.desktop and clean legacy auralock.desktop
+if [ -f "scripts/msmconnect.desktop" ]; then
+    sudo cp scripts/msmconnect.desktop /usr/share/applications/msmconnect.desktop 2>/dev/null || true
+    sudo chmod 644 /usr/share/applications/msmconnect.desktop 2>/dev/null || true
+    cp scripts/msmconnect.desktop "$HOME/.local/share/applications/msmconnect.desktop" 2>/dev/null || true
+    sudo rm -f /usr/share/applications/auralock.desktop 2>/dev/null || true
+    rm -f "$HOME/.local/share/applications/auralock.desktop" 2>/dev/null || true
+fi
+
+if command -v update-desktop-database >/dev/null 2>&1; then
+    sudo update-desktop-database -q /usr/share/applications 2>/dev/null || true
+    update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    sudo gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
 fi
 
 echo ""

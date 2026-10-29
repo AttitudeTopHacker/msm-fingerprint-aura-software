@@ -97,6 +97,23 @@ async fn get_pairing_qr(state: State<'_, AppStateWrapper>) -> Result<QrDataRespo
 }
 
 #[tauri::command]
+async fn refresh_pairing_session(state: State<'_, AppStateWrapper>) -> Result<CommandResult, String> {
+    let local_ip = auralock_core::network::get_best_local_ip();
+    let (_, ephem_pub) = generate_x25519_keypair();
+    let ephem_pub_hex = hex::encode(ephem_pub.as_bytes());
+
+    state
+        .net_service
+        .generate_qr_payload(&local_ip, &ephem_pub_hex)
+        .await;
+
+    Ok(CommandResult {
+        success: true,
+        message: "Pairing session regenerated".into(),
+    })
+}
+
+#[tauri::command]
 async fn trigger_test_unlock(state: State<'_, AppStateWrapper>) -> Result<CommandResult, String> {
     match state.net_service.state_mgr.create_challenge(&state.net_service.pc_name).await {
         Ok((challenge, _)) => match state.net_service.push_challenge(challenge).await {
@@ -371,6 +388,7 @@ fn main() {
             get_api_auth_token,
             get_daemon_status,
             get_pairing_qr,
+            refresh_pairing_session,
             trigger_test_unlock,
             cancel_challenge,
             lock_pc,
