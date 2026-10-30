@@ -594,12 +594,10 @@ impl NetworkService {
         let initial_lock = is_pc_screen_locked();
         let _ = tx.send(ProtocolMessage::LockStateChanged { is_locked: initial_lock }).await;
 
-        // If there is an active pending challenge, deliver ONLY if screen is ACTUALLY locked
-        if initial_lock {
-            if let Some(pending_ch) = self.state_mgr.get_latest_valid_challenge().await {
-                info!("Pushing active pending challenge {} to newly connected phone", pending_ch.challenge_id);
-                let _ = tx.send(ProtocolMessage::Challenge(pending_ch)).await;
-            }
+        // If there is an active pending challenge (e.g. from PAM, sudo, or PC test unlock), deliver immediately
+        if let Some(pending_ch) = self.state_mgr.get_latest_valid_challenge().await {
+            info!("Pushing active pending challenge {} to newly connected phone", pending_ch.challenge_id);
+            let _ = tx.send(ProtocolMessage::Challenge(pending_ch)).await;
         }
 
         // Spawn real-time Lock state & Bluetooth status watcher (checks every 500ms and sends on state change)
@@ -730,16 +728,12 @@ impl NetworkService {
                     let _ = tx.send(ProtocolMessage::LockStateChanged { is_locked }).await;
                 }
 
-                // Deliver any pending challenge waiting for phone biometric response (only if locked)
-                if is_locked {
-                    if let Some(pending_ch) = self.state_mgr.get_latest_valid_challenge().await {
-                        info!("Pushing pending challenge {} to phone on identify", pending_ch.challenge_id);
-                        if let Some(tx) = &*self.active_client.lock().await {
-                            let _ = tx.send(ProtocolMessage::Challenge(pending_ch)).await;
-                        }
+                // Deliver any pending challenge waiting for phone biometric response (e.g. from PAM, sudo, or PC test unlock)
+                if let Some(pending_ch) = self.state_mgr.get_latest_valid_challenge().await {
+                    info!("Pushing pending challenge {} to phone on identify", pending_ch.challenge_id);
+                    if let Some(tx) = &*self.active_client.lock().await {
+                        let _ = tx.send(ProtocolMessage::Challenge(pending_ch)).await;
                     }
-                } else {
-                    self.state_mgr.cancel_all_challenges().await;
                 }
             }
             ProtocolMessage::PairingReq(req) => {
@@ -983,12 +977,9 @@ impl NetworkService {
                     })).await;
                     let is_locked = is_pc_screen_locked();
                     let _ = tx.send(ProtocolMessage::LockStateChanged { is_locked }).await;
-                    if is_locked {
-                        if let Some(pending_ch) = self.state_mgr.get_latest_valid_challenge().await {
-                            let _ = tx.send(ProtocolMessage::Challenge(pending_ch)).await;
-                        }
-                    } else {
-                        self.state_mgr.cancel_all_challenges().await;
+                    // Always deliver any pending challenge waiting for phone biometric approval (from PAM, sudo, or PC trigger)
+                    if let Some(pending_ch) = self.state_mgr.get_latest_valid_challenge().await {
+                        let _ = tx.send(ProtocolMessage::Challenge(pending_ch)).await;
                     }
                 }
             }
@@ -1349,28 +1340,17 @@ impl NetworkService {
                     return Ok(());
                 }
                 info!("Received manual unlock trigger request from phone");
-                let is_locked = is_pc_screen_locked();
-                if !is_locked {
-                    info!("PC screen is already UNLOCKED. Notifying phone and skipping challenge creation.");
-                    if let Some(tx) = &*self.active_client.lock().await {
-                        let _ = tx.send(ProtocolMessage::LockStateChanged { is_locked: false }).await;
-                    }
+                // Always create or reuse a challenge when manually triggered by phone (even if screen state check lags)
+                if let Some(pending_ch) = self.state_mgr.get_latest_valid_challenge().await {
+                    info!("Resending active pending challenge {} on phone trigger", pending_ch.challenge_id);
+                    let _ = self.push_challenge(pending_ch).await;
                 } else {
-                    if let Some(tx) = &*self.active_client.lock().await {
-                        let _ = tx.send(ProtocolMessage::LockStateChanged { is_locked: true }).await;
-                    }
-                    // If an active challenge already exists (e.g. from PAM / Windows CP), reuse it so IPC unblocks
-                    if let Some(pending_ch) = self.state_mgr.get_latest_valid_challenge().await {
-                        info!("Resending active pending challenge {} on phone trigger", pending_ch.challenge_id);
-                        let _ = self.push_challenge(pending_ch).await;
-                    } else {
-                        match self.state_mgr.create_challenge(&self.pc_name).await {
-                            Ok((challenge, _rx)) => {
-                                let _ = self.push_challenge(challenge).await;
-                            }
-                            Err(e) => {
-                                error!("Failed to create challenge on unlock trigger: {:?}", e);
-                            }
+                    match self.state_mgr.create_challenge(&self.pc_name).await {
+                        Ok((challenge, _rx)) => {
+                            let _ = self.push_challenge(challenge).await;
+                        }
+                        Err(e) => {
+                            error!("Failed to create challenge on unlock trigger: {:?}", e);
                         }
                     }
                 }

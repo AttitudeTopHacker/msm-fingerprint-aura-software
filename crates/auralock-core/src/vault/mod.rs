@@ -66,8 +66,8 @@ impl PairedPhone {
     pub fn get_public_key_bytes(&self) -> Result<Vec<u8>> {
         let bytes = hex::decode(&self.public_key_hex)
             .map_err(|e| AuraLockError::CryptoError(format!("Invalid public key hex: {e}")))?;
-        if bytes.is_empty() {
-            return Err(AuraLockError::CryptoError("Empty public key".into()));
+        if bytes.is_empty() || bytes.iter().all(|&b| b == 0) {
+            return Err(AuraLockError::CryptoError("Empty or invalid all-zero public key".into()));
         }
         Ok(bytes)
     }
@@ -145,9 +145,13 @@ impl VaultManager {
         self.vault_file_path.exists()
     }
 
-    /// Checks if a phone is currently paired
+    /// Checks if a valid phone is currently paired
     pub fn is_paired(&self) -> bool {
-        self.load().ok().and_then(|v| v.paired_phone).is_some()
+        self.load()
+            .ok()
+            .and_then(|v| v.paired_phone)
+            .map(|p| !p.public_key_hex.is_empty() && !p.public_key_hex.chars().all(|c| c == '0'))
+            .unwrap_or(false)
     }
 
     /// Loads vault data from disk
@@ -263,17 +267,90 @@ impl VaultManager {
         }
     }
 
-    /// Saves or updates a paired phone in the vault (clearing any old stale passwords)
+    /// Saves or updates a paired phone in the vault (preserving existing password if present)
     pub fn save_paired_phone(&self, phone: PairedPhone) -> Result<()> {
-        let existing_pin = self.load().map(|v| v.security_pin).unwrap_or_else(|_| default_security_pin());
+        let existing = self.load().ok();
+        let existing_pin = existing.as_ref().map(|v| v.security_pin.clone()).unwrap_or_else(default_security_pin);
+        let existing_password = existing.as_ref().map(|v| v.encrypted_password_b64.clone()).unwrap_or_default();
+        let existing_salt = existing.as_ref().map(|v| v.salt_hex.clone()).unwrap_or_else(|| hex::encode(generate_nonce_32()));
+        let existing_nonce = existing.as_ref().map(|v| v.nonce_hex.clone()).unwrap_or_else(|| hex::encode(generate_nonce_12()));
+        let existing_local = existing.as_ref().map(|v| v.local_part_hex.clone()).unwrap_or_else(|| hex::encode(generate_nonce_32()));
 
         let vault_data = VaultData {
             version: 1,
             paired_phone: Some(phone),
-            salt_hex: hex::encode(generate_nonce_32()),
-            nonce_hex: hex::encode(generate_nonce_12()),
-            encrypted_password_b64: String::new(),
-            local_part_hex: hex::encode(generate_nonce_32()),
+            salt_hex: existing_salt,
+            nonce_hex: existing_nonce,
+            encrypted_password_b64: existing_password,
+            local_part_hex: existing_local,
+            security_pin: existing_pin,
+        };
+
+        if let Some(parent) = self.vault_file_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let json = serde_json::to_string_pretty(&vault_data)?;
+        std::fs::write(&self.vault_file_path, json)?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = std::fs::metadata(&self.vault_file_path) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o644);
+                let _ = std::fs::set_permissions(&self.vault_file_path, perms);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Saves password into vault, associating with paired phone if available
+    pub fn save_password_with_phone(
+        &self,
+        phone_opt: Option<PairedPhone>,
+        shared_master_secret: &[u8; 32],
+        password: &SecretBytes,
+    ) -> Result<()> {
+        let salt = generate_nonce_32();
+        let local_part = generate_nonce_32();
+
+        let mut combined_ikm = Vec::new();
+        combined_ikm.extend_from_slice(shared_master_secret);
+        combined_ikm.extend_from_slice(&local_part);
+
+        if let Some(ref phone) = phone_opt {
+            if let Ok(phone_pub_bytes) = phone.get_public_key_bytes() {
+                combined_ikm.extend_from_slice(&phone_pub_bytes);
+            }
+        }
+
+        let derived_encryption_key = derive_hkdf_key(
+            &combined_ikm,
+            Some(&salt),
+            b"auralock-vault-splitkey-v1",
+            32,
+        )?;
+
+        let mut key32 = [0u8; 32];
+        key32.copy_from_slice(&derived_encryption_key);
+
+        let (ciphertext, nonce) = encrypt_chacha20(&key32, password.as_slice())?;
+        key32.zeroize();
+
+        let existing_pin = self.load().map(|v| v.security_pin).unwrap_or_else(|_| default_security_pin());
+
+        let vault_data = VaultData {
+            version: 1,
+            paired_phone: phone_opt,
+            salt_hex: hex::encode(salt),
+            nonce_hex: hex::encode(nonce),
+            encrypted_password_b64: base64::Engine::encode(
+                &base64::engine::general_purpose::STANDARD,
+                ciphertext,
+            ),
+            local_part_hex: hex::encode(local_part),
             security_pin: existing_pin,
         };
 
@@ -304,65 +381,7 @@ impl VaultManager {
         shared_master_secret: &[u8; 32],
         password: &SecretBytes,
     ) -> Result<()> {
-        let salt = generate_nonce_32();
-        let local_part = generate_nonce_32();
-
-        // Split-key derivation: Combine shared_master_secret + local_part + phone_pubkey
-        let phone_pub_bytes = phone.get_public_key_bytes()?;
-        let mut combined_ikm = Vec::new();
-        combined_ikm.extend_from_slice(shared_master_secret);
-        combined_ikm.extend_from_slice(&local_part);
-        combined_ikm.extend_from_slice(&phone_pub_bytes);
-
-        let derived_encryption_key = derive_hkdf_key(
-            &combined_ikm,
-            Some(&salt),
-            b"auralock-vault-splitkey-v1",
-            32,
-        )?;
-
-        let mut key32 = [0u8; 32];
-        key32.copy_from_slice(&derived_encryption_key);
-
-        let (ciphertext, nonce) = encrypt_chacha20(&key32, password.as_slice())?;
-
-        // Zeroize key from memory
-        key32.zeroize();
-
-        let existing_pin = self.load().map(|v| v.security_pin).unwrap_or_else(|_| default_security_pin());
-
-        let vault_data = VaultData {
-            version: 1,
-            paired_phone: Some(phone),
-            salt_hex: hex::encode(salt),
-            nonce_hex: hex::encode(nonce),
-            encrypted_password_b64: base64::Engine::encode(
-                &base64::engine::general_purpose::STANDARD,
-                ciphertext,
-            ),
-            local_part_hex: hex::encode(local_part),
-            security_pin: existing_pin,
-        };
-
-        if let Some(parent) = self.vault_file_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        let json = serde_json::to_string_pretty(&vault_data)?;
-        std::fs::write(&self.vault_file_path, json)?;
-
-        // Set readable permissions for PAM and user app
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Ok(meta) = std::fs::metadata(&self.vault_file_path) {
-                let mut perms = meta.permissions();
-                perms.set_mode(0o644);
-                let _ = std::fs::set_permissions(&self.vault_file_path, perms);
-            }
-        }
-
-        Ok(())
+        self.save_password_with_phone(Some(phone), shared_master_secret, password)
     }
 
     /// Decrypts the PC password using the phone's shared secret

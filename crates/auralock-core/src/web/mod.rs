@@ -8,7 +8,7 @@ pub mod ui;
 use crate::crypto::generate_x25519_keypair;
 use crate::error::Result;
 use crate::network::{get_default_downloads_dir, AuraDropReceivedFile, NetworkService};
-use crate::vault::{PairedPhone, SecretBytes};
+use crate::vault::SecretBytes;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -681,11 +681,16 @@ async fn save_password(
     State(state): State<AppState>,
     Json(payload): Json<SavePasswordRequest>,
 ) -> Json<ApiResponse> {
-    let dummy_phone = PairedPhone {
-        device_name: "Android Phone".to_string(),
-        public_key_hex: hex::encode([0u8; 32]),
-        pairing_id: format!("pair_{:08x}", rand::random::<u32>()),
-        paired_at_epoch: chrono::Utc::now().timestamp(),
+    let existing_phone = state.net_service.vault_mgr.load().ok().and_then(|v| v.paired_phone)
+        .or_else(|| {
+            // Check state manager
+            let fut = state.net_service.state_mgr.get_paired_phone();
+            tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(fut))
+        });
+
+    let phone_opt = match existing_phone {
+        Some(p) if !p.public_key_hex.is_empty() && !p.public_key_hex.chars().all(|c| c == '0') => Some(p),
+        _ => None,
     };
 
     let dummy_secret = [1u8; 32];
@@ -694,7 +699,7 @@ async fn save_password(
     match state
         .net_service
         .vault_mgr
-        .save_new_vault(dummy_phone, &dummy_secret, &secret_bytes)
+        .save_password_with_phone(phone_opt, &dummy_secret, &secret_bytes)
     {
         Ok(_) => Json(ApiResponse {
             success: true,

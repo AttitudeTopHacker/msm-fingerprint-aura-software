@@ -5,7 +5,7 @@ use auralock_core::crypto::generate_x25519_keypair;
 use auralock_core::network::{get_default_downloads_dir, AuraDropReceivedFile, NetworkService};
 use auralock_core::protocol::DEFAULT_AURALOCK_PORT;
 use auralock_core::state::StateManager;
-use auralock_core::vault::{PairedPhone, SecretBytes, VaultManager};
+use auralock_core::vault::{SecretBytes, VaultManager};
 use auralock_core::web::{start_web_server, DEFAULT_AURALOCK_WEB_PORT};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -171,23 +171,21 @@ async fn unlock_pc(state: State<'_, AppStateWrapper>) -> Result<CommandResult, S
 
 #[tauri::command]
 async fn save_vault_password(password: String, state: State<'_, AppStateWrapper>) -> Result<CommandResult, String> {
-    let paired_phone = state.vault_mgr.load().ok().and_then(|v| v.paired_phone);
-    let paired_phone = match paired_phone {
-        Some(p) => p,
-        None => {
-            state.net_service.state_mgr.get_paired_phone().await.unwrap_or_else(|| PairedPhone {
-                device_name: "Android Phone".to_string(),
-                public_key_hex: hex::encode([0u8; 32]),
-                pairing_id: format!("pair_{:08x}", rand::random::<u32>()),
-                paired_at_epoch: chrono::Utc::now().timestamp(),
-            })
-        }
+    let existing_phone = state.vault_mgr.load().ok().and_then(|v| v.paired_phone)
+        .or_else(|| {
+            let fut = state.net_service.state_mgr.get_paired_phone();
+            tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(fut))
+        });
+
+    let phone_opt = match existing_phone {
+        Some(p) if !p.public_key_hex.is_empty() && !p.public_key_hex.chars().all(|c| c == '0') => Some(p),
+        _ => None,
     };
 
     let dummy_secret = [1u8; 32];
     let secret_bytes = SecretBytes::new(password.into_bytes());
 
-    match state.vault_mgr.save_new_vault(paired_phone, &dummy_secret, &secret_bytes) {
+    match state.vault_mgr.save_password_with_phone(phone_opt, &dummy_secret, &secret_bytes) {
         Ok(_) => Ok(CommandResult {
             success: true,
             message: "PC Password encrypted into local Split-Key Vault".into(),

@@ -832,10 +832,6 @@ class MainActivity : FragmentActivity() {
                             Toast.makeText(this@MainActivity, "No PC is paired yet", Toast.LENGTH_SHORT).show()
                             return@launch
                         }
-                        if (!isPcLockedState) {
-                            Toast.makeText(this@MainActivity, "💻 PC is already UNLOCKED", Toast.LENGTH_SHORT).show()
-                            return@launch
-                        }
                         isLockActionPendingState = true
                         var activeClient = client
                         if (activeClient == null || !isConnectedState) {
@@ -904,6 +900,9 @@ class MainActivity : FragmentActivity() {
                             val start = System.currentTimeMillis()
                             // Query actual PC desktop state (Locked or Unlocked) & fetch pending challenges
                             activeClient.sendPing()
+                            if (isPcLockedState) {
+                                activeClient.sendUnlockTrigger()
+                            }
                             delay(300)
                             val latency = (System.currentTimeMillis() - start - 300).coerceAtLeast(1)
                             isRefreshingStatusState = false
@@ -1653,7 +1652,15 @@ class MainActivity : FragmentActivity() {
                 PulseFingerprintView(
                     isConnected = isConnected,
                     isRefreshing = isRefreshingStatus,
-                    onRefreshClick = onRefreshStatus
+                    onRefreshClick = {
+                        if (challengeRemainingSeconds > 0) {
+                            onRefreshStatus()
+                        } else if (isPcLocked) {
+                            onToggleLockAction()
+                        } else {
+                            onRefreshStatus()
+                        }
+                    }
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
