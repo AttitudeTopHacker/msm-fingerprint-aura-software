@@ -11,7 +11,7 @@ set -e
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
-TARGET_VER="1.6.5"
+TARGET_VER="1.6.6"
 if [ -f "$PROJECT_ROOT/VERSION" ]; then
     TARGET_VER=$(cat "$PROJECT_ROOT/VERSION" | tr -d '[:space:]')
 fi

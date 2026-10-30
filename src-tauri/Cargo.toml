@@ -1,6 +1,6 @@
 [package]
 name = "auralock-desktop"
-version = "1.6.5"
+version = "1.6.6"
 description = "Msm Connect Biometric Security & AuraDrop Desktop App"
 authors = ["msm.movin"]
 license = "Proprietary"
